@@ -11,6 +11,11 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// ServiceDiscovery interface for label resolution
+type ServiceDiscovery interface {
+	ResolveLabels(labels map[string]string) ([]string, error)
+}
+
 // NetworkPolicy defines a zero-trust rule
 type NetworkPolicy struct {
 	APIVersion string `yaml:"apiVersion"`
@@ -173,10 +178,26 @@ func (p *NetworkPolicy) Validate() error {
 	return nil
 }
 
-// ResolveLabels converts label selectors to IP addresses
-// In production, this would query a service discovery system
+// PolicyResolver handles label resolution with service discovery
+type PolicyResolver struct {
+	discovery ServiceDiscovery
+}
+
+// NewPolicyResolver creates a new resolver with the given discovery backend
+func NewPolicyResolver(discovery ServiceDiscovery) *PolicyResolver {
+	return &PolicyResolver{discovery: discovery}
+}
+
+// ResolveLabels converts label selectors to IP addresses using service discovery
+func (r *PolicyResolver) ResolveLabels(labels map[string]string) ([]string, error) {
+	if r.discovery == nil {
+		return nil, fmt.Errorf("no service discovery backend configured")
+	}
+	return r.discovery.ResolveLabels(labels)
+}
+
+// ResolveLabels (standalone) is deprecated, use PolicyResolver instead
+// Kept for backward compatibility
 func ResolveLabels(labels map[string]string) ([]string, error) {
-	// Placeholder: In production, query DNS, Consul, etcd, or cloud provider
-	// For now, return empty list (enforcer will log warning)
-	return nil, fmt.Errorf("label resolution not yet implemented")
+	return nil, fmt.Errorf("label resolution requires service discovery backend")
 }
