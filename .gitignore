@@ -1,0 +1,48 @@
+# Binaries
+ztap
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output of go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+.ztap/
+
+# Config (keep template)
+config.local.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+env/
+
+# Docker
+docker-compose.override.yml
+
+# Prometheus/Grafana data
+deployments/prometheus-data/
+deployments/grafana-data/

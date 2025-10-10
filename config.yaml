@@ -1,0 +1,39 @@
+# ZTAP Configuration File
+
+# Logging settings
+logging:
+  level: info # debug, info, warn, error
+  file: ~/.ztap/enforcement.log
+  format: json # json or text
+
+# Metrics settings
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics
+
+# AWS Cloud Integration
+aws:
+  enabled: false
+  region: us-east-1
+  profile: default # AWS CLI profile to use
+  # security_group_id: sg-12345  # Optional: specific SG to manage
+
+# Anomaly Detection
+anomaly:
+  enabled: false
+  endpoint: http://localhost:5000
+  threshold: 50.0 # Anomaly score threshold (0-100)
+  alert_email: security@example.com
+
+# Enforcement settings
+enforcement:
+  mode: pf # pf (macOS) or ebpf (Linux)
+  dry_run: false # If true, log actions but don't enforce
+  default_action: block # block or allow
+
+# Policy validation
+policy:
+  strict: true # Fail on validation errors
+  allow_empty_egress: false # Allow policies with no egress rules
+  resolve_labels: false # Attempt to resolve label selectors to IPs
