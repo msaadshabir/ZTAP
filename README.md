@@ -372,7 +372,7 @@ See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
 
 ## Roadmap
 
-### Critical Priority (Immediate)
+### Critical Priority
 
 These items are essential for production deployment:
 
@@ -381,7 +381,6 @@ These items are essential for production deployment:
    - Test compiled eBPF programs on actual Linux kernel
    - Validate cgroup attachment and packet filtering
    - Verify policy map population and lookups
-   - **Effort**: 2-3 days
    - **Blocker**: Requires Linux environment with kernel 5.7+
 
 2. **Cloud Integration Tests**
@@ -389,17 +388,13 @@ These items are essential for production deployment:
    - Unit tests for AWS EC2 discovery
    - Unit tests for Security Group sync
    - Mock AWS API responses
-   - **Effort**: 3-5 days
-   - **Current Coverage**: 0%
 
 3. **Metrics Package Tests**
    - Unit tests for Prometheus exporter
    - Test custom metrics registration
    - Validate histogram behavior
-   - **Effort**: 2-3 days
-   - **Current Coverage**: 0%
 
-### High Priority (1-2 Weeks)
+### High Priority
 
 Important for production readiness and operational excellence:
 
@@ -409,31 +404,25 @@ Important for production readiness and operational excellence:
    - Multi-OS testing (Linux + macOS)
    - eBPF compilation in Linux container
    - Automated coverage reporting
-   - **Effort**: 3-5 days
 
 5. **Containerization**
 
    - Dockerfile for ZTAP daemon
    - Docker Compose for full stack (ZTAP + Prometheus + Grafana)
    - Pre-compiled eBPF binaries for common kernels
-   - **Effort**: 3-5 days
 
 6. **CLI Integration Tests**
 
    - End-to-end CLI workflow tests
    - Test authentication flows
    - Test policy enforcement commands
-   - **Effort**: 2-3 days
-   - **Current Coverage**: 0%
 
 7. **Anomaly Detection Tests**
    - Python unit tests for ML service
    - Integration tests for Go client
    - Test Isolation Forest algorithm
-   - **Effort**: 3-4 days
-   - **Current Coverage**: 0%
 
-### Medium Priority (1-2 Months)
+### Medium Priority
 
 Features that enhance functionality and scalability:
 
@@ -443,43 +432,31 @@ Features that enhance functionality and scalability:
    - Leader election for control plane
    - Distributed policy synchronization
    - Cluster health monitoring
-   - **Effort**: 2-3 weeks
-   - **Status**: Not Started
 
 9. **Real-time Flow Monitoring**
 
    - Live packet inspection dashboard
    - Flow statistics and visualization
    - Connection tracking and logging
-   - **Effort**: 1-2 weeks
-   - **Status**: Not Started
 
 10. **Advanced Alerting**
 
     - Alert Manager integration
     - Configurable alert rules
     - Multi-channel notifications (Slack, PagerDuty, etc.)
-    - **Effort**: 1 week
-    - **Status**: Not Started
 
 11. **Grafana Dashboard Validation**
 
     - Test existing dashboards
     - Add more visualization panels
     - Create alert rules
-    - **Effort**: 3-5 days
-    - **Status**: Partial (dashboard exists)
 
 12. **Pre-compiled eBPF Binaries**
     - Build for common kernel versions (5.7+, 5.15+, 6.0+)
     - Distribution strategy (package repos, releases)
     - Kernel version detection and selection
-    - **Effort**: 1 week
-    - **Status**: Not Started
 
-### Low Priority (Future)
-
-Nice-to-have features for broader adoption:
+### Low Priority 
 
 13. **Additional Platform Support**
 
@@ -487,8 +464,6 @@ Nice-to-have features for broader adoption:
     - iptables fallback for legacy Linux
     - Docker/containerd network plugin
     - Kubernetes CNI plugin
-    - **Effort**: 2-3 weeks per platform
-    - **Status**: Partial (macOS pf complete)
 
 14. **Enhanced Security**
 
@@ -496,8 +471,6 @@ Nice-to-have features for broader adoption:
     - Certificate-based authentication
     - Hardware security key support (YubiKey)
     - API token management
-    - **Effort**: 2-3 weeks
-    - **Status**: Not Started
 
 15. **Enterprise Features**
 
@@ -505,16 +478,12 @@ Nice-to-have features for broader adoption:
     - SAML/OAuth SSO
     - Audit log export to SIEM
     - Policy compliance reporting
-    - **Effort**: 3-4 weeks
-    - **Status**: Not Started
 
 16. **Performance Optimization**
     - Policy cache optimization
     - BPF map size tuning
     - Memory profiling and optimization
     - Benchmark suite
-    - **Effort**: 1-2 weeks
-    - **Status**: Not Started
 
 ## Contributing Priorities
 
