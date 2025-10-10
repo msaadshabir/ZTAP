@@ -17,7 +17,7 @@ func IsLinux() bool {
 func EnforceWithEBPF(policies []policy.NetworkPolicy) {
 	fmt.Printf("Applying %d eBPF-based policies on Linux\n", len(policies))
 	// In production: load eBPF programs, attach to cgroup/socket hooks
-	// For capstone: simulate with logs
+	// For demonstration: simulate with logs
 	for _, p := range policies {
 		fmt.Printf("  • Policy '%s': %s → %v\n",
 			p.Metadata.Name,

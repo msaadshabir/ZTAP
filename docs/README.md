@@ -1,6 +1,6 @@
 # ZTAP: Zero Trust Access Platform
 
-A capstone project implementing zero-trust microsegmentation across hybrid environments (on-prem + cloud) using policy-as-code and OS-native enforcement.
+An open-source platform implementing zero-trust microsegmentation across hybrid environments (on-prem + cloud) using policy-as-code and OS-native enforcement.
 
 ## Features
 
@@ -8,7 +8,7 @@ A capstone project implementing zero-trust microsegmentation across hybrid envir
 - eBPF enforcement on Linux (cloud-native)
 - pf (packet filter) fallback on macOS (local dev)
 - Hybrid-ready: Extendable to AWS/Azure
-- Academic rigor: Implements NIST SP 800-207
+- Standards-compliant: Implements NIST SP 800-207
 
 ## Quick Start (macOS)
 
