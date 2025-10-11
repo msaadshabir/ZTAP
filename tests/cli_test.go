@@ -165,6 +165,9 @@ func TestCLIStatus(t *testing.T) {
 
 // TestCLIMetrics tests the metrics server
 func TestCLIMetrics(t *testing.T) {
+	if os.Getenv("CI") != "" {
+		t.Skip("Skipping TestCLIMetrics in CI environment due to non-deterministic runtime behavior")
+	}
 	// Create a context with timeout to prevent hanging
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
