@@ -148,6 +148,7 @@ def predict():
     
     return jsonify({
         'is_anomaly': bool(is_anomaly),
+        'anomaly': bool(is_anomaly),
         'score': float(score),
         'confidence': float(abs(anomaly_score))
     })
@@ -187,6 +188,7 @@ def batch_predict():
         results.append({
             'index': i,
             'is_anomaly': bool(is_anomaly),
+            'anomaly': bool(is_anomaly),
             'score': float(normalized_score),
             'confidence': float(abs(score))
         })

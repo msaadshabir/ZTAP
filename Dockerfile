@@ -2,13 +2,20 @@
 FROM ubuntu:22.04 AS ebpf-builder
 
 # Install eBPF build dependencies
-RUN apt-get update && apt-get install -y \
-    clang \
-    llvm \
-    make \
-    linux-headers-generic \
-    libbpf-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y \
+        clang \
+        llvm \
+        make \
+        linux-headers-generic \
+        linux-libc-dev \
+        libbpf-dev && \
+    (apt-get install -y linux-headers-$(uname -r) || true) && \
+    if [ -d "/usr/src/linux-headers-$(uname -r)/arch/x86/include/generated/uapi/asm" ]; then \
+        mkdir -p /usr/src/linux-headers-$(uname -r)/include && \
+        ln -sf /usr/src/linux-headers-$(uname -r)/arch/x86/include/generated/uapi/asm /usr/src/linux-headers-$(uname -r)/include/asm; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy eBPF source
 WORKDIR /build
@@ -59,8 +66,9 @@ COPY --from=go-builder /app/ztap /usr/local/bin/ztap
 # Copy eBPF source for runtime compilation
 COPY bpf/ /etc/ztap/bpf/
 
-# Copy pre-compiled eBPF object files if they exist
-COPY --from=ebpf-builder /build/bpf/*.o /etc/ztap/bpf/ 2>/dev/null || true
+# Copy compiled artifacts (optional)
+COPY --from=ebpf-builder /build/bpf/ /opt/ebpf-build/
+RUN find /opt/ebpf-build -maxdepth 1 -name '*.o' -exec cp {} /etc/ztap/bpf/ \; && rm -rf /opt/ebpf-build
 
 # Copy example configs
 COPY examples/ /etc/ztap/examples/
