@@ -1,22 +1,31 @@
 # ZTAP Testing Guide
 
-This guide covers all testing aspects of ZTAP, including unit tests, integration tests, and platform-specific considerations.
-
-## Quick Start
-
-```bash
-# Run all tests
-go test ./...
+```
+Package            Tests  Pass  Coverage
+─────────────────────────────────────────
+pkg/auth             7     7    72.4%
+pkg/cloud            9     9    90.0%
+pkg/discovery       10    10    76.3%
+pkg/metrics          3     3    85.2%
+pkg/policy           3     3    73.6%
+tests/integration    6     6    N/A
+─────────────────────────────────────────
+Total               38    38
+```
 
 # Run with verbose output
+
 go test ./... -v
 
 # Run with coverage
+
 go test ./... -cover
 
 # Run with coverage HTML report
+
 go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out -o coverage.html
+
 ```
 
 ## Test Organization
@@ -24,24 +33,32 @@ go tool cover -html=coverage.out -o coverage.html
 ### Package Structure
 
 ```
+
 ZTAP/
 ├── pkg/
-│   ├── auth/
-│   │   ├── auth.go
-│   │   └── auth_test.go          # 7 tests, 72.4% coverage
-│   ├── discovery/
-│   │   ├── *.go
-│   │   └── discovery_test.go     # 10 tests, 76.3% coverage
-│   ├── policy/
-│   │   ├── *.go
-│   │   └── policy_test.go        # 3 tests, 73.6% coverage
-│   ├── enforcer/
-│   │   ├── ebpf_linux.go
-│   │   └── enforcer_test.go      # 6 tests (Linux-only)
-│   └── ...
+│ ├── auth/
+│ │ ├── auth.go
+│ │ └── auth_test.go # 7 tests, 72.4% coverage
+│ ├── discovery/
+│ │ ├── _.go
+│ │ └── discovery_test.go # 10 tests, 76.3% coverage
+│ ├── cloud/
+│ │ ├── aws.go
+│ │ └── aws_test.go # 9 tests, 90.0% coverage
+│ ├── policy/
+│ │ ├── _.go
+│ │ └── policy_test.go # 3 tests, 73.6% coverage
+│ ├── enforcer/
+│ │ ├── ebpf_linux.go
+│ │ └── enforcer_test.go # 6 tests (Linux-only)
+│ ├── metrics/
+│ │ ├── collector.go
+│ │ └── collector_test.go # 3 tests, 85.2% coverage
+│ └── ...
 └── tests/
-    └── integration_test.go        # 6 integration tests
-```
+└── integration_test.go # 6 integration tests
+
+````
 
 ## Unit Tests
 
@@ -51,7 +68,7 @@ ZTAP/
 
 ```bash
 go test ./pkg/auth -v
-```
+````
 
 **Tests**:
 
@@ -132,6 +149,34 @@ go test ./pkg/policy -v
 - Port range validation
 - Service resolution
 
+### Cloud Integration Tests (pkg/cloud)
+
+**Run**:
+
+```bash
+go test ./pkg/cloud -v
+```
+
+**Tests**:
+
+1. `TestMatchResourcesByLabels` - Tag-based label matching helper
+2. `TestDiscoverResources` - EC2 discovery happy path (running instances only)
+3. `TestDiscoverResourcesError` - Error propagation on describe failures
+4. `TestSyncPolicyWithIPBlock` - Security Group sync with multiple ports
+5. `TestSyncPolicyAuthorizeError` - Duplicate/failed authorization handling
+6. `TestAuthorizeEgressDuplicate` - Duplicate rule suppression
+7. `TestRevokeAllEgress` - Full egress revoke workflow
+8. `TestRevokeAllEgressNoRules` - No-op when nothing to revoke
+9. `TestRevokeAllEgressNotFound` - Missing Security Group handling
+
+**Coverage**: 90.0%
+
+**Key Scenarios**:
+
+- Mocked EC2 client ensures deterministic behavior
+- Table-driven validation of authorize/revoke requests
+- Instance filtering (skips terminated, captures labels)
+
 ### Enforcer Tests (pkg/enforcer) - Linux Only
 
 **Run** (on Linux):
@@ -152,6 +197,28 @@ GOOS=linux go test ./pkg/enforcer -v
 **Coverage**: N/A (Linux build tag)
 
 **Note**: These tests require Linux because they test eBPF-specific code. On macOS, they are skipped automatically.
+
+### Metrics Collector Tests (pkg/metrics)
+
+**Run**:
+
+```bash
+go test ./pkg/metrics -v
+```
+
+**Tests**:
+
+1. `TestGetCollectorSingleton` - Singleton guard via sync.Once reset
+2. `TestCollectorCounters` - Counter increments for enforced/allowed/blocked
+3. `TestCollectorGaugeAndHistogram` - Gauge updates and histogram samples
+
+**Coverage**: 85.2%
+
+**Key Scenarios**:
+
+- Global collector reset to avoid cross-test leakage
+- Counter totals verified with Prometheus testutil
+- Histogram inspected via protobuf DTO for sum/count accuracy
 
 ## Integration Tests
 
@@ -246,16 +313,20 @@ xdg-open coverage.html
 ```bash
 # Coverage by package
 go test ./pkg/auth -cover
+go test ./pkg/cloud -cover
 go test ./pkg/discovery -cover
+go test ./pkg/metrics -cover
 go test ./pkg/policy -cover
 ```
 
 **Current Coverage**:
 
 - `pkg/auth`: 72.4%
+- `pkg/cloud`: 90.0%
 - `pkg/discovery`: 76.3%
+- `pkg/metrics`: 85.2%
 - `pkg/policy`: 73.6%
-- **Average**: 74.1%
+- **Core Average**: 79.5%
 
 ### Detailed Coverage
 

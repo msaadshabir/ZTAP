@@ -14,10 +14,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
+// ec2API captures the EC2 operations used by ZTAP. Defining an interface allows
+// us to provide a lightweight mock implementation during testing while using the
+// real AWS SDK client in production.
+type ec2API interface {
+	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	AuthorizeSecurityGroupEgress(ctx context.Context, params *ec2.AuthorizeSecurityGroupEgressInput, optFns ...func(*ec2.Options)) (*ec2.AuthorizeSecurityGroupEgressOutput, error)
+	DescribeSecurityGroups(ctx context.Context, params *ec2.DescribeSecurityGroupsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error)
+	RevokeSecurityGroupEgress(ctx context.Context, params *ec2.RevokeSecurityGroupEgressInput, optFns ...func(*ec2.Options)) (*ec2.RevokeSecurityGroupEgressOutput, error)
+}
+
 // AWSClient manages AWS Security Group synchronization
 type AWSClient struct {
-	ec2Client *ec2.Client
-	region    string
+	ec2API ec2API
+	region string
 }
 
 // Resource represents a discovered cloud resource
@@ -38,15 +48,15 @@ func NewAWSClient(region string) (*AWSClient, error) {
 	}
 
 	return &AWSClient{
-		ec2Client: ec2.NewFromConfig(cfg),
-		region:    region,
+		ec2API: ec2.NewFromConfig(cfg),
+		region: region,
 	}, nil
 }
 
 // DiscoverResources finds all EC2 instances and their metadata
 func (c *AWSClient) DiscoverResources() ([]Resource, error) {
 	input := &ec2.DescribeInstancesInput{}
-	result, err := c.ec2Client.DescribeInstances(context.TODO(), input)
+	result, err := c.ec2API.DescribeInstances(context.TODO(), input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe instances: %w", err)
 	}
@@ -55,28 +65,23 @@ func (c *AWSClient) DiscoverResources() ([]Resource, error) {
 	for _, reservation := range result.Reservations {
 		for _, instance := range reservation.Instances {
 			// Skip terminated instances
-			if instance.State.Name == types.InstanceStateNameTerminated {
+			if instance.State != nil && instance.State.Name == types.InstanceStateNameTerminated {
 				continue
 			}
 
 			labels := make(map[string]string)
 			var name string
 			for _, tag := range instance.Tags {
-				if aws.ToString(tag.Key) == "Name" {
-					name = aws.ToString(tag.Value)
+				key := aws.ToString(tag.Key)
+				value := aws.ToString(tag.Value)
+				if key == "Name" {
+					name = value
 				}
-				labels[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+				labels[key] = value
 			}
 
-			privateIP := ""
-			if instance.PrivateIpAddress != nil {
-				privateIP = aws.ToString(instance.PrivateIpAddress)
-			}
-
-			publicIP := ""
-			if instance.PublicIpAddress != nil {
-				publicIP = aws.ToString(instance.PublicIpAddress)
-			}
+			privateIP := aws.ToString(instance.PrivateIpAddress)
+			publicIP := aws.ToString(instance.PublicIpAddress)
 
 			resources = append(resources, Resource{
 				ID:        aws.ToString(instance.InstanceId),
@@ -142,7 +147,7 @@ func (c *AWSClient) authorizeEgress(sgID, cidr, protocol string, port int) error
 		},
 	}
 
-	_, err := c.ec2Client.AuthorizeSecurityGroupEgress(context.TODO(), input)
+	_, err := c.ec2API.AuthorizeSecurityGroupEgress(context.TODO(), input)
 	if err != nil {
 		// Ignore "duplicate rule" errors
 		if strings.Contains(err.Error(), "already exists") {
@@ -162,7 +167,7 @@ func (c *AWSClient) RevokeAllEgress(sgID string) error {
 		GroupIds: []string{sgID},
 	}
 
-	result, err := c.ec2Client.DescribeSecurityGroups(context.TODO(), input)
+	result, err := c.ec2API.DescribeSecurityGroups(context.TODO(), input)
 	if err != nil {
 		return fmt.Errorf("failed to describe security group: %w", err)
 	}
@@ -181,7 +186,7 @@ func (c *AWSClient) RevokeAllEgress(sgID string) error {
 		IpPermissions: sg.IpPermissionsEgress,
 	}
 
-	_, err = c.ec2Client.RevokeSecurityGroupEgress(context.TODO(), revokeInput)
+	_, err = c.ec2API.RevokeSecurityGroupEgress(context.TODO(), revokeInput)
 	if err != nil {
 		return fmt.Errorf("failed to revoke egress rules: %w", err)
 	}

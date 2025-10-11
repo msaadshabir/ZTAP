@@ -22,7 +22,7 @@ An open-source platform implementing zero-trust microsegmentation across hybrid 
 
 ### Testing & Quality
 
-- **Comprehensive Test Suite**: 26 tests with 74% average coverage
+- **Comprehensive Test Suite**: 79% average coverage across core packages (cloud + metrics now covered)
 - **Integration Tests**: Full workflow testing
 - **Platform-Aware**: Separate tests for Linux eBPF and cross-platform code
 
@@ -340,7 +340,7 @@ The demo showcases:
 - [x] Grafana dashboard
 - [x] Human-readable logs
 - [x] Log filtering and following
-- [x] Comprehensive test suite (26 tests, 74% coverage)
+- [x] Comprehensive test suite (cloud + metrics coverage at 79%)
 - [x] Integration tests
 - [x] Platform-specific tests (Linux eBPF)
 
@@ -357,11 +357,13 @@ The demo showcases:
 Package                Coverage    Status
 ────────────────────────────────────────────────────
 pkg/auth               72.4%       [EXCELLENT]
+pkg/cloud              90.0%       [EXCELLENT]
 pkg/discovery          76.3%       [EXCELLENT]
+pkg/metrics            85.2%       [EXCELLENT]
 pkg/policy             73.6%       [EXCELLENT]
 pkg/enforcer           N/A*        [Linux-only]
 ────────────────────────────────────────────────────
-Core Packages Avg      74.1%       [PRODUCTION READY]
+Core Packages Avg      79.5%       [PRODUCTION READY]
 
 *Enforcer tests exist but require Linux kernel
 ```
@@ -381,16 +383,17 @@ See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
    - Verify policy map population and lookups
    - **Blocker**: Requires Linux environment with kernel 5.7+
 
-2. **Cloud Integration Tests**
+2. **Cloud Integration Tests** _(COMPLETED - Oct 2025)_
 
-   - Unit tests for AWS EC2 discovery
-   - Unit tests for Security Group sync
-   - Mock AWS API responses
+   - Added unit coverage for AWS EC2 discovery
+   - Verified Security Group sync against mocked APIs
+   - Mocked AWS API responses via lightweight interface
 
-3. **Metrics Package Tests**
-   - Unit tests for Prometheus exporter
-   - Test custom metrics registration
-   - Validate histogram behavior
+3. **Metrics Package Tests** _(COMPLETED - Oct 2025)_
+
+   - Added Prometheus exporter unit tests
+   - Validated custom metrics registration
+   - Confirmed histogram behavior with client models
 
 ### High Priority
 
@@ -450,7 +453,7 @@ See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
     - Distribution strategy (package repos, releases)
     - Kernel version detection and selection
 
-### Low Priority 
+### Low Priority
 
 13. **Additional Platform Support**
 
@@ -485,10 +488,10 @@ If you want to contribute, here are the best places to start:
 
 **Good First Issues**:
 
-- Add tests for cloud integration (pkg/cloud)
-- Add tests for metrics package (pkg/metrics)
 - Add Python tests for anomaly detection
-- Documentation improvements
+- Document label-to-IP resolution workflow for AWS inventory
+- Extend CLI docs with end-to-end usage examples
+- Create smoke tests for `ztap status` using local fixtures
 
 **High Impact**:
 

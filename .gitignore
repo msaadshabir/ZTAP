@@ -79,7 +79,6 @@ bpf/*.ll
 
 # Build artifacts
 bin/
-pkg/
 vendor/
 
 # Development and testing

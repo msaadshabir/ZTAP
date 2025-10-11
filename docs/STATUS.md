@@ -1,6 +1,6 @@
 # ZTAP Implementation Status
 
-**Last Updated**: January 2025  
+**Last Updated**: October 2025  
 **Project Phase**: Production-Ready Core Components
 
 ## Overview
@@ -13,27 +13,27 @@ ZTAP (Zero Trust Access Platform) has successfully implemented core zero-trust m
 Package                Coverage    Status
 ────────────────────────────────────────────────────
 pkg/auth               72.4%       [EXCELLENT]
+pkg/cloud              90.0%       [EXCELLENT]
 pkg/discovery          76.3%       [EXCELLENT]
+pkg/metrics            85.2%       [EXCELLENT]
 pkg/policy             73.6%       [EXCELLENT]
 pkg/enforcer           N/A*        [Linux-only]
-pkg/cloud              0.0%        [TODO]
-pkg/metrics            0.0%        [TODO]
 pkg/anomaly            0.0%        [TODO]
 cmd/                   0.0%        [TODO]
 ────────────────────────────────────────────────────
-Core Packages Avg      74.1%       [PRODUCTION READY]
+Core Packages Avg      79.5%       [PRODUCTION READY]
 ```
 
 _\*Enforcer tests exist but require Linux for eBPF_
 
 ### Test Statistics
 
-- **Total Tests**: 26 passing
-- **Test Execution Time**: < 2 seconds
-- **Test Categories**:
-  - Unit Tests: 19 tests (auth, discovery, policy)
-  - Integration Tests: 6 tests
-  - Helper Function Tests: 6 tests (enforcer, Linux-only)
+- **Total Tests**: 38 Go tests (32 unit, 6 integration)
+- **Linux-only Tests**: 6 helper functions for eBPF enforcement
+- **Execution Time**: < 3 seconds on macOS (cloud + metrics mocks)
+- **Coverage Drivers**:
+  - AWS cloud client mock suite
+  - Prometheus metrics collector tests
 
 ## Component Implementation Status
 
@@ -146,27 +146,33 @@ _\*Enforcer tests exist but require Linux for eBPF_
 
 #### 7. Cloud Integration (pkg/cloud)
 
-- **Status**: 70% Complete
-- **Coverage**: 0% (no tests)
+- **Status**: 90% Complete
+- **Coverage**: 90.0% (unit tests via mocks)
 - **Features**:
-  - AWS EC2 discovery
-  - AWS Security Group sync
-  - Tag-based label matching
-- **TODO**: Unit tests for AWS integration
+  - AWS EC2 discovery with instance filtering
+  - AWS Security Group sync (authorize + revoke)
+  - Tag-based label matching utility
+- **Recent Updates**:
+  - Mocked EC2 interface for deterministic unit tests
+  - Table-driven coverage for discovery and policy sync paths
 - **Files**:
   - `aws.go` - AWS integration
+  - `aws_test.go` - Mock-backed unit tests
 
 #### 8. Observability (pkg/metrics)
 
-- **Status**: 80% Complete
-- **Coverage**: 0% (no tests)
+- **Status**: 90% Complete
+- **Coverage**: 85.2%
 - **Features**:
   - Prometheus metrics exporter
-  - Custom metrics (policies, flows, anomalies)
-  - Histogram for policy load times
-- **TODO**: Unit tests for metrics
+  - Custom counters for policies, allowed, blocked flows
+  - Histogram for policy load times and anomaly gauge
+- **Recent Updates**:
+  - Singleton reset helper for deterministic tests
+  - Gauge, counter, and histogram validation via client model
 - **Files**:
-  - `metrics.go` - Prometheus integration
+  - `collector.go` - Prometheus integration
+  - `collector_test.go` - Metrics unit tests
 
 #### 9. Anomaly Detection (pkg/anomaly)
 
@@ -274,11 +280,13 @@ go test ./tests -v
 ### Test Results (Latest Run)
 
 ```
-[PASS] pkg/auth:       PASS (0.339s) - 7 tests
+[PASS] pkg/auth:       PASS (cached) - 7 tests
+[PASS] pkg/cloud:      PASS (0.27s) - 9 tests
 [PASS] pkg/discovery:  PASS (cached) - 10 tests
+[PASS] pkg/metrics:    PASS (0.23s) - 3 tests
 [PASS] pkg/policy:     PASS (cached) - 3 tests
 [PASS] tests:          PASS (cached) - 6 tests
-[PASS] TOTAL:          26 tests passing
+[PASS] TOTAL:          38 tests passing (excluding Linux-only helpers)
 ```
 
 ## Production Readiness Checklist
@@ -344,11 +352,10 @@ go test ./tests -v
    - Cannot run on macOS during development
    - Solution: CI/CD with Linux runners
 
-3. **Cloud Integration Tests**
+3. **Cloud Integration Validation**
 
-   - No unit tests yet
-   - Requires AWS credentials
-   - Solution: Mock AWS API responses
+- Unit tests now cover discovery and sync logic
+- Still pending live validation against AWS account
 
 4. **Distributed Architecture**
 

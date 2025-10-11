@@ -38,6 +38,28 @@ ZTAP includes comprehensive test coverage across all critical components with un
 
 **Run**: `go test ./pkg/discovery/... -v`
 
+#### Cloud Package (`pkg/cloud/aws_test.go`)
+
+- **TestMatchResourcesByLabels**: Ensures label selectors align with AWS tags
+- **TestDiscoverResources**: Discovers running EC2 instances and captures metadata
+- **TestDiscoverResourcesError**: Propagates DescribeInstances failures
+- **TestSyncPolicyWithIPBlock**: Syncs multi-port Security Group egress rules
+- **TestSyncPolicyAuthorizeError**: Handles authorization API failures
+- **TestAuthorizeEgressDuplicate**: Suppresses duplicate rule errors
+- **TestRevokeAllEgress**: Revokes existing egress rules for cleanup
+- **TestRevokeAllEgressNoRules**: No-op when no rules exist
+- **TestRevokeAllEgressNotFound**: Detects missing Security Groups
+
+**Run**: `go test ./pkg/cloud/... -v`
+
+#### Metrics Package (`pkg/metrics/collector_test.go`)
+
+- **TestGetCollectorSingleton**: Verifies singleton initialization semantics
+- **TestCollectorCounters**: Confirms counter increments for policies and flows
+- **TestCollectorGaugeAndHistogram**: Validates gauge state and histogram buckets
+
+**Run**: `go test ./pkg/metrics/... -v`
+
 ### Integration Tests (`tests/integration_test.go`)
 
 #### Policy-Discovery Integration
@@ -73,7 +95,9 @@ go test ./... -v
 
 ```bash
 go test ./pkg/policy/... -v
+go test ./pkg/cloud/... -v
 go test ./pkg/discovery/... -v
+go test ./pkg/metrics/... -v
 go test ./tests/... -v
 ```
 
@@ -96,11 +120,14 @@ go test ./... -race
 ```
 Package            Tests  Pass  Coverage
 ─────────────────────────────────────────
-pkg/policy            3     3    ~75%
-pkg/discovery         10    10   ~85%
-tests/integration     6     6    N/A
+pkg/auth             7     7    72.4%
+pkg/cloud            9     9    90.0%
+pkg/discovery       10    10    76.3%
+pkg/metrics          3     3    85.2%
+pkg/policy           3     3    73.6%
+tests/integration    6     6    N/A
 ─────────────────────────────────────────
-Total                 19    19
+Total               38    38
 ```
 
 ## Test Data
@@ -166,16 +193,14 @@ jobs:
 
 ### Unit Tests (TODO)
 
-- [ ] `pkg/auth/auth_test.go` - Authentication and RBAC
-- [ ] `pkg/enforcer/enforcer_test.go` - Policy enforcement logic
-- [ ] `pkg/cloud/aws_test.go` - AWS integration (with mocks)
-- [ ] `pkg/metrics/collector_test.go` - Prometheus metrics
-- [ ] `pkg/anomaly/detector_test.go` - Anomaly detection
+- [ ] `pkg/anomaly/detector_test.go` - Anomaly detection microservice
+- [ ] `pkg/cmd/...` - CLI command flows (enforce, status, logs)
+- [ ] Expand `pkg/enforcer` coverage on Linux runners
 
 ### Integration Tests (TODO)
 
 - [ ] End-to-end policy enforcement with eBPF
-- [ ] AWS Security Group synchronization
+- [ ] AWS Security Group synchronization against live AWS account
 - [ ] Anomaly detection with real traffic
 - [ ] Multi-node distributed testing
 
