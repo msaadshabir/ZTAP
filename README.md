@@ -397,29 +397,33 @@ See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
 
 ### High Priority
 
-4. **CI/CD Pipeline** _(IN PROGRESS - CI workflow added Oct 2025)_
+4. **CI/CD Pipeline** _(COMPLETED - Oct 2025)_
 
-- Added GitHub Actions workflow to run Go tests and publish coverage
-- Multi-OS testing (Linux + macOS)
-- eBPF compilation in Linux container
-- Automated coverage reporting
+   - Added GitHub Actions workflow with multi-OS testing (Ubuntu + macOS)
+   - Separate jobs for Go tests, Python tests, and Docker builds
+   - Automated coverage reporting and PR comments
+   - Docker build caching for faster builds
 
-5. **Containerization**
+5. **Containerization** _(COMPLETED - Oct 2025)_
 
-   - Dockerfile for ZTAP daemon
-   - Docker Compose for full stack (ZTAP + Prometheus + Grafana)
-   - Pre-compiled eBPF binaries for common kernels
+   - Multi-stage Dockerfile with eBPF compilation support
+   - Docker Compose stack (ZTAP + Prometheus + Grafana + Anomaly Detector)
+   - Pre-configured with health checks and volume persistence
+   - Comprehensive Docker deployment guide (DOCKER.md)
 
-6. **CLI Integration Tests**
+6. **CLI Integration Tests** _(COMPLETED - Oct 2025)_
 
-   - End-to-end CLI workflow tests
-   - Test authentication flows
-   - Test policy enforcement commands
+   - End-to-end tests for all CLI commands
+   - Authentication flow testing (create, login, list users)
+   - Policy validation and enforcement testing
+   - Service discovery command testing
 
-7. **Anomaly Detection Tests**
-   - Python unit tests for ML service
-   - Integration tests for Go client
-   - Test Isolation Forest algorithm
+7. **Anomaly Detection Tests** _(COMPLETED - Oct 2025)_
+
+   - Python unit tests for ML service (pytest)
+   - Feature extraction validation
+   - Train/predict workflow testing
+   - Batch prediction and error handling tests
 
 ### Medium Priority
 

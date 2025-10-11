@@ -330,14 +330,14 @@ go test ./tests -v
 - [x] Default secure passwords
 - [x] eBPF verifier safety
 
-### Operations [PARTIAL]
+### Operations [COMPLETE]
 
 - [x] Build system (Go)
 - [x] eBPF compilation (Makefile)
-- [x] GitHub Actions CI (Go tests + coverage artifact)
-- [ ] Containerization (Docker)
-- [ ] Deployment automation
-- [ ] Health checks
+- [x] GitHub Actions CI (multi-OS, Go + Python tests, Docker builds)
+- [x] Containerization (Dockerfile + Docker Compose)
+- [x] CLI integration tests (authentication, discovery, enforcement)
+- [x] Python anomaly detection tests (pytest suite)
 
 ## Known Limitations
 
