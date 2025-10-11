@@ -334,6 +334,7 @@ go test ./tests -v
 
 - [x] Build system (Go)
 - [x] eBPF compilation (Makefile)
+- [x] GitHub Actions CI (Go tests + coverage artifact)
 - [ ] Containerization (Docker)
 - [ ] Deployment automation
 - [ ] Health checks

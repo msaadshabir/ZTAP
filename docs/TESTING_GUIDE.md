@@ -38,15 +38,15 @@ ZTAP/
 ├── pkg/
 │ ├── auth/
 │ │ ├── auth.go
-│ │ └── auth_test.go # 7 tests, 72.4% coverage
+│ │ └── auth*test.go # 7 tests, 72.4% coverage
 │ ├── discovery/
-│ │ ├── _.go
-│ │ └── discovery_test.go # 10 tests, 76.3% coverage
+│ │ ├── *.go
+│ │ └── discovery*test.go # 10 tests, 76.3% coverage
 │ ├── cloud/
 │ │ ├── aws.go
 │ │ └── aws_test.go # 9 tests, 90.0% coverage
 │ ├── policy/
-│ │ ├── _.go
+│ │ ├── *.go
 │ │ └── policy_test.go # 3 tests, 73.6% coverage
 │ ├── enforcer/
 │ │ ├── ebpf_linux.go
@@ -387,6 +387,8 @@ spec:
 ```
 
 ## Continuous Integration
+
+The repository includes a baseline workflow at `.github/workflows/ci.yml` that runs Go unit tests with coverage on each push and pull request.
 
 ### GitHub Actions Example
 

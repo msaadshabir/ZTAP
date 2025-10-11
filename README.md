@@ -397,12 +397,12 @@ See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
 
 ### High Priority
 
-4. **CI/CD Pipeline**
+4. **CI/CD Pipeline** _(IN PROGRESS - CI workflow added Oct 2025)_
 
-   - GitHub Actions workflow for tests
-   - Multi-OS testing (Linux + macOS)
-   - eBPF compilation in Linux container
-   - Automated coverage reporting
+- Added GitHub Actions workflow to run Go tests and publish coverage
+- Multi-OS testing (Linux + macOS)
+- eBPF compilation in Linux container
+- Automated coverage reporting
 
 5. **Containerization**
 

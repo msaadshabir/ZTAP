@@ -164,6 +164,8 @@ services := []Service{
 
 ## Continuous Integration
 
+The repository ships with `.github/workflows/ci.yml`, which runs Go tests and uploads coverage on push and pull request events.
+
 ### GitHub Actions (Recommended)
 
 ```yaml
