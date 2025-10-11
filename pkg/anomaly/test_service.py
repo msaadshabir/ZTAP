@@ -4,7 +4,8 @@ import sys
 from datetime import datetime
 sys.path.insert(0, '.')
 
-from service import app, extract_features, model, training_data
+import service
+from service import app, extract_features
 
 
 class TestAnomalyDetectionService(unittest.TestCase):
@@ -16,10 +17,9 @@ class TestAnomalyDetectionService(unittest.TestCase):
         self.client = self.app.test_client()
         self.app.testing = True
         
-        # Reset global state
-        global model, training_data
-        model = None
-        training_data = []
+        # Reset global state in the service module
+        service.model = None
+        service.training_data = []
     
     def test_health_endpoint(self):
         """Test health check endpoint"""
