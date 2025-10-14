@@ -1,4 +1,13 @@
-# ZTAP Configuration File
+# ZTAP Configuration File (TEMPLATE)
+# 
+# NOTE: This file is currently NOT loaded by the application.
+# It serves as an example of future configuration options.
+# All settings are currently hardcoded or controlled via CLI flags.
+#
+# To use this template:
+#   1. Copy to config.yaml: cp config.yaml.example config.yaml
+#   2. Customize values as needed
+#   3. Wait for configuration loading to be implemented (see cmd/discovery.go:138)
 
 # Logging settings
 logging:

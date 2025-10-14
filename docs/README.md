@@ -1,17 +1,20 @@
-# ZTAP: Zero Trust Access Platform
+# ZTAP Documentation
 
-An open-source platform implementing zero-trust microsegmentation across hybrid environments (on-prem + cloud) using policy-as-code and OS-native enforcement.
+This directory contains comprehensive technical documentation for ZTAP.
 
-## Features
+## Quick Links
 
-- Unified policy language (YAML, Kubernetes-style)
-- eBPF enforcement on Linux (cloud-native)
-- pf (packet filter) fallback on macOS (local dev)
-- Hybrid-ready: Extendable to AWS/Azure
-- Standards-compliant: Implements NIST SP 800-207
+- **[Testing Guide](TESTING_GUIDE.md)** - Complete test suite documentation with coverage stats
+- **[eBPF Setup](EBPF.md)** - Linux eBPF enforcement configuration
+- **[Architecture](architecture.md)** - System design and component overview
+- **[Setup Guide](setup.md)** - Installation and configuration
 
-## Quick Start (macOS)
+## Main Documentation
 
-```bash
-go run . enforce -f examples/web-to-db.yaml
-```
+See the [main README](../README.md) for project overview, features, and quick start.
+
+## Additional Resources
+
+- [Docker Deployment](../DOCKER.md) - Containerized deployment guide
+- [Examples](../examples/) - Sample policies and use cases
+- [Anomaly Detection](../pkg/anomaly/README.md) - ML service API documentation

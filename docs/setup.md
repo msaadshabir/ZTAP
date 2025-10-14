@@ -4,16 +4,16 @@
 
 ### System Requirements
 
-- **Operating System**: macOS 12+ or Linux (kernel ≥4.18)
-- **Go**: 1.22 or later
+- **Operating System**: macOS 12+ or Linux (kernel ≥5.7 for eBPF)
+- **Go**: 1.25.2 or later
 - **Memory**: 2 GB RAM minimum
-- **Disk**: 100 MB for binary and policies
+- **Disk**: 200 MB for binary, policies, and logs
 
 ### Optional Components
 
-- **AWS Account**: For cloud integration (Phase 2)
-- **Docker**: For Prometheus/Grafana (Phase 4)
-- **Python 3.8+**: For anomaly detection service (Phase 3)
+- **AWS Account**: For cloud integration and Security Group sync
+- **Docker**: For full stack deployment (Prometheus + Grafana + Anomaly Detector)
+- **Python 3.11+**: For anomaly detection service development
 
 ## Installation
 
@@ -34,18 +34,24 @@ go build -o ztap
 sudo mv ztap /usr/local/bin/
 ```
 
-### Method 2: Download Pre-built Binary
+### Method 2: Using Docker (Recommended for Production)
 
 ```bash
-# Download latest release (example)
-curl -LO https://github.com/saad-build/ZTAP/releases/latest/download/ztap-darwin-arm64
+# Clone repository
+git clone https://github.com/saad-build/ZTAP.git
+cd ZTAP
 
-# Make executable
-chmod +x ztap-darwin-arm64
+# Start full stack with Docker Compose
+docker-compose up -d
 
-# Rename and install
-sudo mv ztap-darwin-arm64 /usr/local/bin/ztap
+# Access services:
+# - ZTAP metrics: http://localhost:9090/metrics
+# - Prometheus: http://localhost:9091
+# - Grafana: http://localhost:3000 (admin/ztap)
+# - Anomaly Detector: http://localhost:5000
 ```
+
+See [DOCKER.md](../DOCKER.md) for detailed Docker deployment.
 
 ## Configuration
 
@@ -75,18 +81,23 @@ sudo pfctl -e
 
 ### 3. Linux-Specific Setup
 
-ZTAP uses eBPF on Linux (currently simulated):
+ZTAP uses eBPF on Linux for kernel-level enforcement:
 
 ```bash
-# Check kernel version (must be ≥4.18)
+# Check kernel version (must be ≥5.7 for cgroup v2)
 uname -r
 
 # Verify eBPF support
 ls /sys/fs/bpf/
 
-# Install dependencies (if needed)
-sudo apt-get install linux-headers-$(uname -r)
+# Install eBPF build dependencies
+sudo apt-get install clang llvm make linux-headers-$(uname -r)
+
+# Compile eBPF programs
+cd bpf && make
 ```
+
+See [eBPF Setup Guide](EBPF.md) for detailed Linux configuration.
 
 ### 4. AWS Integration (Optional)
 

@@ -221,9 +221,11 @@ See [examples/](examples/) for more policies.
 ### Grafana Dashboard
 
 ```bash
-cd deployments
+# Start full stack (includes pre-configured Grafana)
 docker-compose up -d
+
 # Access at http://localhost:3000 (admin/ztap)
+# Dashboard is auto-provisioned from deployments/grafana-dashboard.json
 ```
 
 ## Commands
