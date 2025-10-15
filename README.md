@@ -381,7 +381,7 @@ See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
 
 ### Critical Priority
 
-1. **eBPF Verification on Linux** _(COMPLETED - Nov 2025)_
+1. **eBPF Verification on Linux** _(COMPLETED - Oct 2025)_
 
 - Added Linux-only integration test covering eBPF load, cgroup attachment, and policy map verification
 - Automated GitHub Actions job builds BPF objects and runs the integration test with root privileges
