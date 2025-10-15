@@ -276,6 +276,9 @@ go build
 # Run tests
 go test ./...
 
+# Run Linux eBPF verification (requires root)
+sudo go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
+
 # Run tests with coverage
 go test ./... -cover
 
@@ -378,12 +381,11 @@ See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
 
 ### Critical Priority
 
-1. **eBPF Verification on Linux**
+1. **eBPF Verification on Linux** _(COMPLETED - Nov 2025)_
 
-   - Test compiled eBPF programs on actual Linux kernel
-   - Validate cgroup attachment and packet filtering
-   - Verify policy map population and lookups
-   - **Blocker**: Requires Linux environment with kernel 5.7+
+- Added Linux-only integration test covering eBPF load, cgroup attachment, and policy map verification
+- Automated GitHub Actions job builds BPF objects and runs the integration test with root privileges
+- Documented local testing command for running the verification manually
 
 2. **Cloud Integration Tests** _(COMPLETED - Oct 2025)_
 

@@ -119,6 +119,46 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  ebpf-verification:
+    name: eBPF Verification (Linux)
+    runs-on: ubuntu-latest
+    needs: test-go
+    env:
+      GOFLAGS: -buildvcs=false
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.2"
+
+      - name: Install eBPF build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm make linux-headers-$(uname -r)
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ebpf-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ebpf-${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Compile eBPF program
+        run: make -C bpf
+
+      - name: Run eBPF integration test
+        run: sudo --preserve-env=PATH,HOME,GOFLAGS,GOMODCACHE,GOCACHE go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
+
   coverage-report:
     name: Generate Coverage Report
     needs: [test-go, test-python]

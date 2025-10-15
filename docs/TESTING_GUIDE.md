@@ -183,6 +183,9 @@ go test ./pkg/cloud -v
 
 ```bash
 GOOS=linux go test ./pkg/enforcer -v
+
+# Run deep eBPF verification (root required)
+sudo GOOS=linux go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
 ```
 
 **Tests**:
@@ -193,10 +196,13 @@ GOOS=linux go test ./pkg/enforcer -v
 4. `TestPolicyKey` - BPF map key structure
 5. `TestPolicyValue` - BPF map value structure
 6. `TestCreatePolicyFromYAML` - Policy parsing
+7. `TestEBPFIntegrationLoadAndAttach` _(integration tag)_ - Compiles BPF program, attaches it to a temporary cgroup, and validates policy map entries end-to-end
 
 **Coverage**: N/A (Linux build tag)
 
 **Note**: These tests require Linux because they test eBPF-specific code. On macOS, they are skipped automatically.
+
+**Integration Tag**: The integration test is guarded by the `integration` build tag and requires root privileges plus kernel headers that match the running kernel. The GitHub Actions workflow `eBPF Verification (Linux)` executes this test automatically on Ubuntu runners.
 
 ### Metrics Collector Tests (pkg/metrics)
 

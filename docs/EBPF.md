@@ -329,7 +329,14 @@ sudo cat /sys/kernel/debug/tracing/trace_pipe
 ```bash
 # Run enforcer tests (requires Linux)
 GOOS=linux go test ./pkg/enforcer -v
+
+# Run full eBPF verification (requires root + build tags)
+sudo GOOS=linux go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
 ```
+
+The integration test recompiles `bpf/filter.o`, attaches the compiled program to a temporary
+cgroup, and asserts that policy entries populate the eBPF map correctly. Ensure the kernel headers
+match the running kernel before executing it.
 
 ## Platform Support
 
