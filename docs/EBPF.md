@@ -44,6 +44,23 @@ cd bpf
 make
 ```
 
+After a successful build, the object file will be at `bpf/filter.o`.
+
+The enforcer loader searches for the eBPF object in the following locations (in order):
+
+- `<repo-root>/bpf/filter.o` (preferred when running from anywhere)
+- `bpf/filter.o` (when your CWD is the repo root)
+- `../../bpf/filter.o` (when your CWD is `pkg/enforcer`)
+- `/usr/local/share/ztap/bpf/filter.o` (system-wide install used by CI)
+- `$HOME/.ztap/bpf/filter.o` (user install)
+
+In CI, we additionally install the object to a standard path for reliability:
+
+```bash
+sudo mkdir -p /usr/local/share/ztap/bpf
+sudo cp -v bpf/filter.o /usr/local/share/ztap/bpf/filter.o
+```
+
 This compiles `filter.c` to `filter.o` (eBPF bytecode).
 
 ### Verify Compilation

@@ -154,7 +154,10 @@ jobs:
         run: go mod download
 
       - name: Compile eBPF program
-        run: make -C bpf
+        run: |
+          make -C bpf
+          sudo mkdir -p /usr/local/share/ztap/bpf
+          sudo cp -v bpf/filter.o /usr/local/share/ztap/bpf/filter.o
 
       - name: Run eBPF integration test
         run: sudo --preserve-env=PATH,HOME,GOFLAGS,GOMODCACHE,GOCACHE go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v

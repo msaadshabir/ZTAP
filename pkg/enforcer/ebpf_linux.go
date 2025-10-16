@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"ztap/pkg/policy"
@@ -63,10 +64,22 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 
 	// Try to load eBPF object file
 	// First check if compiled BPF program exists
+	// Determine repo root based on this source file location to handle tests run from package dirs
+	var repoRootCandidate string
+	if _, thisFile, _, ok := runtime.Caller(0); ok {
+		repoRootCandidate = filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	}
+
 	bpfPaths := []string{
+		// Absolute path from repo root if detectable
+		filepath.Join(repoRootCandidate, "bpf", "filter.o"),
+		// Relative to current working directory (when CWD is repo root)
 		"bpf/filter.o",
+		// Relative to package directory (when CWD is pkg/enforcer)
+		filepath.Join("..", "..", "bpf", "filter.o"),
+		// System-wide locations
 		"/usr/local/share/ztap/bpf/filter.o",
-		filepath.Join(os.Getenv("HOME"), ".ztap/bpf/filter.o"),
+		filepath.Join(os.Getenv("HOME"), ".ztap", "bpf", "filter.o"),
 	}
 
 	var spec *ebpf.CollectionSpec
