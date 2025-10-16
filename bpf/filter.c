@@ -1,15 +1,60 @@
 // SPDX-License-Identifier: GPL-2.0
 // eBPF program for network policy enforcement
+// Minimal includes to avoid x86 inline asm compilation errors
 
 #include <linux/bpf.h>
-#include <linux/pkt_cls.h>
-#include <linux/if_ether.h>
-#include <linux/ip.h>
-#include <linux/tcp.h>
-#include <linux/udp.h>
-#include <linux/in.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
+
+// BPF-safe definitions (avoiding kernel headers with x86 inline asm)
+#define ETH_P_IP 0x0800
+#define IPPROTO_TCP 6
+#define IPPROTO_UDP 17
+
+// Ethernet header
+struct ethhdr
+{
+    unsigned char h_dest[6];
+    unsigned char h_source[6];
+    unsigned short h_proto;
+};
+
+// IP header (simplified for BPF)
+struct iphdr
+{
+    unsigned char version_ihl;
+    unsigned char tos;
+    unsigned short tot_len;
+    unsigned short id;
+    unsigned short frag_off;
+    unsigned char ttl;
+    unsigned char protocol;
+    unsigned short check;
+    unsigned int saddr;
+    unsigned int daddr;
+};
+
+// TCP header (simplified)
+struct tcphdr
+{
+    unsigned short source;
+    unsigned short dest;
+    unsigned int seq;
+    unsigned int ack_seq;
+    unsigned short doff_flags;
+    unsigned short window;
+    unsigned short check;
+    unsigned short urg_ptr;
+};
+
+// UDP header
+struct udphdr
+{
+    unsigned short source;
+    unsigned short dest;
+    unsigned short len;
+    unsigned short check;
+};
 
 // Policy key structure (must match Go struct)
 struct policy_key

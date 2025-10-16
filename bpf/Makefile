@@ -8,22 +8,16 @@ BPFTOOL ?= bpftool
 KERNEL_HEADERS ?= /usr/src/linux-headers-$(shell uname -r)
 LIBBPF_HEADERS ?= /usr/include
 
-# Flags
+# Flags for BPF target (avoid x86 inline asm from kernel headers)
 CLANG_FLAGS = -O2 -target bpf -c \
 	-D__KERNEL__ -D__BPF_TRACING__ \
-	-D__TARGET_ARCH_x86 \
+	-Wno-unknown-attributes \
 	-Wno-unused-value -Wno-pointer-sign \
 	-Wno-compare-distinct-pointer-types \
-	-I$(KERNEL_HEADERS)/include \
+	-Wno-address-of-packed-member \
 	-I$(KERNEL_HEADERS)/include/uapi \
 	-I$(KERNEL_HEADERS)/include/generated/uapi \
-	-I$(KERNEL_HEADERS)/include/generated \
-	-I$(KERNEL_HEADERS)/arch/x86/include \
-	-I$(KERNEL_HEADERS)/arch/x86/include/uapi \
-	-I$(KERNEL_HEADERS)/arch/x86/include/generated \
-	-I$(KERNEL_HEADERS)/arch/x86/include/generated/uapi \
-	-I$(LIBBPF_HEADERS) \
-	-include $(KERNEL_HEADERS)/include/generated/autoconf.h
+	-I$(LIBBPF_HEADERS)
 
 all: filter.o
 
