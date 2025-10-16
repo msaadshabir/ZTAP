@@ -19,6 +19,7 @@ typedef unsigned long long __u64;
 // BPF helper function declarations
 static void *(*bpf_map_lookup_elem)(void *map, void *key) = (void *)1;
 static long (*bpf_map_update_elem)(void *map, void *key, void *value, unsigned long flags) = (void *)2;
+static long (*bpf_skb_load_bytes)(const void *skb, __u32 offset, void *to, __u32 len) = (void *)26;
 static unsigned short (*bpf_htons)(unsigned short value) = (void *)9;
 static unsigned short (*bpf_ntohs)(unsigned short value) = (void *)10;
 
@@ -113,38 +114,43 @@ struct
 static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *dest_ip,
                                       __u8 *protocol, __u16 *dest_port)
 {
-    void *data = (void *)(long)skb->data;
-    void *data_end = (void *)(long)skb->data_end;
+    struct ethhdr eth;
+    struct iphdr ip;
 
-    struct ethhdr *eth = data;
-    if ((void *)(eth + 1) > data_end)
+    // Load ethernet header
+    if (bpf_skb_load_bytes(skb, 0, &eth, sizeof(eth)) < 0)
         return -1;
 
     // Check if IPv4
-    if (eth->h_proto != bpf_htons(ETH_P_IP))
+    if (eth.h_proto != bpf_htons(ETH_P_IP))
         return -1;
 
-    struct iphdr *ip = (void *)(eth + 1);
-    if ((void *)(ip + 1) > data_end)
+    // Load IP header
+    if (bpf_skb_load_bytes(skb, sizeof(eth), &ip, sizeof(ip)) < 0)
         return -1;
 
-    *dest_ip = ip->daddr;
-    *protocol = ip->protocol;
+    *dest_ip = ip.daddr;
+    *protocol = ip.protocol;
+
+    // Calculate IP header length (IHL is in 32-bit words)
+    __u8 ihl = (ip.version_ihl & 0x0F) * 4;
+    if (ihl < sizeof(struct iphdr))
+        ihl = sizeof(struct iphdr);
 
     // Parse port based on protocol
-    if (ip->protocol == IPPROTO_TCP)
+    if (ip.protocol == IPPROTO_TCP)
     {
-        struct tcphdr *tcp = (void *)(ip + 1);
-        if ((void *)(tcp + 1) > data_end)
+        struct tcphdr tcp;
+        if (bpf_skb_load_bytes(skb, sizeof(eth) + ihl, &tcp, sizeof(tcp)) < 0)
             return -1;
-        *dest_port = bpf_ntohs(tcp->dest);
+        *dest_port = bpf_ntohs(tcp.dest);
     }
-    else if (ip->protocol == IPPROTO_UDP)
+    else if (ip.protocol == IPPROTO_UDP)
     {
-        struct udphdr *udp = (void *)(ip + 1);
-        if ((void *)(udp + 1) > data_end)
+        struct udphdr udp;
+        if (bpf_skb_load_bytes(skb, sizeof(eth) + ihl, &udp, sizeof(udp)) < 0)
             return -1;
-        *dest_port = bpf_ntohs(udp->dest);
+        *dest_port = bpf_ntohs(udp.dest);
     }
     else
     {
