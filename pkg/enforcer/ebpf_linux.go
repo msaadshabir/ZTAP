@@ -70,7 +70,14 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 		repoRootCandidate = filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
 	}
 
+	// Allow explicit override via environment variable
+	if p := os.Getenv("ZTAP_BPF_OBJECT"); p != "" {
+		log.Printf("ZTAP_BPF_OBJECT override set: %s", p)
+	}
+
 	bpfPaths := []string{
+		// Explicit override (if set)
+		os.Getenv("ZTAP_BPF_OBJECT"),
 		// Absolute path from repo root if detectable
 		filepath.Join(repoRootCandidate, "bpf", "filter.o"),
 		// Relative to current working directory (when CWD is repo root)
@@ -84,18 +91,32 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 
 	var spec *ebpf.CollectionSpec
 	var err error
+	var attempts []string
 
 	for _, path := range bpfPaths {
+		if path == "" {
+			continue
+		}
+		// Log attempt in debug mode
+		if os.Getenv("ZTAP_DEBUG_EBPF") == "1" {
+			log.Printf("Attempting to load eBPF object: %s", path)
+		}
+		if _, statErr := os.Stat(path); statErr != nil {
+			attempts = append(attempts, fmt.Sprintf("%s: %v", path, statErr))
+			continue
+		}
 		spec, err = ebpf.LoadCollectionSpec(path)
 		if err == nil {
 			log.Printf("Loaded eBPF spec from: %s", path)
 			break
 		}
+		attempts = append(attempts, fmt.Sprintf("%s: %v", path, err))
 	}
 
 	if spec == nil {
-		// Fallback: create inline spec (simplified version without actual BPF code)
-		return fmt.Errorf("eBPF object file not found. Please compile with: cd bpf && make")
+		// Provide detailed diagnostic information
+		return fmt.Errorf("failed to load eBPF object. Please compile with: 'cd bpf && make'. Attempts: [%s]",
+			strings.Join(attempts, "; "))
 	}
 
 	objs := &bpfObjects{}

@@ -102,6 +102,7 @@ struct bpf_map_def
     unsigned int key_size;
     unsigned int value_size;
     unsigned int max_entries;
+    unsigned int map_flags; // legacy field expected by many loaders
 };
 
 __attribute__((section(".maps"))) struct bpf_map_def policy_map = {
@@ -109,6 +110,7 @@ __attribute__((section(".maps"))) struct bpf_map_def policy_map = {
     .key_size = sizeof(struct policy_key),
     .value_size = sizeof(struct policy_value),
     .max_entries = 10000,
+    .map_flags = 0,
 };
 
 // Handle to policy_map for bpf_map_lookup_elem

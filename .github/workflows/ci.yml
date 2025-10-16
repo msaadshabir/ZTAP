@@ -159,8 +159,19 @@ jobs:
           sudo mkdir -p /usr/local/share/ztap/bpf
           sudo cp -v bpf/filter.o /usr/local/share/ztap/bpf/filter.o
 
+      - name: Inspect eBPF object (ELF)
+        run: |
+          which llvm-objdump || true
+          which llvm-readelf || true
+          echo "ls -l built object and system path" && ls -l bpf/filter.o /usr/local/share/ztap/bpf/filter.o
+          echo "readelf -S" && (llvm-readelf -S bpf/filter.o || readelf -S bpf/filter.o)
+          echo "objdump -h" && (llvm-objdump -h bpf/filter.o || objdump -h bpf/filter.o)
+
       - name: Run eBPF integration test
-        run: sudo --preserve-env=PATH,HOME,GOFLAGS,GOMODCACHE,GOCACHE go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
+        env:
+          ZTAP_BPF_OBJECT: /usr/local/share/ztap/bpf/filter.o
+          ZTAP_DEBUG_EBPF: "1"
+        run: sudo --preserve-env=PATH,HOME,GOFLAGS,GOMODCACHE,GOCACHE,ZTAP_BPF_OBJECT,ZTAP_DEBUG_EBPF go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
 
   coverage-report:
     name: Generate Coverage Report
