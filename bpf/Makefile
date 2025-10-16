@@ -5,7 +5,7 @@ LLC ?= llc
 BPFTOOL ?= bpftool
 
 # Flags for BPF target (self-contained, no kernel headers needed)
-CLANG_FLAGS = -O2 -target bpf -c \
+CLANG_FLAGS = -O2 -target bpf -g -c \
 	-D__KERNEL__ \
 	-Wno-unknown-attributes \
 	-Wno-unused-value -Wno-pointer-sign \

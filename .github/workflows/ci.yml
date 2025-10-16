@@ -138,7 +138,7 @@ jobs:
       - name: Install eBPF build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm make linux-headers-$(uname -r)
+          sudo apt-get install -y clang llvm make linux-headers-$(uname -r) bpf-tools
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -166,6 +166,7 @@ jobs:
           echo "ls -l built object and system path" && ls -l bpf/filter.o /usr/local/share/ztap/bpf/filter.o
           echo "readelf -S" && (llvm-readelf -S bpf/filter.o || readelf -S bpf/filter.o)
           echo "objdump -h" && (llvm-objdump -h bpf/filter.o || objdump -h bpf/filter.o)
+          echo "BTF check" && (btf-dump -f bpf/filter.o || echo "btf-dump not found, skipping")
 
       - name: Run eBPF integration test
         env:
