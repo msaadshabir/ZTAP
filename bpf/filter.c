@@ -1,15 +1,31 @@
 // SPDX-License-Identifier: GPL-2.0
 // eBPF program for network policy enforcement
-// Minimal includes to avoid x86 inline asm compilation errors
+// Self-contained definitions to avoid architecture-specific header issues
 
-#include <linux/bpf.h>
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_endian.h>
+// BPF type definitions (from linux/bpf.h, but without dependencies)
+typedef unsigned char __u8;
+typedef unsigned short __u16;
+typedef unsigned int __u32;
+typedef unsigned long long __u64;
 
-// BPF-safe definitions (avoiding kernel headers with x86 inline asm)
+// BPF helper return types
+#define BPF_MAP_TYPE_HASH 1
+
+// BPF constants
 #define ETH_P_IP 0x0800
 #define IPPROTO_TCP 6
 #define IPPROTO_UDP 17
+
+// BPF helper function declarations
+static void *(*bpf_map_lookup_elem)(void *map, void *key) = (void *)1;
+static long (*bpf_map_update_elem)(void *map, void *key, void *value, unsigned long flags) = (void *)2;
+static unsigned short (*bpf_htons)(unsigned short value) = (void *)9;
+static unsigned short (*bpf_ntohs)(unsigned short value) = (void *)10;
+
+// Compiler directives
+#define __always_inline inline __attribute__((always_inline))
+#define __attribute_const__ __attribute__((const))
+#define SEC(name) __attribute__((section(name), used))
 
 // Ethernet header
 struct ethhdr
@@ -56,6 +72,13 @@ struct udphdr
     unsigned short check;
 };
 
+// Socket buffer structure for skb context
+struct __sk_buff
+{
+    __u32 data;
+    __u32 data_end;
+};
+
 // Policy key structure (must match Go struct)
 struct policy_key
 {
@@ -72,14 +95,24 @@ struct policy_value
     __u8 _padding[3];
 };
 
-// BPF map for storing policies
-struct
+// BPF map definition using raw section (no kernel macros needed)
+struct bpf_map_def
 {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, 10000);
-    __type(key, struct policy_key);
-    __type(value, struct policy_value);
-} policy_map SEC(".maps");
+    unsigned int type;
+    unsigned int key_size;
+    unsigned int value_size;
+    unsigned int max_entries;
+};
+
+__attribute__((section(".maps"))) struct bpf_map_def policy_map = {
+    .type = BPF_MAP_TYPE_HASH,
+    .key_size = sizeof(struct policy_key),
+    .value_size = sizeof(struct policy_value),
+    .max_entries = 10000,
+};
+
+// Handle to policy_map for bpf_map_lookup_elem
+#define policy_map_ptr (&policy_map)
 
 // Helper to parse IPv4 packet
 static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *dest_ip,
