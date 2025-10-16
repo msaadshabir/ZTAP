@@ -95,26 +95,17 @@ struct policy_value
     __u8 _padding[3];
 };
 
-// BPF map definition using raw section (no kernel macros needed)
-struct bpf_map_def
+// BPF map definition using BTF-based approach (required by cilium/ebpf v0.19+)
+struct
 {
-    unsigned int type;
-    unsigned int key_size;
-    unsigned int value_size;
-    unsigned int max_entries;
-    unsigned int map_flags; // legacy field expected by many loaders
-};
-
-__attribute__((section(".maps"))) struct bpf_map_def policy_map = {
+    __u32 type;
+    __u32 max_entries;
+    __u32 *key;
+    struct policy_value *value;
+} policy_map SEC(".maps") = {
     .type = BPF_MAP_TYPE_HASH,
-    .key_size = sizeof(struct policy_key),
-    .value_size = sizeof(struct policy_value),
     .max_entries = 10000,
-    .map_flags = 0,
 };
-
-// Handle to policy_map for bpf_map_lookup_elem
-#define policy_map_ptr (&policy_map)
 
 // Helper to parse IPv4 packet
 static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *dest_ip,
