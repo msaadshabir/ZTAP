@@ -63,6 +63,8 @@ sudo cp -v bpf/filter.o /usr/local/share/ztap/bpf/filter.o
 
 This compiles `filter.c` to `filter.o` (eBPF bytecode).
 
+Note on BTF: The build uses `-g` (see `bpf/Makefile`) so the object embeds BTF type info required by modern loaders. If you modify the Makefile, keep `-g` to avoid loader errors.
+
 ### Verify Compilation
 
 ```bash
@@ -178,6 +180,32 @@ sudo bpftool cgroup detach /sys/fs/cgroup egress pinned /sys/fs/bpf/ztap_filter
 ```
 
 ## Troubleshooting
+
+### "missing BTF" / "load BTF maps: missing BTF"
+
+If you see an error like:
+
+```
+load BTF maps: missing BTF
+```
+
+Ensure the object was compiled with debug info so it embeds BTF:
+
+```bash
+cd bpf
+make clean && make
+```
+
+The Makefile includes `-g` by default. If you removed it, add it back to `CLANG_FLAGS`.
+
+Additionally, you can point the loader directly to the object and enable debug logging:
+
+```bash
+export ZTAP_BPF_OBJECT=/absolute/path/to/bpf/filter.o
+export ZTAP_DEBUG_EBPF=1
+```
+
+Then re-run your test or binary.
 
 ### "eBPF object file not found"
 
