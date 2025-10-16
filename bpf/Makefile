@@ -19,6 +19,7 @@ CLANG_FLAGS = -O2 -target bpf -c \
 	-I$(KERNEL_HEADERS)/arch/x86/include \
 	-I$(KERNEL_HEADERS)/arch/x86/include/uapi \
 	-I$(KERNEL_HEADERS)/arch/x86/include/generated \
+	-I$(KERNEL_HEADERS)/arch/x86/include/generated/uapi \
 	-I$(LIBBPF_HEADERS)
 
 all: filter.o
