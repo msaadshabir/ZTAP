@@ -158,6 +158,7 @@ ztap metrics --port 9090
 - [Setup Guide](docs/setup.md) - Installation and configuration
 - [Architecture](docs/architecture.md) - System design and components
 - [eBPF Enforcement](docs/EBPF.md) - Linux kernel-level enforcement setup
+- [Cluster Coordination](docs/CLUSTER.md) - Multi-node clustering and leader election
 - [Testing Guide](docs/TESTING_GUIDE.md) - Comprehensive testing documentation
 - [Implementation Status](docs/STATUS.md) - Project status and roadmap
 - [Evaluation](docs/evaluation.md) - Testing and validation
@@ -236,6 +237,7 @@ ztap [command]
 Available Commands:
   enforce     Enforce zero-trust network policies
   status      Show status of on-premises and cloud resources
+  cluster     Manage cluster coordination and distributed architecture
   logs        View enforcement logs
   metrics     Start Prometheus metrics server
   help        Help about any command
@@ -431,12 +433,15 @@ See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
 
 ### Medium Priority
 
-8. **Distributed Architecture**
+8. **Distributed Architecture** _(COMPLETED - Oct 2025)_
 
-   - Multi-node coordination with etcd/raft
-   - Leader election for control plane
-   - Distributed policy synchronization
-   - Cluster health monitoring
+   - Cluster coordination with in-memory leader election backend
+   - Node registration, deregistration, and health monitoring
+   - Leader election with lexicographic ordering
+   - Event-driven watcher API for cluster state changes
+   - CLI commands for cluster status, join, and list operations
+   - Pluggable backend interface for etcd/Raft integration
+   - Foundation for distributed policy synchronization
 
 9. **Real-time Flow Monitoring**
 

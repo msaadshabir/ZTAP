@@ -3,6 +3,7 @@ package enforcer
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"runtime"
 	"ztap/pkg/policy"
@@ -29,6 +30,16 @@ func EnforceWithEBPF(policies []policy.NetworkPolicy) {
 // EnforceWithPF (macOS) - uses pfctl to manage rules
 func EnforceWithPF(policies []policy.NetworkPolicy) {
 	fmt.Printf("Applying %d pf-based policies on macOS\n", len(policies))
+
+	if os.Getenv("ZTAP_SKIP_PF") == "1" {
+		log.Println("Skipping pf enforcement due to ZTAP_SKIP_PF environment override")
+		return
+	}
+
+	if os.Geteuid() != 0 {
+		log.Println("pf enforcement requires root privileges; skipping rule application")
+		return
+	}
 
 	// Create anchor file content
 	anchorContent := "# ZTAP Managed Rules\n"
