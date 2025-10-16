@@ -27,6 +27,10 @@ static unsigned short (*bpf_ntohs)(unsigned short value) = (void *)10;
 #define __attribute_const__ __attribute__((const))
 #define SEC(name) __attribute__((section(name), used))
 
+// BTF map definition macros (for cilium/ebpf v0.19+)
+#define __uint(name, val) int (*name)[val]
+#define __type(name, val) typeof(val) *name
+
 // Ethernet header
 struct ethhdr
 {
@@ -96,16 +100,14 @@ struct policy_value
 };
 
 // BPF map definition using BTF-based approach (required by cilium/ebpf v0.19+)
+// Modern cilium/ebpf expects map definitions in .maps section with BTF type info
 struct
 {
-    __u32 type;
-    __u32 max_entries;
-    __u32 *key;
-    struct policy_value *value;
-} policy_map SEC(".maps") = {
-    .type = BPF_MAP_TYPE_HASH,
-    .max_entries = 10000,
-};
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10000);
+    __type(key, struct policy_key);
+    __type(value, struct policy_value);
+} policy_map SEC(".maps");
 
 // Helper to parse IPv4 packet
 static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *dest_ip,
