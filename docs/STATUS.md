@@ -6,13 +6,13 @@ _Last updated: October 16, 2025_
 
 | Phase    | Scope                              | Status      | Notes                                                                                     |
 | -------- | ---------------------------------- | ----------- | ----------------------------------------------------------------------------------------- |
-| Phase 1  | Core Policy Enforcement            | ✅ Complete | Parsing, validation, and Linux/macOS enforcement paths shipped.                           |
-| Phase 2  | Service Discovery & Authentication | ✅ Complete | DNS + label resolution and RBAC finished.                                                 |
-| Phase 3  | Hybrid Cloud Integration           | ✅ Complete | AWS Security Group sync and discovery validated.                                          |
-| Phase 4  | Observability & Testing            | ✅ Complete | Prometheus/Grafana plus expanded coverage.                                                |
-| Phase 5  | Anomaly Detection                  | ✅ Complete | Python microservice + ML detection live.                                                  |
-| Critical | eBPF Verification on Linux         | ✅ Complete | Automated integration test ensures filter load, cgroup attach, and policy map population. |
-| Medium   | Distributed Architecture           | ✅ Complete | Cluster coordination foundation with leader election backend.                             |
+| Phase 1  | Core Policy Enforcement            | Complete | Parsing, validation, and Linux/macOS enforcement paths shipped.                           |
+| Phase 2  | Service Discovery & Authentication | Complete | DNS + label resolution and RBAC finished.                                                 |
+| Phase 3  | Hybrid Cloud Integration           | Complete | AWS Security Group sync and discovery validated.                                          |
+| Phase 4  | Observability & Testing            | Complete | Prometheus/Grafana plus expanded coverage.                                                |
+| Phase 5  | Anomaly Detection                  | Complete | Python microservice + ML detection live.                                                  |
+| Critical | eBPF Verification on Linux         | Complete | Automated integration test ensures filter load, cgroup attach, and policy map population. |
+| Medium   | Distributed Architecture           | Complete | Cluster coordination foundation with leader election backend.                             |
 
 ## Recent Highlights
 
