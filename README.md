@@ -1,172 +1,108 @@
 # ZTAP: Zero Trust Access Platform
 
-An open-source platform implementing zero-trust microsegmentation across hybrid environments (on-prem + cloud) using policy-as-code and OS-native enforcement.
+> Open-source zero-trust microsegmentation with eBPF enforcement, policy-as-code, and hybrid cloud support
 
-## Features
+[![Test Coverage](https://img.shields.io/badge/coverage-79%25-brightgreen.svg)](docs/TESTING_GUIDE.md)
+[![NIST SP 800-207](https://img.shields.io/badge/NIST-SP%20800--207-blue.svg)](https://csrc.nist.gov/publications/detail/sp/800-207/final)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-### Core Capabilities
-
-- **Unified Policy Language**: YAML-based, Kubernetes-style network policies
-- **Kernel-Level Enforcement**: Real eBPF programs for high-performance packet filtering on Linux
-- **Service Discovery**: Label-based service resolution with DNS and caching support
-- **Authentication & Authorization**: Role-Based Access Control (RBAC) with session management
-- **Multi-Platform Support**: eBPF on Linux, pf fallback on macOS for development
-
-### Cloud & Observability
-
-- **AWS Integration**: Security Group sync and EC2 auto-discovery
-- **Anomaly Detection**: ML-based traffic monitoring via Python microservice
-- **Prometheus Metrics**: Comprehensive metrics exporter with custom metrics
-- **Grafana Dashboards**: Pre-built dashboards for visualization
-- **Structured Logging**: Human-readable logs with filtering and following
-
-### Testing & Quality
-
-- **Comprehensive Test Suite**: 79% average coverage across core packages (cloud + metrics now covered)
-- **Integration Tests**: Full workflow testing
-- **Platform-Aware**: Separate tests for Linux eBPF and cross-platform code
-
-### Standards & Compliance
-
-- **NIST SP 800-207**: Zero Trust Architecture implementation
-- **Kubernetes NetworkPolicy**: Compatible specification
-- **Production Ready**: Core components validated and documented
+---
 
 ## Quick Start
 
-### Prerequisites
-
-**For Linux (Production)**:
+### Installation
 
 ```bash
-# Install eBPF build dependencies
+# Linux (Production with eBPF)
 sudo apt-get install clang llvm make linux-headers-$(uname -r)
+cd bpf && make && cd ..
 
-# Compile eBPF program
-cd bpf && make
+# Build and install
+go build && sudo mv ztap /usr/local/bin/
 ```
 
-**For macOS (Development)**:
+### First Steps
 
 ```bash
-# No additional dependencies needed
-# Uses built-in pf (packet filter)
-```
-
-### Build and Install
-
-```bash
-go build
-sudo mv ztap /usr/local/bin/
-```
-
-### Authentication
-
-```bash
-# Login as default admin (password: ztap-admin-change-me)
+# 1. Authenticate
 echo "ztap-admin-change-me" | ztap user login admin
-
-# Change admin password (recommended)
 ztap user change-password admin
 
-# Create additional users
-echo "password123" | ztap user create alice --role operator
-echo "password456" | ztap user create bob --role viewer
-
-# List users
-ztap user list
-```
-
-**Roles**:
-
-- **admin**: Full access (user management, policy enforcement)
-- **operator**: Policy enforcement and viewing
-- **viewer**: Read-only access
-
-### Service Discovery
-
-```bash
-# Register services with labels
+# 2. Register services
 ztap discovery register web-1 10.0.1.1 --labels app=web,tier=frontend
 ztap discovery register db-1 10.0.2.1 --labels app=database,tier=backend
 
-# Resolve services by labels
-ztap discovery resolve --labels app=web
-ztap discovery resolve --labels tier=backend
-
-# List all services
-ztap discovery list
-```
-
-### Enforce a Policy
-
-```bash
+# 3. Enforce a policy
 ztap enforce -f examples/web-to-db.yaml
-```
 
-### View Status
-
-```bash
-# Local system
+# 4. Check status
 ztap status
-
-# With AWS resources
-ztap status --aws --region us-east-1
 ```
 
-### View Logs
+**[Full Setup Guide](docs/setup.md)** | **[Architecture](docs/architecture.md)** | **[eBPF Setup](docs/EBPF.md)**
 
-```bash
-# All logs
-ztap logs
+---
 
-# Filter by policy
-ztap logs --policy web-to-db
+## Features
 
-# Follow logs
-ztap logs --follow
-```
+<table>
+<tr>
+<td width="50%">
 
-### Start Metrics Server
+### Security & Enforcement
 
-```bash
-ztap metrics --port 9090
-```
+- **Kernel-Level Filtering** – Real eBPF on Linux
+- **RBAC** – Admin, Operator, Viewer roles
+- **Session Management** – 24-hour TTL
+- **NIST SP 800-207** compliant
 
-## Architecture
+### Cloud Integration
 
-```
-+----------------+     +---------------------+     +------------------+
-|  Policy YAML   | --> |   Policy Engine     | --> |  OS Enforcer     |
-| (K8s-style)    |     | (Parser + Resolver) |     | (eBPF / pf)      |
-+----------------+     +---------------------+     +------------------+
-                              |
-                              v
-                   +---------------------+
-                   |  Cloud Integrator   | --> AWS Security Groups
-                   +---------------------+
-                              |
-                              v
-                   +---------------------+
-                   |  Anomaly Detector   | --> Alerts
-                   | (ML-based)          |
-                   +---------------------+
-```
+- **AWS Security Groups** – Auto-sync policies
+- **EC2 Auto-Discovery** – Tag-based labeling
+- **Hybrid View** – Unified on-prem + cloud status
+
+</td>
+<td width="50%">
+
+### Observability
+
+- **Prometheus Metrics** – Pre-built exporters
+- **Grafana Dashboards** – Auto-provisioned
+- **ML Anomaly Detection** – Isolation Forest
+- **Structured Logs** – Filter & follow
+
+### Developer Experience
+
+- **Kubernetes-Style YAML** – Familiar syntax
+- **Label-Based Discovery** – DNS + caching
+- **79% Test Coverage** – Production-ready
+- **Multi-Platform** – Linux (eBPF) + macOS (pf)
+
+</td>
+</tr>
+</table>
+
+---
 
 ## Documentation
 
-- [Setup Guide](docs/setup.md) - Installation and configuration
-- [Architecture](docs/architecture.md) - System design and components
-- [eBPF Enforcement](docs/EBPF.md) - Linux kernel-level enforcement setup
-- [Cluster Coordination](docs/CLUSTER.md) - Multi-node clustering and leader election
-- [Testing Guide](docs/TESTING_GUIDE.md) - Comprehensive testing documentation
-- [Implementation Status](docs/STATUS.md) - Project status and roadmap
-- [Evaluation](docs/evaluation.md) - Testing and validation
-- [Anomaly Detection](pkg/anomaly/README.md) - ML service setup
+| Guide                                      | Description                               |
+| ------------------------------------------ | ----------------------------------------- |
+| [Setup Guide](docs/setup.md)               | Installation and configuration            |
+| [Architecture](docs/architecture.md)       | System design and components              |
+| [eBPF Enforcement](docs/EBPF.md)           | Linux kernel-level enforcement            |
+| [Cluster Coordination](docs/CLUSTER.md)    | Multi-node clustering and leader election |
+| [Testing Guide](docs/TESTING_GUIDE.md)     | Comprehensive testing documentation       |
+| [Implementation Status](docs/STATUS.md)    | Project status and roadmap                |
+| [Anomaly Detection](pkg/anomaly/README.md) | ML service setup                          |
+
+---
 
 ## Example Policies
 
-### Web to Database (Label-based)
+<details>
+<summary><b>Web to Database (Label-based)</b></summary>
 
 ```yaml
 apiVersion: ztap/v1
@@ -187,7 +123,10 @@ spec:
           port: 5432
 ```
 
-### PCI Compliant (IP-based)
+</details>
+
+<details>
+<summary><b>PCI Compliant (IP-based)</b></summary>
 
 ```yaml
 apiVersion: ztap/v1
@@ -207,340 +146,216 @@ spec:
           port: 443
 ```
 
-See [examples/](examples/) for more policies.
+</details>
+
+**More examples in [examples/](examples/)**
+
+---
+
+## CLI Commands
+
+```bash
+ztap [command]
+
+Commands:
+  enforce     Enforce zero-trust network policies
+  status      Show on-premises and cloud resource status
+  cluster     Manage cluster coordination
+  logs        View enforcement logs (with --follow and --policy filters)
+  metrics     Start Prometheus metrics server
+  user        Manage users (create, login, list, change-password)
+  discovery   Service discovery (register, resolve, list)
+```
+
+<details>
+<summary><b>User Management</b></summary>
+
+```bash
+# Create users with roles (admin, operator, viewer)
+echo "password" | ztap user create alice --role operator
+ztap user list
+ztap user change-password alice
+```
+
+</details>
+
+<details>
+<summary><b>Service Discovery</b></summary>
+
+```bash
+# Register and resolve services by labels
+ztap discovery register web-1 10.0.1.1 --labels app=web,tier=frontend
+ztap discovery resolve --labels app=web
+ztap discovery list
+```
+
+</details>
+
+---
 
 ## Observability
 
 ### Prometheus Metrics
 
-- `ztap_policies_enforced_total` - Number of policies enforced
-- `ztap_flows_allowed_total` - Allowed flows counter
-- `ztap_flows_blocked_total` - Blocked flows counter
-- `ztap_anomaly_score` - Current anomaly score (0-100)
-- `ztap_policy_load_duration_seconds` - Policy load time histogram
+| Metric                              | Description                   |
+| ----------------------------------- | ----------------------------- |
+| `ztap_policies_enforced_total`      | Number of policies enforced   |
+| `ztap_flows_allowed_total`          | Allowed flows counter         |
+| `ztap_flows_blocked_total`          | Blocked flows counter         |
+| `ztap_anomaly_score`                | Current anomaly score (0-100) |
+| `ztap_policy_load_duration_seconds` | Policy load time histogram    |
 
 ### Grafana Dashboard
 
 ```bash
-# Start full stack (includes pre-configured Grafana)
-docker-compose up -d
-
-# Access at http://localhost:3000 (admin/ztap)
-# Dashboard is auto-provisioned from deployments/grafana-dashboard.json
+docker-compose up -d  # Access at http://localhost:3000 (admin/ztap)
 ```
 
-## Commands
+Dashboard auto-provisioned from `deployments/grafana-dashboard.json`
 
-```bash
-ztap [command]
+---
 
-Available Commands:
-  enforce     Enforce zero-trust network policies
-  status      Show status of on-premises and cloud resources
-  cluster     Manage cluster coordination and distributed architecture
-  logs        View enforcement logs
-  metrics     Start Prometheus metrics server
-  help        Help about any command
+## ⚙️ Requirements
 
-Flags:
-  -h, --help   help for ztap
-```
+| Component      | Requirement                      | Notes                               |
+| -------------- | -------------------------------- | ----------------------------------- |
+| **OS**         | Linux (kernel ≥5.7) or macOS 12+ | Linux for production, macOS for dev |
+| **Go**         | 1.22+                            | Build requirement                   |
+| **eBPF Tools** | clang, llvm, make, linux-headers | Linux production only               |
+| **Privileges** | Root or CAP_BPF + CAP_NET_ADMIN  | Linux eBPF enforcement              |
+| **AWS**        | EC2/VPC access (optional)        | For cloud integration               |
+| **Docker**     | Latest (optional)                | For Prometheus/Grafana stack        |
+| **Python**     | 3.8+ (optional)                  | For anomaly detection service       |
 
-## Requirements
+**[Full eBPF Setup Guide](docs/EBPF.md)**
 
-### Basic Requirements
-
-- **OS**: macOS 12+ or Linux (kernel ≥4.18)
-- **Go**: 1.22+
-
-### eBPF Enforcement (Linux Production)
-
-- **Linux Kernel**: 5.7+ (for cgroup v2 support)
-- **Build Tools**: clang, llvm, make, linux-headers
-- **Privileges**: Root or CAP_BPF + CAP_NET_ADMIN capabilities
-- See [eBPF Setup Guide](docs/EBPF.md) for detailed instructions
-
-### Optional Components
-
-- **AWS Integration**: AWS account with EC2/VPC access
-- **Observability**: Docker for Prometheus/Grafana
-- **Anomaly Detection**: Python 3.8+ with scikit-learn
+---
 
 ## Development
 
 ```bash
-# Install dependencies
-go mod download
-
 # Build
 go build
 
 # Run tests
 go test ./...
 
-# Run Linux eBPF verification (requires root)
+# eBPF integration test (Linux + root required)
 sudo go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
 
-# Run tests with coverage
+# Coverage
 go test ./... -cover
 
-# Run tests with verbose output
-go test ./... -v
-
-# Format code
-go fmt ./...
-
 # Lint
-go vet ./...
+go fmt ./... && go vet ./...
 ```
 
-### Running the Demo
+### Demo
 
 ```bash
-# Run the interactive demo
-chmod +x demo.sh
-./demo.sh
+./demo.sh  # Interactive demo with RBAC, service discovery, and policy enforcement
 ```
-
-The demo showcases:
-
-- User authentication with RBAC (admin, operator, viewer roles)
-- Service registration and discovery with labels
-- Policy enforcement with service discovery integration
-- Permission-based access control
-- Dynamic service updates
-
-## Project Status
-
-**Current Phase**: Production Ready (Core Components)
-
-### Phase 1: Core Policy Enforcement (COMPLETE)
-
-- [x] Parse Kubernetes-style YAML policies
-- [x] Policy validation (CIDR, ports, protocols)
-- [x] Real eBPF enforcement on Linux with kernel-level packet filtering
-- [x] eBPF program compilation system (C + Makefile)
-- [x] macOS pf enforcement for development
-- [x] CLI with enforce command
-
-### Phase 2: Service Discovery & Authentication (COMPLETE)
-
-- [x] In-memory service registry
-- [x] DNS-based service discovery
-- [x] Label-based service matching
-- [x] TTL-based caching (10s default)
-- [x] Watch API for dynamic updates
-- [x] User authentication with password hashing
-- [x] Session management (24-hour TTL)
-- [x] Role-Based Access Control (admin, operator, viewer)
-
-### Phase 3: Hybrid Cloud Integration (COMPLETE)
-
-- [x] Sync policies to AWS Security Groups
-- [x] Auto-discover AWS resources (EC2, VPCs)
-- [x] Unified view with status command
-- [x] Tag-based label matching
-
-### Phase 4: Observability & Testing (COMPLETE)
-
-- [x] Prometheus metrics exporter
-- [x] Grafana dashboard
-- [x] Human-readable logs
-- [x] Log filtering and following
-- [x] Comprehensive test suite (cloud + metrics coverage at 79%)
-- [x] Integration tests
-- [x] Platform-specific tests (Linux eBPF)
-
-### Phase 5: Anomaly Detection (COMPLETE)
-
-- [x] Monitor traffic flows
-- [x] Flag deviations (ML-based)
-- [x] Python microservice with Flask
-- [x] Isolation Forest algorithm
-
-## Test Coverage
-
-```
-Package                Coverage    Status
-────────────────────────────────────────────────────
-pkg/auth               72.4%       [EXCELLENT]
-pkg/cloud              90.0%       [EXCELLENT]
-pkg/discovery          76.3%       [EXCELLENT]
-pkg/metrics            85.2%       [EXCELLENT]
-pkg/policy             73.6%       [EXCELLENT]
-pkg/enforcer           N/A*        [Linux-only]
-────────────────────────────────────────────────────
-Core Packages Avg      79.5%       [PRODUCTION READY]
-
-*Enforcer tests exist but require Linux kernel
-```
-
-Run tests: `go test ./... -v -cover`
-
-See [Testing Guide](docs/TESTING_GUIDE.md) for detailed instructions.
-
-## Roadmap
-
-### Critical Priority
-
-1. **eBPF Verification on Linux** _(COMPLETED - Oct 2025)_
-
-- Added Linux-only integration test covering eBPF load, cgroup attachment, and policy map verification
-- Automated GitHub Actions job builds BPF objects and runs the integration test with root privileges
-- Documented local testing command for running the verification manually
-
-2. **Cloud Integration Tests** _(COMPLETED - Oct 2025)_
-
-   - Added unit coverage for AWS EC2 discovery
-   - Verified Security Group sync against mocked APIs
-   - Mocked AWS API responses via lightweight interface
-
-3. **Metrics Package Tests** _(COMPLETED - Oct 2025)_
-
-   - Added Prometheus exporter unit tests
-   - Validated custom metrics registration
-   - Confirmed histogram behavior with client models
-
-### High Priority
-
-4. **CI/CD Pipeline** _(COMPLETED - Oct 2025)_
-
-   - Added GitHub Actions workflow with multi-OS testing (Ubuntu + macOS)
-   - Separate jobs for Go tests, Python tests, and Docker builds
-   - Automated coverage reporting and PR comments
-   - Docker build caching for faster builds
-
-5. **Containerization** _(COMPLETED - Oct 2025)_
-
-   - Multi-stage Dockerfile with eBPF compilation support
-   - Docker Compose stack (ZTAP + Prometheus + Grafana + Anomaly Detector)
-   - Pre-configured with health checks and volume persistence
-   - Comprehensive Docker deployment guide (DOCKER.md)
-
-6. **CLI Integration Tests** _(COMPLETED - Oct 2025)_
-
-   - End-to-end tests for all CLI commands
-   - Authentication flow testing (create, login, list users)
-   - Policy validation and enforcement testing
-   - Service discovery command testing
-
-7. **Anomaly Detection Tests** _(COMPLETED - Oct 2025)_
-
-   - Python unit tests for ML service (pytest)
-   - Feature extraction validation
-   - Train/predict workflow testing
-   - Batch prediction and error handling tests
-
-### Medium Priority
-
-8. **Distributed Architecture** _(COMPLETED - Oct 2025)_
-
-   - Cluster coordination with in-memory leader election backend
-   - Node registration, deregistration, and health monitoring
-   - Leader election with lexicographic ordering
-   - Event-driven watcher API for cluster state changes
-   - CLI commands for cluster status, join, and list operations
-   - Pluggable backend interface for etcd/Raft integration
-   - Foundation for distributed policy synchronization
-
-9. **Real-time Flow Monitoring**
-
-   - Live packet inspection dashboard
-   - Flow statistics and visualization
-   - Connection tracking and logging
-
-10. **Advanced Alerting**
-
-    - Alert Manager integration
-    - Configurable alert rules
-    - Multi-channel notifications (Slack, PagerDuty, etc.)
-
-11. **Grafana Dashboard Validation**
-
-    - Test existing dashboards
-    - Add more visualization panels
-    - Create alert rules
-
-12. **Pre-compiled eBPF Binaries**
-    - Build for common kernel versions (5.7+, 5.15+, 6.0+)
-    - Distribution strategy (package repos, releases)
-    - Kernel version detection and selection
-
-### Low Priority
-
-13. **Additional Platform Support**
-
-    - Windows Firewall integration
-    - iptables fallback for legacy Linux
-    - Docker/containerd network plugin
-    - Kubernetes CNI plugin
-
-14. **Enhanced Security**
-
-    - Two-factor authentication (2FA)
-    - Certificate-based authentication
-    - Hardware security key support (YubiKey)
-    - API token management
-
-15. **Enterprise Features**
-
-    - LDAP/Active Directory integration
-    - SAML/OAuth SSO
-    - Audit log export to SIEM
-    - Policy compliance reporting
-
-16. **Performance Optimization**
-    - Policy cache optimization
-    - BPF map size tuning
-    - Memory profiling and optimization
-    - Benchmark suite
-
-## Contributing Priorities
-
-If you want to contribute, here are the best places to start:
-
-**Good First Issues**:
-
-- Add Python tests for anomaly detection
-- Document label-to-IP resolution workflow for AWS inventory
-- Extend CLI docs with end-to-end usage examples
-- Create smoke tests for `ztap status` using local fixtures
-
-**High Impact**:
-
-- CI/CD pipeline setup (GitHub Actions)
-- Docker containerization
-- eBPF verification on Linux
-
-**Advanced**:
-
-- Distributed architecture design
-- Additional platform support
-- Performance optimization
-
-See [Implementation Status](docs/STATUS.md) for detailed component status.
-
-## License
-
-MIT License - See [LICENSE](LICENSE) file
-
-## Contributing
-
-Contributions are welcome! Please check:
-
-- [Testing Guide](docs/TESTING_GUIDE.md) - How to run and write tests
-- [Implementation Status](docs/STATUS.md) - Current progress and roadmap
-- [eBPF Guide](docs/EBPF.md) - eBPF development setup
-
-For questions or suggestions, please open an issue.
-
-## Acknowledgments
-
-- NIST SP 800-207 Zero Trust Architecture
-- Kubernetes NetworkPolicy specification
-- Cilium and Tetragon projects for inspiration
-- MITRE ATT&CK framework
 
 ---
 
-**Note**: The macOS enforcement uses pf and is intended for development/testing only. Production deployments should use Linux with eBPF for kernel-level enforcement. See [eBPF Setup Guide](docs/EBPF.md) for Linux deployment instructions.
+## Project Status
+
+**Current Phase:** Production Ready (Core Components)
+
+### Test Coverage
+
+| Package         | Coverage  | Status               |
+| --------------- | --------- | -------------------- |
+| `pkg/auth`      | 72.4%     | Excellent            |
+| `pkg/cloud`     | 90.0%     | Excellent            |
+| `pkg/discovery` | 76.3%     | Excellent            |
+| `pkg/metrics`   | 85.2%     | Excellent            |
+| `pkg/policy`    | 73.6%     | Excellent            |
+| `pkg/enforcer`  | N/A\*     | Linux-only           |
+| **Core Avg**    | **79.5%** | **Production Ready** |
+
+_\*Enforcer tests require Linux kernel_
+
+---
+
+## Roadmap
+
+### Completed (Oct 2025)
+
+<details>
+<summary>View completed milestones</summary>
+
+- **Phase 1:** Core Policy Enforcement (eBPF + pf)
+- **Phase 2:** Service Discovery & RBAC Authentication
+- **Phase 3:** Hybrid Cloud Integration (AWS)
+- **Phase 4:** Observability & Testing (79% coverage)
+- **Phase 5:** Anomaly Detection (ML-based)
+- **eBPF Linux Verification** (GitHub Actions)
+- **CI/CD Pipeline** (Multi-OS testing)
+- **Containerization** (Docker Compose stack)
+- **Distributed Architecture** (Cluster coordination)
+
+</details>
+
+### High Priority
+
+- [ ] Real-time flow monitoring dashboard
+- [ ] Advanced alerting (AlertManager integration)
+- [ ] Pre-compiled eBPF binaries for common kernels
+
+### Medium Priority
+
+- [ ] Additional platform support (Windows, iptables)
+- [ ] Enhanced security (2FA, cert-based auth)
+- [ ] Enterprise features (LDAP, SAML/OAuth SSO)
+
+**[Full Roadmap](docs/STATUS.md)**
+
+---
+
+## Contributing
+
+We welcome contributions! Here's where to start:
+
+**Good First Issues:**
+
+- Add Python tests for anomaly detection
+- Document AWS label-to-IP resolution workflow
+- Create smoke tests for `ztap status`
+
+**High Impact:**
+
+- Real-time flow monitoring
+- Advanced alerting
+- Performance optimization
+
+**Resources:**
+
+- [Testing Guide](docs/TESTING_GUIDE.md)
+- [Implementation Status](docs/STATUS.md)
+- [eBPF Development](docs/EBPF.md)
+
+---
+
+## License
+
+MIT License - See [LICENSE](LICENSE)
+
+---
+
+## Acknowledgments
+
+- [NIST SP 800-207](https://csrc.nist.gov/publications/detail/sp/800-207/final) Zero Trust Architecture
+- [Kubernetes NetworkPolicy](https://kubernetes.io/docs/concepts/services-networking/network-policies/) specification
+- [Cilium](https://cilium.io/) and [Tetragon](https://tetragon.io/) for eBPF inspiration
+- [MITRE ATT&CK](https://attack.mitre.org/) framework
+
+---
+
+<div align="center">
+
+**Note:** macOS enforcement (pf) is for development only. Use Linux + eBPF for production.
+
+[eBPF Setup Guide](docs/EBPF.md) | [Get Started](docs/setup.md) | [Open an Issue](../../issues)
+
+</div>
