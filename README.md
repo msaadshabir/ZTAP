@@ -1,21 +1,11 @@
 # ZTAP: Zero Trust Access Platform
 
-<div align="center">
-
-<img src="https://go.dev/blog/go-brand/Go-Logo/PNG/Go-Logo_Blue.png" alt="Go" height="50"/>
-&nbsp;&nbsp;&nbsp;&nbsp;
-<img src="https://ebpf.io/static/logo-big-1029930c61673d5e154100b97653f70c.png" alt="eBPF" height="50"/>
-&nbsp;&nbsp;&nbsp;&nbsp;
-<img src="https://kubernetes.io/images/kubernetes-horizontal-color.png" alt="Kubernetes" height="50"/>
-&nbsp;&nbsp;&nbsp;&nbsp;
-<img src="https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg" alt="AWS" height="50"/>
-&nbsp;&nbsp;&nbsp;&nbsp;
-<img src="https://upload.wikimedia.org/wikipedia/commons/3/35/Tux.svg" alt="Linux" height="50"/>
-
-</div>
-
 > Open-source zero-trust microsegmentation with eBPF enforcement, policy-as-code, and hybrid cloud support
 
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/EBPF.md)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-Compatible-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+[![AWS](https://img.shields.io/badge/AWS-Integration-FF9900?logo=amazon-aws&logoColor=white)](docs/setup.md)
 [![Test Coverage](https://img.shields.io/badge/coverage-79%25-brightgreen.svg)](docs/TESTING_GUIDE.md)
 [![NIST SP 800-207](https://img.shields.io/badge/NIST-SP%20800--207-blue.svg)](https://csrc.nist.gov/publications/detail/sp/800-207/final)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
