@@ -31,10 +31,11 @@ ResolveLabels(labels map[string]string) ([]string, error)
 
 **Implementations**:
 
-- **Linux**: eBPF (planned - currently simulated)
+- **Linux**: eBPF
   - Attach to cgroup hooks
   - Per-pod traffic control
-  - Kernel-level enforcement
+  - Kernel-level enforcement with BTF support
+  - Safe packet parsing using bpf_skb_load_bytes
 - **macOS**: pf (Packet Filter)
   - Manages `/etc/pf.anchors/ztap`
   - Updates `/etc/pf.conf`

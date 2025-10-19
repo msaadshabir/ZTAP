@@ -1,11 +1,9 @@
 # Project Status
 
-_Last updated: October 16, 2025_
-
 ## Phase Overview
 
-| Phase    | Scope                              | Status      | Notes                                                                                     |
-| -------- | ---------------------------------- | ----------- | ----------------------------------------------------------------------------------------- |
+| Phase    | Scope                              | Status   | Notes                                                                                     |
+| -------- | ---------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | Phase 1  | Core Policy Enforcement            | Complete | Parsing, validation, and Linux/macOS enforcement paths shipped.                           |
 | Phase 2  | Service Discovery & Authentication | Complete | DNS + label resolution and RBAC finished.                                                 |
 | Phase 3  | Hybrid Cloud Integration           | Complete | AWS Security Group sync and discovery validated.                                          |
@@ -16,7 +14,7 @@ _Last updated: October 16, 2025_
 
 ## Recent Highlights
 
-### Cluster Coordination (Oct 16, 2025)
+### Cluster Coordination
 
 - Added cluster package (`pkg/cluster`) with leader election interface and in-memory backend.
 - Lexicographic leader election: first healthy node becomes leader.
@@ -26,7 +24,7 @@ _Last updated: October 16, 2025_
 - Comprehensive unit tests covering all major scenarios (10+ test cases, all passing).
 - Foundation for future etcd/Raft backends and distributed policy synchronization.
 
-### eBPF Verification (Oct 15, 2025)
+### eBPF Verification
 
 - Added Linux-only integration test `TestEBPFIntegrationLoadAndAttach` (tagged `integration`) that recompiles `bpf/filter.o`, attaches to a temporary cgroup, and asserts policy map entries.
 - CI workflow now runs an "eBPF Verification (Linux)" job on Ubuntu to compile the program and execute the integration test with `sudo`.
