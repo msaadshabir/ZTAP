@@ -5,12 +5,48 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: "0 2 * * *"
 
 jobs:
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.2"
+
+      - name: Run go fmt
+        run: |
+          fmt_output=$(go fmt ./...)
+          if [ -n "$fmt_output" ]; then
+            echo "The following files need formatting:"
+            echo "$fmt_output"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=5m
+
   test-go:
     name: Go Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: lint
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         go-version: ["1.25.2"]
@@ -58,9 +94,94 @@ jobs:
           name: coverage-${{ matrix.os }}
           path: coverage-${{ matrix.os }}.out
 
+  test-integration:
+    name: Integration Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    env:
+      GOFLAGS: -buildvcs=false
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.2"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run policy enforcer integration tests
+        run: go test -v -timeout=60s -tags=integration ./pkg/enforcer/... -run TestPolicyEnforcer
+
+      - name: Run general integration tests
+        run: go test ./tests/integration_test.go -v
+
+      - name: Run CLI tests
+        run: go test ./tests/cli_test.go -v -timeout 5m
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.2"
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: "-no-fail -fmt sarif -out gosec-results.sarif ./..."
+
+      - name: Upload Gosec results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+
   test-python:
     name: Python Anomaly Detection Tests
     runs-on: ubuntu-latest
+    needs: lint
 
     steps:
       - name: Check out code
@@ -70,6 +191,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pkg/anomaly/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
@@ -91,6 +220,7 @@ jobs:
   docker-build:
     name: Docker Build Test
     runs-on: ubuntu-latest
+    needs: lint
 
     steps:
       - name: Check out code
@@ -119,10 +249,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Test Docker Compose Stack
+        run: |
+          docker compose -f docker-compose.yml config
+          docker compose -f docker-compose.yml up -d
+          sleep 10
+          docker compose -f docker-compose.yml ps
+          docker compose -f docker-compose.yml down
+
   ebpf-verification:
     name: eBPF Verification (Linux)
     runs-on: ubuntu-latest
-    needs: test-go
+    needs: [lint, test-go]
     env:
       GOFLAGS: -buildvcs=false
 
@@ -175,10 +313,13 @@ jobs:
 
   coverage-report:
     name: Generate Coverage Report
-    needs: [test-go, test-python]
+    needs: [test-go, test-python, test-integration]
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
       - name: Download all coverage artifacts
         uses: actions/download-artifact@v4
         with:
@@ -187,14 +328,116 @@ jobs:
       - name: Display coverage structure
         run: ls -R coverage-reports
 
+      - name: Generate combined coverage report
+        run: |
+          echo "## Test Coverage Summary" > coverage-summary.md
+          echo "" >> coverage-summary.md
+          for file in coverage-reports/coverage-*/coverage-*.out; do
+            if [ -f "$file" ]; then
+              os=$(basename $(dirname "$file") | sed 's/coverage-//')
+              echo "### $os" >> coverage-summary.md
+              go tool cover -func="$file" | tail -1 >> coverage-summary.md
+              echo "" >> coverage-summary.md
+            fi
+          done
+
       - name: Comment PR with coverage
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
+            let body = '## ✅ Test Results\n\n';
+            body += '### All tests passed!\n\n';
+
+            if (fs.existsSync('coverage-summary.md')) {
+              body += fs.readFileSync('coverage-summary.md', 'utf8');
+            }
+
+            body += '\n\n📊 Coverage reports available in artifacts.';
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ All tests passed! Coverage reports available in artifacts.'
+              body: body
             })
+
+  build-check:
+    name: Build Check (Multi-Platform)
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.2"
+
+      - name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -o ztap-${{ matrix.goos }}-${{ matrix.goarch }} .
+          ls -lh ztap-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  benchmark:
+    name: Benchmark Tests
+    runs-on: ubuntu-latest
+    needs: test-go
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.2"
+
+      - name: Run benchmarks
+        run: |
+          go test ./pkg/... -bench=. -benchmem -run=^$ > benchmark-results.txt || true
+          cat benchmark-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
+
+  all-checks:
+    name: All Checks Passed
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - test-go
+      - test-integration
+      - test-python
+      - docker-build
+      - ebpf-verification
+      - security-scan
+      - build-check
+    if: always()
+
+    steps:
+      - name: Check all jobs status
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
+            echo "❌ Some checks failed"
+            exit 1
+          elif [ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]; then
+            echo "⚠️ Some checks were cancelled"
+            exit 1
+          else
+            echo "✅ All checks passed!"
+          fi

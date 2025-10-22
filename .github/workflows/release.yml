@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build Release Binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.2"
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          mkdir -p dist
+          BINARY_NAME="ztap-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          go build -ldflags="-s -w -X main.Version=${VERSION}" -o "dist/${BINARY_NAME}" .
+
+          # Create archive
+          cd dist
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "${BINARY_NAME}.zip" "${BINARY_NAME}"
+          else
+            tar czf "${BINARY_NAME}.tar.gz" "${BINARY_NAME}"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ztap-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.{tar.gz,zip}
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          echo "Generating changelog for ${VERSION}"
+
+          # Extract changelog section if exists
+          if [ -f "CHANGELOG.md" ]; then
+            sed -n "/## ${VERSION}/,/## /p" CHANGELOG.md | sed '$d' > release-notes.md
+          else
+            echo "Release ${VERSION}" > release-notes.md
+            echo "" >> release-notes.md
+            echo "See commits for details." >> release-notes.md
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*.{tar.gz,zip}
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, 'rc') || contains(steps.version.outputs.VERSION, 'beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-release:
+    name: Build and Push Docker Images
+    needs: create-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION_SHORT=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Build and push ZTAP image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ztap:latest
+            ghcr.io/${{ github.repository_owner }}/ztap:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/ztap:${{ steps.version.outputs.VERSION_SHORT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Anomaly Detector image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./pkg/anomaly
+          file: ./pkg/anomaly/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ztap-anomaly:latest
+            ghcr.io/${{ github.repository_owner }}/ztap-anomaly:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/ztap-anomaly:${{ steps.version.outputs.VERSION_SHORT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
