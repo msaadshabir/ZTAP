@@ -60,6 +60,14 @@ ztap status
 - **Session Management** – 24-hour TTL
 - **NIST SP 800-207** compliant
 
+### Distributed Architecture
+
+- **Leader Election** – Automatic cluster coordination
+- **Policy Synchronization** – Real-time policy distribution with auto-enforcement
+- **Multi-Node Support** – High-availability deployments
+- **Version Tracking** – Conflict-free policy updates
+- **Prometheus Metrics** – 7 metrics for sync and enforcement monitoring
+
 ### Cloud Integration
 
 - **AWS Security Groups** – Auto-sync policies
@@ -164,7 +172,8 @@ ztap [command]
 Commands:
   enforce     Enforce zero-trust network policies
   status      Show on-premises and cloud resource status
-  cluster     Manage cluster coordination
+  cluster     Manage cluster coordination (status, join, leave, list)
+  policy      Distributed policy management (sync, list, watch, show)
   logs        View enforcement logs (with --follow and --policy filters)
   metrics     Start Prometheus metrics server
   user        Manage users (create, login, list, change-password)
@@ -195,19 +204,42 @@ ztap discovery list
 
 </details>
 
+<details>
+<summary><b>Cluster & Policy Management</b></summary>
+
+```bash
+# Cluster operations
+ztap cluster status                          # View cluster state
+ztap cluster join node-2 192.168.1.2:9090   # Join a node
+ztap cluster list                            # List all nodes
+
+# Policy synchronization (leader-initiated)
+ztap policy sync examples/web-to-db.yaml    # Sync policy to all nodes
+ztap policy list                             # List all policies
+ztap policy watch                            # Watch real-time updates
+ztap policy show web-to-db                   # Show policy details
+```
+
+</details>
+
 ---
 
 ## Observability
 
 ### Prometheus Metrics
 
-| Metric                              | Description                   |
-| ----------------------------------- | ----------------------------- |
-| `ztap_policies_enforced_total`      | Number of policies enforced   |
-| `ztap_flows_allowed_total`          | Allowed flows counter         |
-| `ztap_flows_blocked_total`          | Blocked flows counter         |
-| `ztap_anomaly_score`                | Current anomaly score (0-100) |
-| `ztap_policy_load_duration_seconds` | Policy load time histogram    |
+| Metric                                     | Description                           |
+| ------------------------------------------ | ------------------------------------- |
+| `ztap_policies_enforced_total`             | Number of policies enforced           |
+| `ztap_flows_allowed_total`                 | Allowed flows counter                 |
+| `ztap_flows_blocked_total`                 | Blocked flows counter                 |
+| `ztap_anomaly_score`                       | Current anomaly score (0-100)         |
+| `ztap_policy_load_duration_seconds`        | Policy load time histogram            |
+| `ztap_policies_synced_total`               | Total policy sync operations          |
+| `ztap_policy_sync_duration_seconds`        | Policy sync duration histogram        |
+| `ztap_policy_version_current`              | Current version of each policy        |
+| `ztap_policy_enforcement_duration_seconds` | Policy enforcement duration histogram |
+| `ztap_policy_subscribers_active`           | Active policy subscribers count       |
 
 ### Grafana Dashboard
 
@@ -297,7 +329,9 @@ _\*Enforcer tests require Linux kernel_
 - **eBPF Linux Verification** (GitHub Actions)
 - **CI/CD Pipeline** (Multi-OS testing)
 - **Containerization** (Docker Compose stack)
-- **Distributed Architecture** (Cluster coordination)
+- **Distributed Architecture** (Cluster coordination with leader election)
+- **Policy Synchronization** (Leader-initiated distributed sync with auto-enforcement)
+- **Prometheus Metrics** (Policy sync and enforcement monitoring)
 
 </details>
 
@@ -306,12 +340,16 @@ _\*Enforcer tests require Linux kernel_
 - [ ] Real-time flow monitoring dashboard
 - [ ] Advanced alerting (AlertManager integration)
 - [ ] Pre-compiled eBPF binaries for common kernels
+- [ ] etcd backend for production cluster deployments
+- [ ] Policy conflict detection and resolution
 
 ### Medium Priority
 
 - [ ] Additional platform support (Windows, iptables)
 - [ ] Enhanced security (2FA, cert-based auth)
 - [ ] Enterprise features (LDAP, SAML/OAuth SSO)
+- [ ] Distributed rate limiting across cluster
+- [ ] Audit logging with tamper-proof storage
 
 **[Full Roadmap](docs/STATUS.md)**
 

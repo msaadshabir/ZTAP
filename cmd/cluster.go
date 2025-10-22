@@ -168,7 +168,10 @@ func init() {
 	}
 	clusterElection = cluster.NewInMemoryElection(config)
 
-	// Start election in background
+	// Initialize policy sync with the cluster election
+	policySync = cluster.NewInMemoryPolicySync(clusterElection, hostname)
+
+	// Start election and policy sync in background
 	// Note: In a real daemon, this would be managed by the server lifecycle
 	ctx := rootCmd.Context()
 	if ctx == nil {
@@ -177,5 +180,8 @@ func init() {
 	}
 	if err := clusterElection.Start(ctx); err != nil {
 		log.Printf("Warning: failed to start cluster election: %v", err)
+	}
+	if err := policySync.(*cluster.InMemoryPolicySync).Start(ctx); err != nil {
+		log.Printf("Warning: failed to start policy sync: %v", err)
 	}
 }

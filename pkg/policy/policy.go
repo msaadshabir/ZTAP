@@ -50,7 +50,11 @@ func LoadFromFile(filename string) ([]NetworkPolicy, error) {
 	if err != nil {
 		return nil, err
 	}
+	return LoadFromBytes(data)
+}
 
+// LoadFromBytes reads policies from YAML bytes
+func LoadFromBytes(data []byte) ([]NetworkPolicy, error) {
 	var policies []NetworkPolicy
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	for {
