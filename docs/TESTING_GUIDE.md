@@ -247,6 +247,50 @@ go test ./tests -v
 
 **Execution Time**: ~1 second (includes 0.8s cache TTL wait)
 
+## CLI Integration Tests
+
+### Run CLI Tests
+
+```bash
+# Local development (not in CI)
+go test ./tests/cli_test.go -v
+
+# In CI environments, CLI tests are automatically skipped
+# Set CI=true or GITHUB_ACTIONS=true to skip
+CI=true go test ./tests/cli_test.go -v
+```
+
+**Tests**:
+
+1. `TestCLIHelp` - Help output validation
+2. `TestCLIUserManagement` - User list command
+3. `TestCLIServiceDiscovery` - Discovery list command
+4. `TestCLIPolicyEnforce` - Policy enforcement
+5. `TestCLIStatus` - Status command
+6. `TestCLIMetrics` - Metrics server startup (skipped in CI)
+7. `TestCLILogs` - Logs command
+8. `TestCLIPolicyValidation` - Policy validation with errors
+
+**Important**: CLI tests use `go run main.go` which compiles the CLI binary each time. These tests are:
+
+- **Slow** in CI environments due to compilation overhead
+- **Skipped automatically** when `CI=true` or `GITHUB_ACTIONS=true`
+- **Recommended for local development** where the binary is cached
+- **Not required in CI** - Core functionality is tested via integration tests
+
+**In GitHub Actions**:
+
+```yaml
+# GitHub Actions automatically sets CI=true
+# CLI tests will be skipped with: "Skipping CLI tests in CI environment"
+```
+
+**Execution Time**:
+
+- Local: ~2-5 seconds (cached compilation)
+- CI: Skipped (not executed)
+- Full suite: ~30-95 seconds (without CI environment variable)
+
 ## Platform-Specific Testing
 
 ### macOS Testing
