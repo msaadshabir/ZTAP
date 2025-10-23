@@ -110,7 +110,7 @@ func TestPolicyEnforcerAppliesUpdates(t *testing.T) {
 	if err := enforcer.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer enforcer.Stop()
+	defer func() { _ = enforcer.Stop() }()
 
 	// Send a policy update
 	policyYAML := []byte(`apiVersion: ztap/v1
@@ -163,7 +163,7 @@ func TestPolicyEnforcerSkipsOldVersions(t *testing.T) {
 	if err := enforcer.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer enforcer.Stop()
+	defer func() { _ = enforcer.Stop() }()
 
 	policyYAML := []byte(`apiVersion: ztap/v1
 kind: NetworkPolicy
@@ -227,7 +227,7 @@ func TestPolicyEnforcerGetEnforcedVersions(t *testing.T) {
 	if err := enforcer.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer enforcer.Stop()
+	defer func() { _ = enforcer.Stop() }()
 
 	policyYAML := []byte(`apiVersion: ztap/v1
 kind: NetworkPolicy
@@ -278,7 +278,7 @@ func TestPolicyEnforcerInvalidYAML(t *testing.T) {
 	if err := enforcer.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer enforcer.Stop()
+	defer func() { _ = enforcer.Stop() }()
 
 	// Send invalid YAML
 	update := cluster.PolicyUpdate{

@@ -49,7 +49,7 @@ func TestAuthenticate(t *testing.T) {
 	tmpDir := t.TempDir()
 	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
 
-	manager.CreateUser("testuser", "correctpassword", RoleOperator)
+	_ = manager.CreateUser("testuser", "correctpassword", RoleOperator)
 
 	session, err := manager.Authenticate("testuser", "correctpassword")
 	if err != nil {
@@ -74,7 +74,7 @@ func TestAuthenticate(t *testing.T) {
 		t.Error("Expected error for nonexistent user")
 	}
 
-	manager.DisableUser("testuser")
+	_ = manager.DisableUser("testuser")
 	_, err = manager.Authenticate("testuser", "correctpassword")
 	if err == nil {
 		t.Error("Expected error for disabled user")
@@ -85,7 +85,7 @@ func TestValidateSession(t *testing.T) {
 	tmpDir := t.TempDir()
 	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
 
-	manager.CreateUser("testuser", "password", RoleOperator)
+	_ = manager.CreateUser("testuser", "password", RoleOperator)
 	session, _ := manager.Authenticate("testuser", "password")
 
 	validatedSession, err := manager.ValidateSession(session.Token)
@@ -116,9 +116,9 @@ func TestHasPermission(t *testing.T) {
 	tmpDir := t.TempDir()
 	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
 
-	manager.CreateUser("admin2", "pass", RoleAdmin)
-	manager.CreateUser("operator", "pass", RoleOperator)
-	manager.CreateUser("viewer", "pass", RoleViewer)
+	_ = manager.CreateUser("admin2", "pass", RoleAdmin)
+	_ = manager.CreateUser("operator", "pass", RoleOperator)
+	_ = manager.CreateUser("viewer", "pass", RoleViewer)
 
 	// Authenticate and get tokens
 	adminSession, _ := manager.Authenticate("admin2", "pass")
@@ -153,7 +153,7 @@ func TestChangePassword(t *testing.T) {
 	tmpDir := t.TempDir()
 	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
 
-	manager.CreateUser("testuser", "oldpassword", RoleOperator)
+	_ = manager.CreateUser("testuser", "oldpassword", RoleOperator)
 
 	err := manager.ChangePassword("testuser", "oldpassword", "newpassword")
 	if err != nil {
@@ -180,7 +180,7 @@ func TestDisableEnable(t *testing.T) {
 	tmpDir := t.TempDir()
 	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
 
-	manager.CreateUser("testuser", "password", RoleOperator)
+	_ = manager.CreateUser("testuser", "password", RoleOperator)
 
 	err := manager.DisableUser("testuser")
 	if err != nil {

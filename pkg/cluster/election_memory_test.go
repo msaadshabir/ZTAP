@@ -19,7 +19,7 @@ func TestInMemoryElectionStart(t *testing.T) {
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("failed to start election: %v", err)
 	}
-	defer election.Stop()
+	defer func() { _ = election.Stop() }()
 
 	if !election.running {
 		t.Error("election should be running after Start()")
@@ -48,7 +48,7 @@ func TestInMemoryElectionDoubleStart(t *testing.T) {
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("first Start() failed: %v", err)
 	}
-	defer election.Stop()
+	defer func() { _ = election.Stop() }()
 
 	// Second Start() should fail
 	if err := election.Start(ctx); err == nil {
@@ -69,7 +69,7 @@ func TestInMemoryElectionRegisterNode(t *testing.T) {
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
-	defer election.Stop()
+	defer func() { _ = election.Stop() }()
 
 	node2 := &Node{
 		ID:      "node-2",
@@ -104,7 +104,7 @@ func TestInMemoryElectionLeaderElection(t *testing.T) {
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
-	defer election.Stop()
+	defer func() { _ = election.Stop() }()
 
 	// Wait for leader election
 	time.Sleep(200 * time.Millisecond)
@@ -137,7 +137,7 @@ func TestInMemoryElectionMultipleNodes(t *testing.T) {
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
-	defer election.Stop()
+	defer func() { _ = election.Stop() }()
 
 	// Register additional nodes
 	node2 := &Node{ID: "node-2", Address: "127.0.0.1:9091", State: StateHealthy}
@@ -183,7 +183,7 @@ func TestInMemoryElectionDeregisterNode(t *testing.T) {
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
-	defer election.Stop()
+	defer func() { _ = election.Stop() }()
 
 	node2 := &Node{ID: "node-2", Address: "127.0.0.1:9091", State: StateHealthy}
 	if err := election.RegisterNode(node2); err != nil {
@@ -218,7 +218,7 @@ func TestInMemoryElectionWatch(t *testing.T) {
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
-	defer election.Stop()
+	defer func() { _ = election.Stop() }()
 
 	watchCtx, watchCancel := context.WithCancel(ctx)
 	defer watchCancel()
@@ -258,7 +258,7 @@ func TestInMemoryElectionLeaderChanges(t *testing.T) {
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
-	defer election.Stop()
+	defer func() { _ = election.Stop() }()
 
 	leaderCtx, leaderCancel := context.WithCancel(ctx)
 	defer leaderCancel()

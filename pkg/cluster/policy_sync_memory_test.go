@@ -113,7 +113,7 @@ func TestSyncPolicyAsLeader(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	policyYAML := []byte(`apiVersion: ztap/v1
 kind: NetworkPolicy
@@ -181,7 +181,7 @@ func TestSyncPolicyAsFollower(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	policyYAML := []byte(`apiVersion: ztap/v1
 kind: NetworkPolicy`)
@@ -206,7 +206,7 @@ func TestSyncPolicyVersionIncrement(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	policyYAML1 := []byte(`apiVersion: ztap/v1
 kind: NetworkPolicy
@@ -268,7 +268,7 @@ func TestSyncPolicyValidation(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	// Empty policy name
 	err := ps.SyncPolicy(ctx, "", []byte("policy content"))
@@ -312,7 +312,7 @@ func TestListPolicies(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	// Initially empty
 	policies := ps.ListPolicies()
@@ -321,9 +321,9 @@ func TestListPolicies(t *testing.T) {
 	}
 
 	// Add policies
-	ps.SyncPolicy(ctx, "policy-1", []byte("yaml content 1"))
-	ps.SyncPolicy(ctx, "policy-2", []byte("yaml content 2"))
-	ps.SyncPolicy(ctx, "policy-3", []byte("yaml content 3"))
+	_ = ps.SyncPolicy(ctx, "policy-1", []byte("yaml content 1"))
+	_ = ps.SyncPolicy(ctx, "policy-2", []byte("yaml content 2"))
+	_ = ps.SyncPolicy(ctx, "policy-3", []byte("yaml content 3"))
 
 	policies = ps.ListPolicies()
 	if len(policies) != 3 {
@@ -350,7 +350,7 @@ func TestSubscribePolicies(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	// Subscribe to policy updates
 	updateCh := ps.SubscribePolicies(ctx)
@@ -359,7 +359,7 @@ func TestSubscribePolicies(t *testing.T) {
 	policyYAML := []byte("test policy content")
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		ps.SyncPolicy(ctx, "test-policy", policyYAML)
+		_ = ps.SyncPolicy(ctx, "test-policy", policyYAML)
 	}()
 
 	// Wait for update notification
@@ -392,7 +392,7 @@ func TestSubscribePoliciesMultipleSubscribers(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	// Create multiple subscribers
 	sub1 := ps.SubscribePolicies(ctx)
@@ -446,7 +446,7 @@ func TestApplyRemoteUpdate(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	// Apply a remote update (simulating receiving from leader)
 	update := PolicyUpdate{
@@ -486,7 +486,7 @@ func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	// Apply initial update
 	update1 := PolicyUpdate{
@@ -496,7 +496,7 @@ func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 		Source:     "node-1",
 		Timestamp:  time.Now(),
 	}
-	ps.ApplyRemoteUpdate(ctx, update1)
+	_ = ps.ApplyRemoteUpdate(ctx, update1)
 
 	// Try to apply older version (should be ignored)
 	update2 := PolicyUpdate{
@@ -506,7 +506,7 @@ func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 		Source:     "node-1",
 		Timestamp:  time.Now(),
 	}
-	ps.ApplyRemoteUpdate(ctx, update2)
+	_ = ps.ApplyRemoteUpdate(ctx, update2)
 
 	// Should still have version 2
 	version, _ := ps.GetPolicyVersion("test-policy")
@@ -558,7 +558,7 @@ func TestConcurrentPolicySync(t *testing.T) {
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer ps.Stop()
+	defer func() { _ = ps.Stop() }()
 
 	// Spawn multiple goroutines syncing different policies
 	done := make(chan bool)

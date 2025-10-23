@@ -229,7 +229,7 @@ var loginCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Print("Username: ")
 		var username string
-		fmt.Scanln(&username)
+		_, _ = fmt.Scanln(&username)
 
 		fmt.Print("Password: ")
 		passwordBytes, err := term.ReadPassword(int(syscall.Stdin))

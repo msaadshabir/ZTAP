@@ -73,7 +73,7 @@ func EnforceWithPF(policies []policy.NetworkPolicy) {
 	pfConf := "/etc/pf.conf"
 	pfContent := "anchor \"ztap\"\nload anchor \"ztap\" from \"/etc/pf.anchors/ztap\"\n"
 	cmd2 := exec.Command("sudo", "sh", "-c", fmt.Sprintf("grep -q 'anchor \"ztap\"' %s || echo '%s' >> %s", pfConf, pfContent, pfConf))
-	cmd2.Run() // Ignore errors (file may be read-only)
+	_ = cmd2.Run() // Ignore errors (file may be read-only)
 
 	fmt.Println("Note: Full enforcement requires sudo. See docs for production setup.")
 }

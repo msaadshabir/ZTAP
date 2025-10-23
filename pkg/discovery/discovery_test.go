@@ -75,7 +75,7 @@ func TestInMemoryDiscovery_RegisterAndResolve(t *testing.T) {
 func TestInMemoryDiscovery_NoMatch(t *testing.T) {
 	disc := NewInMemoryDiscovery()
 
-	disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
 
 	// Try to resolve non-existent label
 	_, err := disc.ResolveLabels(map[string]string{"app": "database"})
@@ -96,8 +96,8 @@ func TestInMemoryDiscovery_InvalidIP(t *testing.T) {
 func TestInMemoryDiscovery_Deregister(t *testing.T) {
 	disc := NewInMemoryDiscovery()
 
-	disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
-	disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
+	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	_ = disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
 
 	// Verify 2 services
 	ips, _ := disc.ResolveLabels(map[string]string{"app": "web"})
@@ -125,8 +125,8 @@ func TestInMemoryDiscovery_Deregister(t *testing.T) {
 func TestInMemoryDiscovery_ListServices(t *testing.T) {
 	disc := NewInMemoryDiscovery()
 
-	disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
-	disc.RegisterService("db-1", "10.0.2.1", map[string]string{"app": "database"})
+	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	_ = disc.RegisterService("db-1", "10.0.2.1", map[string]string{"app": "database"})
 
 	services := disc.ListServices()
 	if len(services) != 2 {
@@ -163,7 +163,7 @@ func TestInMemoryDiscovery_Watch(t *testing.T) {
 	defer cancel()
 
 	// Register initial service
-	disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
 
 	// Start watching
 	ch, err := disc.Watch(ctx, map[string]string{"app": "web"})
@@ -182,7 +182,7 @@ func TestInMemoryDiscovery_Watch(t *testing.T) {
 	}
 
 	// Register another service
-	disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
+	_ = disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
 
 	// Wait for update
 	select {
@@ -225,7 +225,7 @@ func TestDNSDiscovery(t *testing.T) {
 
 func TestCacheDiscovery(t *testing.T) {
 	backend := NewInMemoryDiscovery()
-	backend.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	_ = backend.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
 
 	cache := NewCacheDiscovery(backend, 1*time.Second)
 
@@ -246,7 +246,7 @@ func TestCacheDiscovery(t *testing.T) {
 	}
 
 	// Register new service
-	backend.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
+	_ = backend.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
 
 	// Still gets cached result (1 IP)
 	ips3, err := cache.ResolveLabels(map[string]string{"app": "web"})
@@ -274,15 +274,15 @@ func TestCacheDiscovery(t *testing.T) {
 
 func TestCacheDiscovery_ClearCache(t *testing.T) {
 	backend := NewInMemoryDiscovery()
-	backend.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	_ = backend.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
 
 	cache := NewCacheDiscovery(backend, 10*time.Second)
 
 	// Populate cache
-	cache.ResolveLabels(map[string]string{"app": "web"})
+	_, _ = cache.ResolveLabels(map[string]string{"app": "web"})
 
 	// Add new service
-	backend.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
+	_ = backend.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
 
 	// Clear cache
 	cache.ClearCache()

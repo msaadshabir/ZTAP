@@ -17,9 +17,9 @@ func TestPolicyDiscoveryIntegration(t *testing.T) {
 	disc := discovery.NewInMemoryDiscovery()
 
 	// Register services
-	disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web", "tier": "frontend"})
-	disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web", "tier": "frontend"})
-	disc.RegisterService("db-1", "10.0.2.1", map[string]string{"app": "database", "tier": "backend"})
+	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web", "tier": "frontend"})
+	_ = disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web", "tier": "frontend"})
+	_ = disc.RegisterService("db-1", "10.0.2.1", map[string]string{"app": "database", "tier": "backend"})
 
 	// Create policy resolver
 	resolver := policy.NewPolicyResolver(disc)
@@ -122,7 +122,7 @@ spec:
 func TestDiscoveryWithCache(t *testing.T) {
 	// Create backend discovery
 	backend := discovery.NewInMemoryDiscovery()
-	backend.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	_ = backend.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
 
 	// Create cached discovery with short TTL
 	cached := discovery.NewCacheDiscovery(backend, 500*time.Millisecond)
@@ -160,7 +160,7 @@ func TestDiscoveryWithCache(t *testing.T) {
 	}
 
 	// Add new service
-	backend.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
+	_ = backend.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
 
 	// Still gets cached result
 	ips3, err := cached.ResolveLabels(map[string]string{"app": "web"})
@@ -191,7 +191,7 @@ func TestDynamicServiceUpdates(t *testing.T) {
 	disc := discovery.NewInMemoryDiscovery()
 
 	// Register initial service
-	disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
 
 	// Start watching
 	ctx, cancel := context.WithCancel(context.Background())
@@ -215,7 +215,7 @@ func TestDynamicServiceUpdates(t *testing.T) {
 	// Add service in goroutine to simulate dynamic update
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
+		_ = disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
 	}()
 
 	// Wait for update notification
@@ -231,7 +231,7 @@ func TestDynamicServiceUpdates(t *testing.T) {
 	// Remove service
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		disc.DeregisterService("web-1")
+		_ = disc.DeregisterService("web-1")
 	}()
 
 	// Wait for removal notification
@@ -249,9 +249,9 @@ func TestDynamicServiceUpdates(t *testing.T) {
 func TestMultiplePoliciesWithDiscovery(t *testing.T) {
 	// Setup discovery
 	disc := discovery.NewInMemoryDiscovery()
-	disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web", "env": "prod"})
-	disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web", "env": "dev"})
-	disc.RegisterService("db-1", "10.0.2.1", map[string]string{"app": "database", "env": "prod"})
+	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web", "env": "prod"})
+	_ = disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web", "env": "dev"})
+	_ = disc.RegisterService("db-1", "10.0.2.1", map[string]string{"app": "database", "env": "prod"})
 
 	resolver := policy.NewPolicyResolver(disc)
 
