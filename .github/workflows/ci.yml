@@ -35,11 +35,12 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Install golangci-lint from source
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: latest
-          args: --timeout=5m
+        run: golangci-lint run --timeout=5m
 
   test-go:
     name: Go Tests (${{ matrix.os }})
@@ -315,6 +316,7 @@ jobs:
     name: Generate Coverage Report
     needs: [test-go, test-python, test-integration]
     runs-on: ubuntu-latest
+    if: always() && (needs.test-go.result == 'success' || needs.test-python.result == 'success' || needs.test-integration.result == 'success')
 
     steps:
       - name: Check out code
@@ -432,6 +434,17 @@ jobs:
     steps:
       - name: Check all jobs status
         run: |
+          echo "Job Results:"
+          echo "  lint: ${{ needs.lint.result }}"
+          echo "  test-go: ${{ needs.test-go.result }}"
+          echo "  test-integration: ${{ needs.test-integration.result }}"
+          echo "  test-python: ${{ needs.test-python.result }}"
+          echo "  docker-build: ${{ needs.docker-build.result }}"
+          echo "  ebpf-verification: ${{ needs.ebpf-verification.result }}"
+          echo "  security-scan: ${{ needs.security-scan.result }}"
+          echo "  build-check: ${{ needs.build-check.result }}"
+          echo ""
+
           if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
             echo "❌ Some checks failed"
             exit 1
