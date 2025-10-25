@@ -351,14 +351,14 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            let body = '## ✅ Test Results\n\n';
+            let body = '## Test Results\n\n';
             body += '### All tests passed!\n\n';
 
             if (fs.existsSync('coverage-summary.md')) {
               body += fs.readFileSync('coverage-summary.md', 'utf8');
             }
 
-            body += '\n\n📊 Coverage reports available in artifacts.';
+            body += '\n\nCoverage reports available in artifacts.';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -448,11 +448,11 @@ jobs:
           echo ""
 
           if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
-            echo "❌ Some checks failed"
+            echo "Some checks failed"
             exit 1
           elif [ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]; then
-            echo "⚠️ Some checks were cancelled"
+            echo "Some checks were cancelled"
             exit 1
           else
-            echo "✅ All checks passed!"
+            echo "All checks passed!"
           fi

@@ -3,9 +3,12 @@ package enforcer
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"ztap/pkg/audit"
 	"ztap/pkg/cluster"
 	"ztap/pkg/policy"
 )
@@ -18,7 +21,8 @@ type PolicyEnforcer struct {
 	enforcedVersion map[string]int64 // Track which version of each policy is enforced
 	running         bool
 	stopCh          chan struct{}
-	cgroupPath      string // For eBPF enforcement
+	cgroupPath      string             // For eBPF enforcement
+	auditLogger     *audit.AuditLogger // Audit logging for policy operations
 }
 
 // PolicyEnforcerConfig holds configuration for the policy enforcer.
@@ -30,12 +34,21 @@ type PolicyEnforcerConfig struct {
 
 // NewPolicyEnforcer creates a new policy enforcer that watches for policy updates.
 func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
+	// Initialize audit logger
+	homeDir, _ := os.UserHomeDir()
+	logPath := filepath.Join(homeDir, ".ztap", "audit.log")
+	auditLogger, err := audit.NewAuditLogger(logPath)
+	if err != nil {
+		log.Printf("Warning: failed to initialize audit logger: %v", err)
+	}
+
 	return &PolicyEnforcer{
 		policySync:      config.PolicySync,
 		discovery:       config.Discovery,
 		enforcedVersion: make(map[string]int64),
 		stopCh:          make(chan struct{}),
 		cgroupPath:      config.CgroupPath,
+		auditLogger:     auditLogger,
 	}
 }
 
@@ -106,6 +119,16 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 				log.Printf("Failed to enforce policy %s v%d: %v",
 					update.PolicyName, update.Version, err)
 				cluster.RecordPolicyEnforcementError(update.PolicyName, "local-node")
+
+				// Log failure to audit log
+				if pe.auditLogger != nil {
+					details := map[string]interface{}{
+						"version": update.Version,
+						"source":  update.Source,
+					}
+					_ = pe.auditLogger.LogFailure(audit.EventPolicyEnforced, "system",
+						update.PolicyName, "enforce", err.Error(), details)
+				}
 				continue
 			}
 
@@ -118,6 +141,17 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 			duration := time.Since(startTime).Seconds()
 			cluster.RecordPolicyEnforcementDuration(update.PolicyName, duration)
 			cluster.RecordPolicyEnforced(update.PolicyName, "local-node")
+
+			// Log success to audit log
+			if pe.auditLogger != nil {
+				details := map[string]interface{}{
+					"version":     update.Version,
+					"source":      update.Source,
+					"duration_ms": duration * 1000,
+				}
+				_ = pe.auditLogger.Log(audit.EventPolicyEnforced, "system",
+					update.PolicyName, "enforce", details)
+			}
 
 			log.Printf("Successfully enforced policy %s v%d from %s",
 				update.PolicyName, update.Version, update.Source)

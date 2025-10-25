@@ -405,7 +405,7 @@ func (e *EtcdPolicySync) SyncPolicy(ctx context.Context, name string, yaml []byt
 
 ### Integration with Enforcement
 
-**✅ FULLY IMPLEMENTED**
+**FULLY IMPLEMENTED**
 
 Policy sync integrates with the `PolicyEnforcer` to automatically apply policies on all cluster nodes:
 

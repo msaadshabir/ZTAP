@@ -58,6 +58,7 @@ ztap status
 - **Kernel-Level Filtering** – Real eBPF on Linux
 - **RBAC** – Admin, Operator, Viewer roles
 - **Session Management** – 24-hour TTL
+- **Tamper-Proof Audit Logging** – Cryptographic hash chaining
 - **NIST SP 800-207** compliant
 
 ### Distributed Architecture
@@ -105,6 +106,7 @@ ztap status
 | [Architecture](docs/architecture.md)       | System design and components              |
 | [eBPF Enforcement](docs/EBPF.md)           | Linux kernel-level enforcement            |
 | [Cluster Coordination](docs/CLUSTER.md)    | Multi-node clustering and leader election |
+| [Audit Logging](docs/AUDIT.md)             | Tamper-proof audit log system             |
 | [Testing Guide](docs/TESTING_GUIDE.md)     | Comprehensive testing documentation       |
 | [Implementation Status](docs/STATUS.md)    | Project status and roadmap                |
 | [Anomaly Detection](pkg/anomaly/README.md) | ML service setup                          |
@@ -178,6 +180,7 @@ Commands:
   metrics     Start Prometheus metrics server
   user        Manage users (create, login, list, change-password)
   discovery   Service discovery (register, resolve, list)
+  audit       Audit log management (view, verify, stats)
 ```
 
 <details>
@@ -222,6 +225,26 @@ ztap policy show web-to-db                   # Show policy details
 
 </details>
 
+<details>
+<summary><b>Audit Logging</b></summary>
+
+```bash
+# View audit log with tamper-proof cryptographic verification
+ztap audit view                                   # View recent entries
+ztap audit view --actor admin                     # Filter by actor
+ztap audit view --type policy.created             # Filter by event type
+ztap audit view --resource web-policy             # Filter by resource
+ztap audit view --limit 100                       # Limit results
+
+# Verify cryptographic integrity
+ztap audit verify                                 # Detect tampering
+
+# Display statistics
+ztap audit stats                                  # Show log stats
+```
+
+</details>
+
 ---
 
 ## Observability
@@ -251,7 +274,7 @@ Dashboard auto-provisioned from `deployments/grafana-dashboard.json`
 
 ---
 
-## ⚙️ Requirements
+## Requirements
 
 | Component      | Requirement                      | Notes                               |
 | -------------- | -------------------------------- | ----------------------------------- |
@@ -332,6 +355,7 @@ _\*Enforcer tests require Linux kernel_
 - **Distributed Architecture** (Cluster coordination with leader election)
 - **Policy Synchronization** (Leader-initiated distributed sync with auto-enforcement)
 - **Prometheus Metrics** (Policy sync and enforcement monitoring)
+- **Audit Logging** (Tamper-proof cryptographic logging with hash chaining)
 
 </details>
 
@@ -349,7 +373,6 @@ _\*Enforcer tests require Linux kernel_
 - [ ] Enhanced security (2FA, cert-based auth)
 - [ ] Enterprise features (LDAP, SAML/OAuth SSO)
 - [ ] Distributed rate limiting across cluster
-- [ ] Audit logging with tamper-proof storage
 
 **[Full Roadmap](docs/STATUS.md)**
 
