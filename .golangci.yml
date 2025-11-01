@@ -6,9 +6,7 @@ issues:
     - examples
 
 linters:
-  disable:
-    - typecheck # Already covered by go vet step in CI
-    - govet # go vet runs separately within workflow
+  disable-all: true
   enable:
     - errcheck
     - gosimple
