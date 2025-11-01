@@ -1,8 +1,60 @@
-# Example Policies
+# Examples
 
-This directory contains sample ZTAP policies demonstrating various zero-trust scenarios.
+This directory contains sample ZTAP policies and example programs demonstrating various zero-trust scenarios and cluster features.
 
-## Basic Policies
+## Example Programs
+
+### etcd_election
+
+Demonstrates distributed leader election using etcd backend.
+
+**Prerequisites:**
+
+- Running etcd cluster (see [ETCD_SETUP.md](../docs/ETCD_SETUP.md))
+
+**Usage:**
+
+```bash
+# Terminal 1
+go run ./examples/etcd_election node1
+
+# Terminal 2
+go run ./examples/etcd_election node2
+
+# Terminal 3
+go run ./examples/etcd_election node3
+```
+
+Observe leader election and automatic failover when killing the leader node.
+
+**See:** [etcd_election/main.go](./etcd_election/main.go)
+
+### policy_sync
+
+Demonstrates distributed policy synchronization across a 3-node cluster.
+
+**Usage:**
+
+```bash
+go run ./examples/policy_sync
+```
+
+Shows:
+
+- Leader-initiated policy synchronization
+- Automatic version tracking
+- Real-time policy update notifications
+- Distributed policy consistency
+
+**See:** [policy_sync/main.go](./policy_sync/main.go) | [CLUSTER.md](../docs/CLUSTER.md)
+
+---
+
+## Policy Examples
+
+Sample ZTAP network policies for common zero-trust scenarios.
+
+### Basic Policies
 
 ### web-to-db.yaml
 
