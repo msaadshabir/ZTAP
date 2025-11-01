@@ -33,7 +33,9 @@ jobs:
           fi
 
       - name: Run go vet
-        run: go vet ./...
+        run: |
+          # Exclude examples directory (contains multiple main packages)
+          go vet $(go list ./... | grep -v '/examples$')
 
       - name: Install golangci-lint from source
         run: |
