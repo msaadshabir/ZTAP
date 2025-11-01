@@ -1,21 +1,17 @@
 run:
   timeout: 5m
-  skip-dirs:
-    - examples
 
 issues:
-  exclude-rules:
-    - path: examples/
-      linters:
-        - typecheck
+  exclude-dirs:
+    - examples
 
 linters:
   disable:
-    - typecheck # Already covered by go vet
+    - typecheck # Already covered by go vet step in CI
+    - govet # go vet runs separately within workflow
   enable:
     - errcheck
     - gosimple
-    - govet
     - ineffassign
     - staticcheck
     - unused
