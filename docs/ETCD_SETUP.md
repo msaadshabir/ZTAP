@@ -227,13 +227,13 @@ func main() {
 
 ```bash
 # Terminal 1
-go run examples/etcd_election_example.go node1
+go run ./examples/etcd_election node1
 
 # Terminal 2
-go run examples/etcd_election_example.go node2
+go run ./examples/etcd_election node2
 
 # Terminal 3
-go run examples/etcd_election_example.go node3
+go run ./examples/etcd_election node3
 ```
 
 Observe leader election and automatic failover.
@@ -479,14 +479,14 @@ docker-compose -f etcd-cluster.yml up -d
 
 # Run 10 concurrent ZTAP nodes
 for i in {1..10}; do
-    go run examples/etcd_election_example.go "node-$i" &
+    go run ./examples/etcd_election "node-$i" &
 done
 
 # Observe: Only one becomes leader
 # Kill leader: watch automatic failover
 
 # Cleanup
-pkill -f etcd_election_example
+pkill -f examples/etcd_election
 ```
 
 ---

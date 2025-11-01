@@ -124,7 +124,7 @@
   - `pkg/enforcer/policy_enforcer_integration_test.go` (289 lines, 3 integration tests)
 - **Documentation**:
   - `docs/CLUSTER.md` (updated with policy sync architecture)
-  - `examples/policy_sync_example.go` (238 lines, 3-node cluster demo)
+  - `examples/policy_sync/main.go` (238 lines, 3-node cluster demo)
 
 #### Architecture:
 

@@ -520,7 +520,7 @@ Tests cover:
 See the complete working example:
 
 ```bash
-go run examples/policy_sync_example.go
+go run ./examples/policy_sync
 ```
 
 This demonstrates a 3-node cluster with automatic enforcement:
@@ -578,7 +578,7 @@ Tests cover (3 test cases, all passing):
 Example code:
 
 ```bash
-go run examples/policy_sync_example.go
+go run ./examples/policy_sync
 ```
 
 ### Metrics
@@ -607,7 +607,7 @@ Policy sync and enforcement are fully instrumented:
 - [Enforcer Tests](../pkg/enforcer/policy_enforcer_test.go)
 - [Integration Tests](../pkg/enforcer/policy_enforcer_integration_test.go)
 - [Policy CLI Commands](../cmd/policy.go)
-- [Example Code](../examples/policy_sync_example.go)
+- [Example Code](../examples/policy_sync/main.go)
 - [Complete Feature Documentation](../POLICY_SYNC_COMPLETE.md)
 
 ## Testing

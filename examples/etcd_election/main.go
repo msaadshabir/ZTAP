@@ -29,9 +29,9 @@ import (
 //      --initial-cluster etcd0=http://localhost:2380
 //
 // 2. Run multiple instances of this example in separate terminals:
-//    go run examples/etcd_election_example.go node1
-//    go run examples/etcd_election_example.go node2
-//    go run examples/etcd_election_example.go node3
+//    go run ./examples/etcd_election node1
+//    go run ./examples/etcd_election node2
+//    go run ./examples/etcd_election node3
 //
 // 3. Observe that only one node becomes the leader
 // 4. Kill the leader and observe automatic failover
