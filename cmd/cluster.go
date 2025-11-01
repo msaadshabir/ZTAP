@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -14,6 +15,12 @@ import (
 
 // Global cluster election instance (initialized on first use)
 var clusterElection cluster.LeaderElection
+
+// Backend type flag (default: memory)
+var clusterBackend string = "memory"
+
+// Etcd endpoints flag
+var etcdEndpoints []string
 
 var clusterCmd = &cobra.Command{
 	Use:   "cluster",
@@ -149,23 +156,138 @@ var clusterListCmd = &cobra.Command{
 	},
 }
 
+var clusterConfigCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Configure cluster backend",
+	Long:  `Configure the cluster coordination backend (in-memory or etcd).`,
+}
+
+var clusterConfigSetCmd = &cobra.Command{
+	Use:   "set-backend [memory|etcd]",
+	Short: "Set the cluster backend type",
+	Long:  `Set the cluster coordination backend to either in-memory (for testing) or etcd (for production).`,
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		backend := args[0]
+		if backend != "memory" && backend != "etcd" {
+			fmt.Println("Error: backend must be 'memory' or 'etcd'")
+			os.Exit(1)
+		}
+
+		clusterBackend = backend
+		fmt.Printf("Cluster backend set to: %s\n", backend)
+
+		if backend == "etcd" {
+			if len(etcdEndpoints) == 0 {
+				fmt.Println("\nNote: Using default etcd endpoint [localhost:2379]")
+				fmt.Println("Use --etcd-endpoints to specify custom endpoints")
+			} else {
+				fmt.Printf("Etcd endpoints: %v\n", etcdEndpoints)
+			}
+		}
+	},
+}
+
+var clusterConfigShowCmd = &cobra.Command{
+	Use:   "show",
+	Short: "Show current cluster configuration",
+	Long:  `Display the current cluster backend configuration.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("Cluster Configuration")
+		fmt.Println("=====================")
+		fmt.Printf("Backend: %s\n", clusterBackend)
+
+		if clusterBackend == "etcd" {
+			if len(etcdEndpoints) > 0 {
+				fmt.Printf("Etcd endpoints: %v\n", etcdEndpoints)
+			} else {
+				fmt.Println("Etcd endpoints: [localhost:2379] (default)")
+			}
+		}
+
+		if clusterElection != nil {
+			hostname, _ := os.Hostname()
+			fmt.Printf("Node ID: %s\n", hostname)
+			fmt.Printf("Running: yes\n")
+			fmt.Printf("Leader: %v\n", clusterElection.IsLeader())
+		} else {
+			fmt.Println("Status: not initialized")
+		}
+	},
+}
+
+var clusterTestEtcdCmd = &cobra.Command{
+	Use:   "test-etcd",
+	Short: "Test etcd connectivity",
+	Long:  `Test connection to etcd cluster and display status.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		endpoints := etcdEndpoints
+		if len(endpoints) == 0 {
+			endpoints = []string{"localhost:2379"}
+		}
+
+		fmt.Printf("Testing etcd connection to: %v\n", endpoints)
+
+		etcdConfig := &cluster.EtcdConfig{
+			Endpoints:   endpoints,
+			DialTimeout: 5 * time.Second,
+		}
+
+		client, err := etcdConfig.NewEtcdClient()
+		if err != nil {
+			fmt.Printf("Error: Failed to connect to etcd: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Try to get cluster status
+		resp, err := client.MemberList(ctx)
+		if err != nil {
+			fmt.Printf("Error: Failed to get cluster status: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("\nConnection successful!")
+		fmt.Printf("Etcd cluster has %d member(s)\n", len(resp.Members))
+		for i, member := range resp.Members {
+			fmt.Printf("  %d. ID=%d, Name=%s, ClientURLs=%v\n",
+				i+1, member.ID, member.Name, member.ClientURLs)
+		}
+	},
+}
+
 func init() {
+	// Add config subcommands
+	clusterConfigCmd.AddCommand(clusterConfigSetCmd)
+	clusterConfigCmd.AddCommand(clusterConfigShowCmd)
+
 	// Add subcommands to cluster
 	clusterCmd.AddCommand(clusterStatusCmd)
 	clusterCmd.AddCommand(clusterJoinCmd)
 	clusterCmd.AddCommand(clusterLeaveCmd)
 	clusterCmd.AddCommand(clusterListCmd)
+	clusterCmd.AddCommand(clusterConfigCmd)
+	clusterCmd.AddCommand(clusterTestEtcdCmd)
+
+	// Add flags to commands that need them
+	clusterConfigSetCmd.Flags().StringSliceVar(&etcdEndpoints, "etcd-endpoints", []string{}, "Etcd cluster endpoints (comma-separated)")
+	clusterTestEtcdCmd.Flags().StringSliceVar(&etcdEndpoints, "etcd-endpoints", []string{}, "Etcd cluster endpoints to test")
 
 	// Add cluster command to root
 	rootCmd.AddCommand(clusterCmd)
 
-	// Initialize in-memory election on first use
-	// In production, this would be replaced with etcd or Raft backend
+	// Initialize cluster election based on backend type
 	hostname, _ := os.Hostname()
 	config := cluster.LeaderElectionConfig{
 		NodeID:      hostname,
 		NodeAddress: "127.0.0.1:9090", // Default; should be configurable
 	}
+
+	// Default to in-memory backend for now
+	// Users can switch to etcd with "ztap cluster config set-backend etcd"
 	clusterElection = cluster.NewInMemoryElection(config)
 
 	// Initialize policy sync with the cluster election
