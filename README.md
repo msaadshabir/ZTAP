@@ -2,11 +2,11 @@
 
 > Open-source zero-trust microsegmentation with eBPF enforcement, policy-as-code, and hybrid cloud support
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/EBPF.md)
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/ebpf.md)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Compatible-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![AWS](https://img.shields.io/badge/AWS-Integration-FF9900?logo=amazon-aws&logoColor=white)](docs/setup.md)
-[![Test Coverage](https://img.shields.io/badge/coverage-79%25-brightgreen.svg)](docs/TESTING_GUIDE.md)
+[![Test Coverage](https://img.shields.io/badge/coverage-79%25-brightgreen.svg)](docs/testing.md)
 [![NIST SP 800-207](https://img.shields.io/badge/NIST-SP%20800--207-blue.svg)](https://csrc.nist.gov/publications/detail/sp/800-207/final)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -43,7 +43,7 @@ ztap enforce -f examples/web-to-db.yaml
 ztap status
 ```
 
-**[Full Setup Guide](docs/setup.md)** | **[Architecture](docs/architecture.md)** | **[eBPF Setup](docs/EBPF.md)**
+**[Full Setup Guide](docs/setup.md)** | **[Architecture](docs/architecture.md)** | **[eBPF Setup](docs/ebpf.md)**
 
 ---
 
@@ -104,11 +104,11 @@ ztap status
 | ------------------------------------------ | ----------------------------------------- |
 | [Setup Guide](docs/setup.md)               | Installation and configuration            |
 | [Architecture](docs/architecture.md)       | System design and components              |
-| [eBPF Enforcement](docs/EBPF.md)           | Linux kernel-level enforcement            |
-| [Cluster Coordination](docs/CLUSTER.md)    | Multi-node clustering and leader election |
-| [Audit Logging](docs/AUDIT.md)             | Tamper-proof audit log system             |
-| [Testing Guide](docs/TESTING_GUIDE.md)     | Comprehensive testing documentation       |
-| [Implementation Status](docs/STATUS.md)    | Project status and roadmap                |
+| [eBPF Enforcement](docs/ebpf.md)           | Linux kernel-level enforcement            |
+| [Cluster Coordination](docs/cluster.md)    | Multi-node clustering and leader election |
+| [Audit Logging](docs/audit.md)             | Tamper-proof audit log system             |
+| [Testing Guide](docs/testing.md)           | Comprehensive testing documentation       |
+| [Implementation Status](docs/status.md)    | Project status and future work            |
 | [Anomaly Detection](pkg/anomaly/README.md) | ML service setup                          |
 
 ---
@@ -286,7 +286,7 @@ Dashboard auto-provisioned from `deployments/grafana-dashboard.json`
 | **Docker**     | Latest (optional)                | For Prometheus/Grafana stack        |
 | **Python**     | 3.8+ (optional)                  | For anomaly detection service       |
 
-**[Full eBPF Setup Guide](docs/EBPF.md)**
+**[Full eBPF Setup Guide](docs/ebpf.md)**
 
 ---
 
@@ -319,9 +319,7 @@ go fmt ./... && go vet ./...
 
 ## Project Status
 
-**Current Phase:** Production Ready (Core Components)
-
-### Test Coverage
+### Test Coverage Snapshot
 
 | Package         | Coverage  | Status               |
 | --------------- | --------- | -------------------- |
@@ -333,48 +331,39 @@ go fmt ./... && go vet ./...
 | `pkg/enforcer`  | N/A\*     | Linux-only           |
 | **Core Avg**    | **79.5%** | **Production Ready** |
 
-_\*Enforcer tests require Linux kernel_
+_\*Enforcer tests require Linux kernel_
 
 ---
 
 ## Roadmap
 
-### Completed
+### Delivered Capabilities
 
-<details>
-<summary>View completed milestones</summary>
+- Core policy enforcement on Linux (eBPF) and macOS (pf)
+- Service discovery and RBAC authentication
+- Hybrid cloud integration with AWS Security Groups
+- Observability stack with Prometheus, Grafana, and structured logs
+- ML-based anomaly detection service
+- Tamper-evident audit logging with hash chaining and verification
+- Distributed cluster coordination with leader election
+- Distributed policy synchronization with metrics and version tracking
+- etcd backend for production cluster deployments
 
-- **Phase 1:** Core Policy Enforcement (eBPF + pf)
-- **Phase 2:** Service Discovery & RBAC Authentication
-- **Phase 3:** Hybrid Cloud Integration (AWS)
-- **Phase 4:** Observability & Testing (79% coverage)
-- **Phase 5:** Anomaly Detection (ML-based)
-- **eBPF Linux Verification** (GitHub Actions)
-- **CI/CD Pipeline** (Multi-OS testing)
-- **Containerization** (Docker Compose stack)
-- **Distributed Architecture** (Cluster coordination with leader election)
-- **Policy Synchronization** (Leader-initiated distributed sync with auto-enforcement)
-- **Prometheus Metrics** (Policy sync and enforcement monitoring)
-- **Audit Logging** (Tamper-proof cryptographic logging with hash chaining)
-
-</details>
-
-### High Priority
+### Near-Term Focus
 
 - [ ] Real-time flow monitoring dashboard
-- [ ] Advanced alerting (AlertManager integration)
+- [ ] Advanced alerting and incident workflows
 - [ ] Pre-compiled eBPF binaries for common kernels
-- [ ] etcd backend for production cluster deployments
 - [ ] Policy conflict detection and resolution
 
-### Medium Priority
+### Longer-Term Themes
 
-- [ ] Additional platform support (Windows, iptables)
-- [ ] Enhanced security (2FA, cert-based auth)
-- [ ] Enterprise features (LDAP, SAML/OAuth SSO)
-- [ ] Distributed rate limiting across cluster
+- [ ] Additional dataplane support (for example: Windows, iptables)
+- [ ] Stronger authentication options (for example: 2FA, certificate-based auth)
+- [ ] Enterprise integrations (for example: LDAP, SAML/OAuth SSO)
+- [ ] Distributed rate limiting and quota management across the cluster
 
-**[Full Roadmap](docs/STATUS.md)**
+See `docs/status.md` for a more detailed status view.
 
 ---
 
@@ -396,9 +385,9 @@ We welcome contributions! Here's where to start:
 
 **Resources:**
 
-- [Testing Guide](docs/TESTING_GUIDE.md)
-- [Implementation Status](docs/STATUS.md)
-- [eBPF Development](docs/EBPF.md)
+- [Testing Guide](docs/testing.md)
+- [Implementation Status](docs/status.md)
+- [eBPF Development](docs/ebpf.md)
 
 ---
 
@@ -421,6 +410,6 @@ MIT License - See [LICENSE](LICENSE)
 
 **Note:** macOS enforcement (pf) is for development only. Use Linux + eBPF for production.
 
-[eBPF Setup Guide](docs/EBPF.md) | [Get Started](docs/setup.md) | [Open an Issue](../../issues)
+[eBPF Setup Guide](docs/ebpf.md) | [Get Started](docs/setup.md) | [Open an Issue](../../issues)
 
 </div>

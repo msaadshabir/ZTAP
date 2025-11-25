@@ -1,20 +1,31 @@
 # ZTAP Documentation
 
-This directory contains comprehensive technical documentation for ZTAP.
+Technical documentation for ZTAP.
 
-## Quick Links
+## Core Documentation
 
-- **[Testing Guide](TESTING_GUIDE.md)** - Complete test suite documentation with coverage stats
-- **[eBPF Setup](EBPF.md)** - Linux eBPF enforcement configuration
-- **[Architecture](architecture.md)** - System design and component overview
-- **[Setup Guide](setup.md)** - Installation and configuration
+| Document                        | Description                          |
+| ------------------------------- | ------------------------------------ |
+| [Architecture](architecture.md) | System design and component overview |
+| [Setup Guide](setup.md)         | Installation and configuration       |
+| [eBPF Setup](ebpf.md)           | Linux eBPF enforcement               |
+| [Testing Guide](testing.md)     | Test suite and coverage              |
 
-## Main Documentation
+## Operations
 
-See the [main README](../README.md) for project overview, features, and quick start.
+| Document                    | Description                              |
+| --------------------------- | ---------------------------------------- |
+| [Deployment](deployment.md) | Docker and containerized deployment      |
+| [Cluster](cluster.md)       | Distributed coordination and policy sync |
+| [etcd Setup](etcd.md)       | etcd backend for production clusters     |
+| [Audit Logging](audit.md)   | Tamper-proof audit system                |
 
-## Additional Resources
+## Reference
 
-- [Docker Deployment](../DOCKER.md) - Containerized deployment guide
-- [Examples](../examples/) - Sample policies and use cases
-- [Anomaly Detection](../pkg/anomaly/README.md) - ML service API documentation
+| Document                                      | Description                     |
+| --------------------------------------------- | ------------------------------- |
+| [Status](status.md)                           | Project status and capabilities |
+| [Examples](../examples/)                      | Sample policies and use cases   |
+| [Anomaly Detection](../pkg/anomaly/README.md) | ML service API                  |
+
+See the [main README](../README.md) for project overview and quick start.

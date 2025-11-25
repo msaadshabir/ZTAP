@@ -5,7 +5,7 @@
 ### System Requirements
 
 - **Operating System**: macOS 12+ or Linux (kernel ≥5.7 for eBPF)
-- **Go**: 1.25.2 or later
+- **Go**: 1.22 or later
 - **Memory**: 2 GB RAM minimum
 - **Disk**: 200 MB for binary, policies, and logs
 
@@ -21,7 +21,7 @@
 
 ```bash
 # Clone repository
-git clone https://github.com/saad-build/ZTAP.git
+git clone https://github.com/msaadshabir/ZTAP.git
 cd ZTAP
 
 # Install dependencies
@@ -38,7 +38,7 @@ sudo mv ztap /usr/local/bin/
 
 ```bash
 # Clone repository
-git clone https://github.com/saad-build/ZTAP.git
+git clone https://github.com/msaadshabir/ZTAP.git
 cd ZTAP
 
 # Start full stack with Docker Compose
@@ -51,7 +51,7 @@ docker-compose up -d
 # - Anomaly Detector: http://localhost:5000
 ```
 
-See [DOCKER.md](../DOCKER.md) for detailed Docker deployment.
+See [Deployment Guide](deployment.md) for detailed Docker deployment.
 
 ## Configuration
 
@@ -97,7 +97,7 @@ sudo apt-get install clang llvm make linux-headers-$(uname -r)
 cd bpf && make
 ```
 
-See [eBPF Setup Guide](EBPF.md) for detailed Linux configuration.
+See [eBPF Setup Guide](ebpf.md) for detailed Linux configuration.
 
 ### 4. AWS Integration (Optional)
 
@@ -249,4 +249,4 @@ ztap metrics --port 9091
 
 - Read [Architecture](architecture.md) to understand internals
 - Check [examples/](../examples/) for sample policies
-- See [evaluation.md](evaluation.md) for testing scenarios
+- See [Testing Guide](testing.md) for test scenarios

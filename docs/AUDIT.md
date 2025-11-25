@@ -380,6 +380,5 @@ ztap audit verify
 
 **See Also:**
 
-- [Architecture Documentation](architecture.md)
-- [Security Guide](../README.md#security)
-- [Testing Guide](TESTING_GUIDE.md)
+- [Architecture](architecture.md)
+- [Testing Guide](testing.md)

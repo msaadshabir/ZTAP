@@ -1,18 +1,12 @@
 # Examples
 
-This directory contains sample ZTAP policies and example programs demonstrating various zero-trust scenarios and cluster features.
+Sample ZTAP policies and programs demonstrating zero-trust scenarios and cluster features.
 
-## Example Programs
+## Programs
 
 ### etcd_election
 
-Demonstrates distributed leader election using etcd backend.
-
-**Prerequisites:**
-
-- Running etcd cluster (see [ETCD_SETUP.md](../docs/ETCD_SETUP.md))
-
-**Usage:**
+Distributed leader election using etcd backend.
 
 ```bash
 # Terminal 1
@@ -20,108 +14,45 @@ go run ./examples/etcd_election node1
 
 # Terminal 2
 go run ./examples/etcd_election node2
-
-# Terminal 3
-go run ./examples/etcd_election node3
 ```
 
-Observe leader election and automatic failover when killing the leader node.
-
-**See:** [etcd_election/main.go](./etcd_election/main.go)
+See [etcd Setup](../docs/etcd.md) for prerequisites.
 
 ### policy_sync
 
-Demonstrates distributed policy synchronization across a 3-node cluster.
-
-**Usage:**
+Distributed policy synchronization across a 3-node cluster.
 
 ```bash
 go run ./examples/policy_sync
 ```
 
-Shows:
-
-- Leader-initiated policy synchronization
-- Automatic version tracking
-- Real-time policy update notifications
-- Distributed policy consistency
-
-**See:** [policy_sync/main.go](./policy_sync/main.go) | [CLUSTER.md](../docs/CLUSTER.md)
-
----
+See [Cluster Documentation](../docs/cluster.md) for details.
 
 ## Policy Examples
 
-Sample ZTAP network policies for common zero-trust scenarios.
-
-### Basic Policies
-
 ### web-to-db.yaml
 
-Classic three-tier application:
-
-- Web tier can only talk to API tier
-- IoT devices can only reach internet (DNS + HTTPS)
+Three-tier application: web to API, IoT to internet.
 
 ```bash
 ztap enforce -f web-to-db.yaml
 ```
 
-## Security Scenarios
-
 ### lateral-movement.yaml
 
-Prevents lateral movement in compromised environment:
-
-- Web servers can only reach API tier
-- API servers can only reach database
-- No cross-tier communication allowed
-
-**Use case**: Mitigate impact of web server compromise
-
-```bash
-ztap enforce -f lateral-movement.yaml
-```
+Prevent lateral movement in compromised environments.
 
 ### pci-compliant.yaml
 
-PCI-DSS compliant payment processor:
-
-- Only internal network (10.0.0.0/8) access
-- HTTPS only (port 443)
-- Blocks all other traffic
-
-**Use case**: Payment card processing compliance
-
-```bash
-ztap enforce -f pci-compliant.yaml
-```
+PCI-DSS compliant payment processor (HTTPS only, internal network).
 
 ### deny-all.yaml
 
-Strictest security posture:
-
-- Default deny all egress
-- Only explicit DNS allowed
-
-**Use case**: High-security environment, isolated services
-
-```bash
-ztap enforce -f deny-all.yaml
-```
+Deny-by-default with explicit DNS allowed.
 
 ### microservices.yaml
 
-Zero-trust microservices architecture:
-
-- Auth service → User DB (MongoDB:27017) + Cache (Redis:6379)
-- Monitoring → Internal metrics endpoints only
-
-**Use case**: Cloud-native microservices
-
-```bash
-ztap enforce -f microservices.yaml
-```
+Zero-trust microservices (auth to MongoDB/Redis, monitoring to internal).
 
 ## Policy Patterns
 
@@ -133,7 +64,6 @@ egress:
       podSelector:
         matchLabels:
           app: database
-          tier: backend
 ```
 
 ### IP-Based Rules
@@ -151,104 +81,37 @@ egress:
 ports:
   - protocol: TCP
     port: 443
-  - protocol: UDP
-    port: 53
-```
-
-## Testing Policies
-
-### 1. Validate Syntax
-
-```bash
-# Check YAML format
-cat policy.yaml | python3 -m yaml
-
-# Validate with ZTAP (future feature)
-ztap validate -f policy.yaml
-```
-
-### 2. Dry Run
-
-```bash
-# See what would happen without enforcing
-ztap enforce -f policy.yaml --dry-run
-```
-
-### 3. Monitor Logs
-
-```bash
-# Apply policy
-ztap enforce -f policy.yaml
-
-# Watch logs
-ztap logs --policy your-policy-name --follow
 ```
 
 ## Creating Custom Policies
 
-### Template
-
 ```yaml
 apiVersion: ztap/v1
 kind: NetworkPolicy
 metadata:
-  name: your-policy-name # lowercase, alphanumeric, hyphens
+  name: your-policy-name
 spec:
   podSelector:
     matchLabels:
-      app: your-app # Labels to match source workloads
+      app: your-app
   egress:
     - to:
-        # Option 1: Label selector
         podSelector:
           matchLabels:
             app: target-app
-        # Option 2: IP block
-        # ipBlock:
-        #   cidr: 10.0.0.0/24
       ports:
-        - protocol: TCP # TCP, UDP, or ICMP
-          port: 443 # 1-65535
+        - protocol: TCP
+          port: 443
 ```
 
 ### Best Practices
 
-1. **Start Restrictive**: Begin with deny-all, add explicit allows
-2. **Use Labels**: Prefer label selectors over IPs (more maintainable)
-3. **Document Intent**: Use clear policy names
-4. **Test Incrementally**: Apply one policy at a time
-5. **Monitor Impact**: Check logs before full rollout
+1. Start restrictive (deny-all, add explicit allows)
+2. Use labels over IPs (more maintainable)
+3. Test incrementally
 
-### Common Mistakes
+## Related Documentation
 
-1. **Missing podSelector**: Must have at least one label
-2. **Invalid CIDR**: Use proper notation (e.g., 10.0.0.0/8)
-3. **Mixed selectors**: Don't use podSelector + ipBlock together
-4. **Port out of range**: Must be 1-65535
-5. **Wrong protocol**: Use TCP, UDP, or ICMP (case-sensitive)
-
-## Policy Composition
-
-You can combine multiple policies in one file using `---` separator:
-
-```yaml
-apiVersion: ztap/v1
-kind: NetworkPolicy
-metadata:
-  name: policy-one
-spec:
-  # ... spec here ...
----
-apiVersion: ztap/v1
-kind: NetworkPolicy
-metadata:
-  name: policy-two
-spec:
-  # ... spec here ...
-```
-
-## Next Steps
-
-- Review [Architecture](../docs/architecture.md) for how policies are enforced
-- See [Evaluation](../docs/evaluation.md) for testing scenarios
-- Read [Setup Guide](../docs/setup.md) for deployment options
+- [Architecture](../docs/architecture.md)
+- [Setup Guide](../docs/setup.md)
+- [Testing](../docs/testing.md)

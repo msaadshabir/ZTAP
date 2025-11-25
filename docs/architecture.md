@@ -161,24 +161,24 @@ User
 - Target: <50 MB
 - Policy cache: In-memory (no persistence)
 
-## Future Architecture
+## Distributed Architecture
 
-### Distributed Deployment
+ZTAP supports multi-node deployments with distributed coordination:
 
 ```
 +----------------+     +----------------+
-|  Controller    | <-> |  Agent (Node1) |
-| (Central API)  |     +----------------+
+|  Leader Node   | <-> |  Follower Node |
+| (Coordinates)  |     +----------------+
 +----------------+     +----------------+
-       ^               |  Agent (Node2) |
+       ^               |  Follower Node |
        |               +----------------+
        |               +----------------+
-       +-------------- |  Agent (Node3) |
+       +-------------- |  Follower Node |
                        +----------------+
 ```
 
 ### High Availability
 
-- Controller: Active-passive with etcd
-- Agents: Stateless, crash-safe
-- Policy store: Git as source of truth
+- Leader election: In-memory (dev) or etcd (production)
+- Policy sync: Automatic distribution to all nodes
+- Nodes: Stateless with persistent etcd backend

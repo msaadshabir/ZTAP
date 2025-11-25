@@ -38,7 +38,7 @@ The etcd backend provides:
 
 ### System Requirements
 
-- Go 1.21+ (for building ZTAP)
+- Go 1.22+ (for building ZTAP)
 - etcd 3.4+ cluster
 - Network connectivity between ZTAP nodes and etcd cluster
 - Sufficient disk space for etcd data (recommend 10GB+)
@@ -695,7 +695,7 @@ ztap_cluster_nodes_total
 - [etcd Hardware Recommendations](https://etcd.io/docs/v3.5/op-guide/hardware/)
 - [etcd Security Guide](https://etcd.io/docs/v3.5/op-guide/security/)
 - [Raft Consensus Algorithm](https://raft.github.io/)
-- [ZTAP Cluster Documentation](CLUSTER.md)
+- [ZTAP Cluster Documentation](cluster.md)
 
 ---
 
@@ -703,16 +703,10 @@ ztap_cluster_nodes_total
 
 For issues or questions:
 
-1. Check [CLUSTER.md](CLUSTER.md) for general cluster documentation
+1. Check [cluster.md](cluster.md) for general cluster documentation
 2. Review [Troubleshooting](#troubleshooting) section above
 3. Open an issue on GitHub with:
    - etcd version (`etcdctl version`)
    - ZTAP logs
    - Network topology diagram
    - Steps to reproduce
-
----
-
-**Last Updated:** November 1, 2025  
-**ZTAP Version:** 0.1.0  
-**etcd Version:** 3.5.17

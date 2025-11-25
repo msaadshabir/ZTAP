@@ -333,9 +333,8 @@ services:
 
 Not officially supported for eBPF. Use WSL2 with Linux kernel.
 
-## Further Reading
+## Related Documentation
 
-- [ZTAP Documentation](../docs/)
-- [eBPF Setup Guide](../docs/EBPF.md)
-- [Testing Guide](../docs/TESTING_GUIDE.md)
-- [Architecture Overview](../docs/architecture.md)
+- [eBPF Setup](ebpf.md)
+- [Testing Guide](testing.md)
+- [Architecture](architecture.md)

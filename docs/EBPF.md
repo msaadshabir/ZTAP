@@ -151,14 +151,14 @@ eBPF programs attach to cgroups using `BPF_CGROUP_INET_EGRESS`:
 
 ### Basic Usage (with ZTAP)
 
-ZTAP automatically loads and attaches eBPF programs when policies are applied:
+ZTAP automatically loads and attaches eBPF programs when policies are enforced:
 
 ```bash
-# Start ZTAP daemon (requires root)
-sudo ztap daemon
+# Enforce a policy (requires root on Linux)
+sudo ztap enforce -f examples/web-to-db.yaml
 
-# Apply policies
-ztap policy apply examples/web-policy.yaml
+# Check enforcement status
+ztap status
 ```
 
 ### Manual Testing (Advanced)
@@ -409,4 +409,4 @@ When contributing eBPF changes:
 4. Document any new map structures
 5. Update this documentation
 
-For questions or issues, see [GitHub Issues](https://github.com/your-org/ztap/issues).
+For questions or issues, see [GitHub Issues](https://github.com/msaadshabir/ZTAP/issues).
