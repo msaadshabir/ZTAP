@@ -1,6 +1,6 @@
 module ztap
 
-go 1.25.2
+go 1.24.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.39.2
@@ -10,6 +10,8 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/spf13/cobra v1.10.1
+	go.etcd.io/etcd/client/v3 v3.5.17
+	go.etcd.io/etcd/server/v3 v3.5.17
 	golang.org/x/term v0.36.0
 	gopkg.in/yaml.v2 v2.4.0
 )
@@ -36,7 +38,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
-	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
@@ -62,10 +63,8 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.17 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.17 // indirect
 	go.etcd.io/etcd/client/v2 v2.305.17 // indirect
-	go.etcd.io/etcd/client/v3 v3.5.17 // indirect
 	go.etcd.io/etcd/pkg/v3 v3.5.17 // indirect
 	go.etcd.io/etcd/raft/v3 v3.5.17 // indirect
-	go.etcd.io/etcd/server/v3 v3.5.17 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.46.0 // indirect
 	go.opentelemetry.io/otel v1.20.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.20.0 // indirect

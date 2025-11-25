@@ -2,7 +2,7 @@
 
 > Open-source zero-trust microsegmentation with eBPF enforcement, policy-as-code, and hybrid cloud support
 
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/ebpf.md)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Compatible-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![AWS](https://img.shields.io/badge/AWS-Integration-FF9900?logo=amazon-aws&logoColor=white)](docs/setup.md)
@@ -279,7 +279,7 @@ Dashboard auto-provisioned from `deployments/grafana-dashboard.json`
 | Component      | Requirement                      | Notes                               |
 | -------------- | -------------------------------- | ----------------------------------- |
 | **OS**         | Linux (kernel ≥5.7) or macOS 12+ | Linux for production, macOS for dev |
-| **Go**         | 1.22+                            | Build requirement                   |
+| **Go**         | 1.24+                            | Build requirement                   |
 | **eBPF Tools** | clang, llvm, make, linux-headers | Linux production only               |
 | **Privileges** | Root or CAP_BPF + CAP_NET_ADMIN  | Linux eBPF enforcement              |
 | **AWS**        | EC2/VPC access (optional)        | For cloud integration               |

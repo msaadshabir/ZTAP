@@ -41,8 +41,8 @@ type Resource struct {
 }
 
 // NewAWSClient creates a new AWS client
-func NewAWSClient(region string) (*AWSClient, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+func NewAWSClient(ctx context.Context, region string) (*AWSClient, error) {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -54,9 +54,9 @@ func NewAWSClient(region string) (*AWSClient, error) {
 }
 
 // DiscoverResources finds all EC2 instances and their metadata
-func (c *AWSClient) DiscoverResources() ([]Resource, error) {
+func (c *AWSClient) DiscoverResources(ctx context.Context) ([]Resource, error) {
 	input := &ec2.DescribeInstancesInput{}
-	result, err := c.ec2API.DescribeInstances(context.TODO(), input)
+	result, err := c.ec2API.DescribeInstances(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe instances: %w", err)
 	}
@@ -98,7 +98,7 @@ func (c *AWSClient) DiscoverResources() ([]Resource, error) {
 }
 
 // SyncPolicy converts ZTAP policy to AWS Security Group rules
-func (c *AWSClient) SyncPolicy(p policy.NetworkPolicy, sgID string) error {
+func (c *AWSClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, sgID string) error {
 	log.Printf("Syncing policy '%s' to Security Group %s", p.Metadata.Name, sgID)
 
 	// For each egress rule in policy
@@ -106,7 +106,7 @@ func (c *AWSClient) SyncPolicy(p policy.NetworkPolicy, sgID string) error {
 		// Convert to AWS Security Group rule
 		if egress.To.IPBlock.CIDR != "" {
 			for _, port := range egress.Ports {
-				err := c.authorizeEgress(sgID, egress.To.IPBlock.CIDR, port.Protocol, port.Port)
+				err := c.authorizeEgress(ctx, sgID, egress.To.IPBlock.CIDR, port.Protocol, port.Port)
 				if err != nil {
 					return fmt.Errorf("failed to authorize egress: %w", err)
 				}
@@ -125,7 +125,7 @@ func (c *AWSClient) SyncPolicy(p policy.NetworkPolicy, sgID string) error {
 }
 
 // authorizeEgress adds an egress rule to the Security Group
-func (c *AWSClient) authorizeEgress(sgID, cidr, protocol string, port int) error {
+func (c *AWSClient) authorizeEgress(ctx context.Context, sgID, cidr, protocol string, port int) error {
 	// Convert protocol to lowercase (AWS uses lowercase)
 	proto := strings.ToLower(protocol)
 
@@ -147,7 +147,7 @@ func (c *AWSClient) authorizeEgress(sgID, cidr, protocol string, port int) error
 		},
 	}
 
-	_, err := c.ec2API.AuthorizeSecurityGroupEgress(context.TODO(), input)
+	_, err := c.ec2API.AuthorizeSecurityGroupEgress(ctx, input)
 	if err != nil {
 		// Ignore "duplicate rule" errors
 		if strings.Contains(err.Error(), "already exists") {
@@ -162,12 +162,12 @@ func (c *AWSClient) authorizeEgress(sgID, cidr, protocol string, port int) error
 }
 
 // RevokeAllEgress removes all egress rules from a Security Group (for cleanup)
-func (c *AWSClient) RevokeAllEgress(sgID string) error {
+func (c *AWSClient) RevokeAllEgress(ctx context.Context, sgID string) error {
 	input := &ec2.DescribeSecurityGroupsInput{
 		GroupIds: []string{sgID},
 	}
 
-	result, err := c.ec2API.DescribeSecurityGroups(context.TODO(), input)
+	result, err := c.ec2API.DescribeSecurityGroups(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to describe security group: %w", err)
 	}
@@ -186,7 +186,7 @@ func (c *AWSClient) RevokeAllEgress(sgID string) error {
 		IpPermissions: sg.IpPermissionsEgress,
 	}
 
-	_, err = c.ec2API.RevokeSecurityGroupEgress(context.TODO(), revokeInput)
+	_, err = c.ec2API.RevokeSecurityGroupEgress(ctx, revokeInput)
 	if err != nil {
 		return fmt.Errorf("failed to revoke egress rules: %w", err)
 	}

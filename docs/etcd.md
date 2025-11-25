@@ -38,7 +38,7 @@ The etcd backend provides:
 
 ### System Requirements
 
-- Go 1.22+ (for building ZTAP)
+- Go 1.24+ (for building ZTAP)
 - etcd 3.4+ cluster
 - Network connectivity between ZTAP nodes and etcd cluster
 - Sufficient disk space for etcd data (recommend 10GB+)

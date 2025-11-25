@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -37,14 +38,15 @@ var statusCmd = &cobra.Command{
 		if showAWS {
 			fmt.Printf("AWS Resources (Region: %s):\n", region)
 
-			client, err := cloud.NewAWSClient(region)
+			ctx := context.Background()
+			client, err := cloud.NewAWSClient(ctx, region)
 			if err != nil {
 				log.Printf("Warning: Failed to initialize AWS client: %v", err)
 				log.Println("  Make sure AWS credentials are configured (aws configure)")
 				return
 			}
 
-			resources, err := client.DiscoverResources()
+			resources, err := client.DiscoverResources(ctx)
 			if err != nil {
 				log.Printf("Warning: Failed to discover AWS resources: %v", err)
 				return

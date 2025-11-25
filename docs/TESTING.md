@@ -178,7 +178,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
-          go-version: "1.22"
+          go-version: "1.24"
       - run: go test ./... -v -race -coverprofile=coverage.out
       - run: go tool cover -func=coverage.out
 ```

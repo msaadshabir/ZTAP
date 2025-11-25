@@ -96,7 +96,7 @@ func TestDiscoverResources(t *testing.T) {
 	}
 
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
-	resources, err := client.DiscoverResources()
+	resources, err := client.DiscoverResources(context.Background())
 	if err != nil {
 		t.Fatalf("DiscoverResources returned error: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestDiscoverResourcesError(t *testing.T) {
 	mock := &mockEC2Client{describeInstancesErr: errors.New("boom")}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
-	_, err := client.DiscoverResources()
+	_, err := client.DiscoverResources(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -159,7 +159,7 @@ func TestSyncPolicyWithIPBlock(t *testing.T) {
 
 	np.Spec.Egress = append(np.Spec.Egress, egress)
 
-	if err := client.SyncPolicy(np, "sg-123"); err != nil {
+	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 
@@ -211,7 +211,7 @@ func TestSyncPolicyAuthorizeError(t *testing.T) {
 	}{Protocol: "TCP", Port: 443})
 	np.Spec.Egress = append(np.Spec.Egress, egress)
 
-	err := client.SyncPolicy(np, "sg-456")
+	err := client.SyncPolicy(context.Background(), np, "sg-456")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -221,7 +221,7 @@ func TestAuthorizeEgressDuplicate(t *testing.T) {
 	mock := &mockEC2Client{authorizeErr: errors.New("rule already exists")}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
-	if err := client.authorizeEgress("sg-789", "10.0.0.0/24", "TCP", 80); err != nil {
+	if err := client.authorizeEgress(context.Background(), "sg-789", "10.0.0.0/24", "TCP", 80); err != nil {
 		t.Fatalf("expected duplicate error to be ignored, got %v", err)
 	}
 }
@@ -245,7 +245,7 @@ func TestRevokeAllEgress(t *testing.T) {
 	}
 
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
-	if err := client.RevokeAllEgress("sg-123"); err != nil {
+	if err := client.RevokeAllEgress(context.Background(), "sg-123"); err != nil {
 		t.Fatalf("RevokeAllEgress returned error: %v", err)
 	}
 
@@ -268,7 +268,7 @@ func TestRevokeAllEgressNoRules(t *testing.T) {
 	}
 
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
-	if err := client.RevokeAllEgress("sg-000"); err != nil {
+	if err := client.RevokeAllEgress(context.Background(), "sg-000"); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 
@@ -281,7 +281,7 @@ func TestRevokeAllEgressNotFound(t *testing.T) {
 	mock := &mockEC2Client{describeSGOutput: &ec2.DescribeSecurityGroupsOutput{}}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
-	if err := client.RevokeAllEgress("sg-missing"); err == nil {
+	if err := client.RevokeAllEgress(context.Background(), "sg-missing"); err == nil {
 		t.Fatal("expected error for missing security group, got nil")
 	}
 }

@@ -5,7 +5,7 @@
 ### System Requirements
 
 - **Operating System**: macOS 12+ or Linux (kernel ≥5.7 for eBPF)
-- **Go**: 1.22 or later
+- **Go**: 1.24 or later
 - **Memory**: 2 GB RAM minimum
 - **Disk**: 200 MB for binary, policies, and logs
 

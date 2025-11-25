@@ -28,7 +28,7 @@ RUN KERNEL_VERSION=$(ls /usr/src/ | grep linux-headers | grep -v common | head -
     make || (echo "eBPF compilation failed - will compile at runtime" && mkdir -p /build/bpf && touch /build/bpf/.skip)
 
 # Build stage for Go application
-FROM golang:1.25.2-alpine AS go-builder
+FROM golang:1.24-alpine AS go-builder
 
 # Install build dependencies
 RUN apk add --no-cache git make
