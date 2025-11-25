@@ -99,4 +99,4 @@ yarn-debug.log*
 yarn-error.log*
 
 # AI instructions (development only)
-AI_INSTRUCTIONS.md
+.github/copilot-instructions.md
