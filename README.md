@@ -108,7 +108,7 @@ ztap status
 | [Cluster Coordination](docs/cluster.md)    | Multi-node clustering and leader election |
 | [Audit Logging](docs/audit.md)             | Tamper-proof audit log system             |
 | [Testing Guide](docs/testing.md)           | Comprehensive testing documentation       |
-| [Implementation Status](docs/status.md)    | Project status and future work            |
+| [Roadmap](docs/roadmap.md)                 | Delivered and planned features            |
 | [Anomaly Detection](pkg/anomaly/README.md) | ML service setup                          |
 
 ---
@@ -317,59 +317,9 @@ go fmt ./... && go vet ./...
 
 ---
 
-## Project Status
-
-### Test Coverage Snapshot
-
-| Package         | Coverage  | Status               |
-| --------------- | --------- | -------------------- |
-| `pkg/auth`      | 72.4%     | Excellent            |
-| `pkg/cloud`     | 90.0%     | Excellent            |
-| `pkg/discovery` | 76.3%     | Excellent            |
-| `pkg/metrics`   | 85.2%     | Excellent            |
-| `pkg/policy`    | 73.6%     | Excellent            |
-| `pkg/enforcer`  | N/A\*     | Linux-only           |
-| **Core Avg**    | **79.5%** | **Production Ready** |
-
-_\*Enforcer tests require Linux kernel_
-
----
-
-## Roadmap
-
-### Delivered Capabilities
-
-- Core policy enforcement on Linux (eBPF) and macOS (pf)
-- Service discovery and RBAC authentication
-- Hybrid cloud integration with AWS Security Groups
-- Observability stack with Prometheus, Grafana, and structured logs
-- ML-based anomaly detection service
-- Tamper-evident audit logging with hash chaining and verification
-- Distributed cluster coordination with leader election
-- Distributed policy synchronization with metrics and version tracking
-- etcd backend for production cluster deployments
-
-### Near-Term Focus
-
-- [ ] Real-time flow monitoring dashboard
-- [ ] Advanced alerting and incident workflows
-- [ ] Pre-compiled eBPF binaries for common kernels
-- [ ] Policy conflict detection and resolution
-
-### Longer-Term Themes
-
-- [ ] Additional dataplane support (for example: Windows, iptables)
-- [ ] Stronger authentication options (for example: 2FA, certificate-based auth)
-- [ ] Enterprise integrations (for example: LDAP, SAML/OAuth SSO)
-- [ ] Distributed rate limiting and quota management across the cluster
-
-See `docs/status.md` for a more detailed status view.
-
----
-
 ## Contributing
 
-We welcome contributions! Here's where to start:
+We welcome contributions! See the [Roadmap](docs/roadmap.md) for delivered features and what's planned.
 
 **Good First Issues:**
 
@@ -386,7 +336,7 @@ We welcome contributions! Here's where to start:
 **Resources:**
 
 - [Testing Guide](docs/testing.md)
-- [Implementation Status](docs/status.md)
+- [Roadmap](docs/roadmap.md)
 - [eBPF Development](docs/ebpf.md)
 
 ---

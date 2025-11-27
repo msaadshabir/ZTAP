@@ -22,10 +22,10 @@ Technical documentation for ZTAP.
 
 ## Reference
 
-| Document                                      | Description                     |
-| --------------------------------------------- | ------------------------------- |
-| [Status](status.md)                           | Project status and capabilities |
-| [Examples](../examples/)                      | Sample policies and use cases   |
-| [Anomaly Detection](../pkg/anomaly/README.md) | ML service API                  |
+| Document                                      | Description                    |
+| --------------------------------------------- | ------------------------------ |
+| [Roadmap](roadmap.md)                         | Delivered and planned features |
+| [Examples](../examples/)                      | Sample policies and use cases  |
+| [Anomaly Detection](../pkg/anomaly/README.md) | ML service API                 |
 
 See the [main README](../README.md) for project overview and quick start.
