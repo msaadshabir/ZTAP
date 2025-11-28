@@ -19,10 +19,10 @@
 - Distributed policy synchronization
 - Automatic enforcement on all nodes
 - Policy version tracking
+- Ingress policy support (bidirectional enforcement)
 
 ## Planned
 
-- Ingress policy support (bidirectional enforcement)
 - Real-time flow event monitoring
 - Policy conflict detection
 - REST API / gRPC interface

@@ -54,6 +54,22 @@ Deny-by-default with explicit DNS allowed.
 
 Zero-trust microservices (auth to MongoDB/Redis, monitoring to internal).
 
+### bidirectional.yaml
+
+Bidirectional enforcement with both ingress and egress rules for web tier applications.
+
+```bash
+ztap enforce -f bidirectional.yaml
+```
+
+### ingress-only.yaml
+
+Ingress-only policies for protecting backend services (databases, caches, SSH bastions).
+
+```bash
+ztap enforce -f ingress-only.yaml
+```
+
 ## Policy Patterns
 
 ### Label-Based Rules
@@ -73,6 +89,31 @@ egress:
   - to:
       ipBlock:
         cidr: 10.0.0.0/8
+```
+
+### Ingress Rules (Inbound)
+
+```yaml
+ingress:
+  - from:
+      ipBlock:
+        cidr: 192.168.0.0/16
+    ports:
+      - protocol: TCP
+        port: 8080
+```
+
+### Ingress with Pod Selector
+
+```yaml
+ingress:
+  - from:
+      podSelector:
+        matchLabels:
+          app: web
+    ports:
+      - protocol: TCP
+        port: 5432
 ```
 
 ### Port Restrictions
@@ -102,6 +143,13 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+  ingress:
+    - from:
+        ipBlock:
+          cidr: 10.0.0.0/24
+      ports:
+        - protocol: TCP
+          port: 8080
 ```
 
 ### Best Practices

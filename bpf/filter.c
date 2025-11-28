@@ -87,12 +87,13 @@ struct __sk_buff
 };
 
 // Policy key structure (must match Go struct)
+// Direction: 0 = egress (outbound), 1 = ingress (inbound)
 struct policy_key
 {
-    __u32 dest_ip;
-    __u16 dest_port;
+    __u32 ip;   // dest_ip for egress, src_ip for ingress
+    __u16 port; // dest_port for egress, dest_port for ingress (the port being accessed)
     __u8 protocol;
-    __u8 _padding;
+    __u8 direction; // 0 = egress, 1 = ingress
 };
 
 // Policy value structure (must match Go struct)
@@ -112,9 +113,9 @@ struct
     __type(value, struct policy_value);
 } policy_map SEC(".maps");
 
-// Helper to parse IPv4 packet
-static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *dest_ip,
-                                      __u8 *protocol, __u16 *dest_port)
+// Helper to parse IPv4 packet and extract addresses and ports
+static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *src_ip, __u32 *dest_ip,
+                                      __u8 *protocol, __u16 *src_port, __u16 *dest_port)
 {
     struct ethhdr eth;
     struct iphdr ip;
@@ -131,6 +132,7 @@ static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *dest_ip,
     if (bpf_skb_load_bytes(skb, sizeof(eth), &ip, sizeof(ip)) < 0)
         return -1;
 
+    *src_ip = ip.saddr;
     *dest_ip = ip.daddr;
     *protocol = ip.protocol;
 
@@ -145,6 +147,7 @@ static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *dest_ip,
         struct tcphdr tcp;
         if (bpf_skb_load_bytes(skb, sizeof(eth) + ihl, &tcp, sizeof(tcp)) < 0)
             return -1;
+        *src_port = bpf_ntohs(tcp.source);
         *dest_port = bpf_ntohs(tcp.dest);
     }
     else if (ip.protocol == IPPROTO_UDP)
@@ -152,36 +155,43 @@ static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *dest_ip,
         struct udphdr udp;
         if (bpf_skb_load_bytes(skb, sizeof(eth) + ihl, &udp, sizeof(udp)) < 0)
             return -1;
+        *src_port = bpf_ntohs(udp.source);
         *dest_port = bpf_ntohs(udp.dest);
     }
     else
     {
+        *src_port = 0;
         *dest_port = 0;
     }
 
     return 0;
 }
 
+// Direction constants
+#define DIRECTION_EGRESS 0
+#define DIRECTION_INGRESS 1
+
 // Main eBPF program for egress filtering
 SEC("cgroup_skb/egress")
 int filter_egress(struct __sk_buff *skb)
 {
-    __u32 dest_ip;
+    __u32 src_ip, dest_ip;
     __u8 protocol;
-    __u16 dest_port;
+    __u16 src_port, dest_port;
 
     // Parse packet
-    if (parse_ipv4(skb, &dest_ip, &protocol, &dest_port) < 0)
+    if (parse_ipv4(skb, &src_ip, &dest_ip, &protocol, &src_port, &dest_port) < 0)
     {
         // If not IPv4 or parse error, allow by default
         return 1;
     }
 
-    // Lookup policy in map
+    // Lookup policy in map (egress uses destination IP/port)
     struct policy_key key = {
-        .dest_ip = dest_ip,
-        .dest_port = dest_port,
+        .ip = dest_ip,
+        .port = dest_port,
         .protocol = protocol,
+        .direction = DIRECTION_EGRESS,
     };
 
     struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
@@ -204,23 +214,99 @@ int filter_egress(struct __sk_buff *skb)
     return 0;
 }
 
-// Alternative: Default allow mode (for testing)
+// Main eBPF program for ingress filtering
+SEC("cgroup_skb/ingress")
+int filter_ingress(struct __sk_buff *skb)
+{
+    __u32 src_ip, dest_ip;
+    __u8 protocol;
+    __u16 src_port, dest_port;
+
+    // Parse packet
+    if (parse_ipv4(skb, &src_ip, &dest_ip, &protocol, &src_port, &dest_port) < 0)
+    {
+        // If not IPv4 or parse error, allow by default
+        return 1;
+    }
+
+    // Lookup policy in map (ingress uses source IP and destination port)
+    // The policy specifies: allow traffic FROM source_ip TO our port
+    struct policy_key key = {
+        .ip = src_ip,
+        .port = dest_port,
+        .protocol = protocol,
+        .direction = DIRECTION_INGRESS,
+    };
+
+    struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
+    if (value)
+    {
+        // Found matching policy
+        if (value->action == 1)
+        {
+            // ALLOW
+            return 1;
+        }
+        else
+        {
+            // BLOCK
+            return 0;
+        }
+    }
+
+    // Default deny: if no policy matches, block
+    return 0;
+}
+
+// Alternative: Default allow mode for egress (for testing)
 SEC("cgroup_skb/egress_permissive")
 int filter_egress_permissive(struct __sk_buff *skb)
 {
-    __u32 dest_ip;
+    __u32 src_ip, dest_ip;
     __u8 protocol;
-    __u16 dest_port;
+    __u16 src_port, dest_port;
 
-    if (parse_ipv4(skb, &dest_ip, &protocol, &dest_port) < 0)
+    if (parse_ipv4(skb, &src_ip, &dest_ip, &protocol, &src_port, &dest_port) < 0)
     {
         return 1;
     }
 
     struct policy_key key = {
-        .dest_ip = dest_ip,
-        .dest_port = dest_port,
+        .ip = dest_ip,
+        .port = dest_port,
         .protocol = protocol,
+        .direction = DIRECTION_EGRESS,
+    };
+
+    struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
+    if (value && value->action == 0)
+    {
+        // Explicitly blocked
+        return 0;
+    }
+
+    // Default allow: if no explicit block, allow
+    return 1;
+}
+
+// Alternative: Default allow mode for ingress (for testing)
+SEC("cgroup_skb/ingress_permissive")
+int filter_ingress_permissive(struct __sk_buff *skb)
+{
+    __u32 src_ip, dest_ip;
+    __u8 protocol;
+    __u16 src_port, dest_port;
+
+    if (parse_ipv4(skb, &src_ip, &dest_ip, &protocol, &src_port, &dest_port) < 0)
+    {
+        return 1;
+    }
+
+    struct policy_key key = {
+        .ip = src_ip,
+        .port = dest_port,
+        .protocol = protocol,
+        .direction = DIRECTION_INGRESS,
     };
 
     struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);

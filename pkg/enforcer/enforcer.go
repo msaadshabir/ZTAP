@@ -20,10 +20,29 @@ func EnforceWithEBPF(policies []policy.NetworkPolicy) {
 	// In production: load eBPF programs, attach to cgroup/socket hooks
 	// For demonstration: simulate with logs
 	for _, p := range policies {
-		fmt.Printf("  • Policy '%s': %s → %v\n",
-			p.Metadata.Name,
-			p.Spec.PodSelector.MatchLabels,
-			p.Spec.Egress)
+		fmt.Printf("  Policy '%s': %s\n", p.Metadata.Name, p.Spec.PodSelector.MatchLabels)
+		if len(p.Spec.Egress) > 0 {
+			fmt.Printf("    Egress rules: %d\n", len(p.Spec.Egress))
+			for _, egress := range p.Spec.Egress {
+				if egress.To.IPBlock.CIDR != "" {
+					fmt.Printf("      -> %s (ports: %v)\n", egress.To.IPBlock.CIDR, egress.Ports)
+				}
+				if len(egress.To.PodSelector.MatchLabels) > 0 {
+					fmt.Printf("      -> pods: %v (ports: %v)\n", egress.To.PodSelector.MatchLabels, egress.Ports)
+				}
+			}
+		}
+		if len(p.Spec.Ingress) > 0 {
+			fmt.Printf("    Ingress rules: %d\n", len(p.Spec.Ingress))
+			for _, ingress := range p.Spec.Ingress {
+				if ingress.From.IPBlock.CIDR != "" {
+					fmt.Printf("      <- %s (ports: %v)\n", ingress.From.IPBlock.CIDR, ingress.Ports)
+				}
+				if len(ingress.From.PodSelector.MatchLabels) > 0 {
+					fmt.Printf("      <- pods: %v (ports: %v)\n", ingress.From.PodSelector.MatchLabels, ingress.Ports)
+				}
+			}
+		}
 	}
 }
 
@@ -46,16 +65,33 @@ func EnforceWithPF(policies []policy.NetworkPolicy) {
 
 	for _, p := range policies {
 		anchorContent += fmt.Sprintf("# Policy: %s\n", p.Metadata.Name)
+
+		// Process egress rules (outbound traffic)
 		for _, egress := range p.Spec.Egress {
 			if len(egress.To.PodSelector.MatchLabels) > 0 {
 				// In real world: resolve labels to IPs (via DNS or inventory)
-				anchorContent += "# Note: Label-based rules require inventory resolution\n"
+				anchorContent += "# Note: Label-based egress rules require inventory resolution\n"
 				anchorContent += "block out quick from any to 192.168.0.0/16\n"
 			}
 			if egress.To.IPBlock.CIDR != "" {
 				for _, port := range egress.Ports {
-					anchorContent += fmt.Sprintf("block out quick proto %s from any to %s port = %d\n",
+					anchorContent += fmt.Sprintf("pass out quick proto %s from any to %s port = %d\n",
 						port.Protocol, egress.To.IPBlock.CIDR, port.Port)
+				}
+			}
+		}
+
+		// Process ingress rules (inbound traffic)
+		for _, ingress := range p.Spec.Ingress {
+			if len(ingress.From.PodSelector.MatchLabels) > 0 {
+				// In real world: resolve labels to IPs (via DNS or inventory)
+				anchorContent += "# Note: Label-based ingress rules require inventory resolution\n"
+				anchorContent += "block in quick from 192.168.0.0/16 to any\n"
+			}
+			if ingress.From.IPBlock.CIDR != "" {
+				for _, port := range ingress.Ports {
+					anchorContent += fmt.Sprintf("pass in quick proto %s from %s to any port = %d\n",
+						port.Protocol, ingress.From.IPBlock.CIDR, port.Port)
 				}
 			}
 		}

@@ -28,16 +28,24 @@ type eBPFEnforcer struct {
 
 // bpfObjects contains loaded eBPF programs and maps
 type bpfObjects struct {
-	PolicyMap  *ebpf.Map     `ebpf:"policy_map"`
-	FilterProg *ebpf.Program `ebpf:"filter_egress"`
+	PolicyMap     *ebpf.Map     `ebpf:"policy_map"`
+	FilterEgress  *ebpf.Program `ebpf:"filter_egress"`
+	FilterIngress *ebpf.Program `ebpf:"filter_ingress"`
 }
 
+// Direction constants matching BPF program
+const (
+	DirectionEgress  uint8 = 0
+	DirectionIngress uint8 = 1
+)
+
 // policyKey represents the key for eBPF policy map
+// Must match struct policy_key in bpf/filter.c
 type policyKey struct {
-	DestIP   uint32
-	DestPort uint16
-	Protocol uint8
-	_        uint8 // padding
+	IP        uint32 // dest_ip for egress, src_ip for ingress
+	Port      uint16 // dest_port for egress, dest_port for ingress
+	Protocol  uint8
+	Direction uint8 // 0 = egress, 1 = ingress
 }
 
 // policyValue represents the value for eBPF policy map
@@ -137,66 +145,142 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 
 // addPolicyToMap adds a policy to the eBPF map
 func (e *eBPFEnforcer) addPolicyToMap(p policy.NetworkPolicy) error {
+	// Handle egress rules
 	for _, egress := range p.Spec.Egress {
-		// Handle IP-based rules
-		if egress.To.IPBlock.CIDR != "" {
-			ip, ipnet, err := net.ParseCIDR(egress.To.IPBlock.CIDR)
-			if err != nil {
-				return fmt.Errorf("invalid CIDR %s: %w", egress.To.IPBlock.CIDR, err)
-			}
-
-			// For simplicity, use network address (full CIDR support requires range)
-			destIP := ipToUint32(ip.To4())
-
-			for _, port := range egress.Ports {
-				key := policyKey{
-					DestIP:   destIP,
-					DestPort: uint16(port.Port),
-					Protocol: protocolToNum(port.Protocol),
-				}
-
-				value := policyValue{
-					Action: 1, // allow
-				}
-
-				if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
-					return fmt.Errorf("failed to update policy map: %w", err)
-				}
-
-				log.Printf("Added eBPF rule: %s -> %s:%d (ALLOW)",
-					p.Metadata.Name, ipnet.String(), port.Port)
-			}
+		if err := e.addEgressRule(p.Metadata.Name, egress); err != nil {
+			return err
 		}
+	}
 
-		// Handle label-based rules (requires resolution)
-		if len(egress.To.PodSelector.MatchLabels) > 0 {
-			log.Printf("Warning: Label-based rules require IP resolution for policy '%s'",
-				p.Metadata.Name)
-			// In production: resolve labels to IPs via service discovery, then add to map
+	// Handle ingress rules
+	for _, ingress := range p.Spec.Ingress {
+		if err := e.addIngressRule(p.Metadata.Name, ingress); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// Attach attaches the eBPF program to cgroup
+// addEgressRule adds an egress rule to the eBPF map
+func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule) error {
+	// Handle IP-based rules
+	if egress.To.IPBlock.CIDR != "" {
+		ip, ipnet, err := net.ParseCIDR(egress.To.IPBlock.CIDR)
+		if err != nil {
+			return fmt.Errorf("invalid CIDR %s: %w", egress.To.IPBlock.CIDR, err)
+		}
+
+		// For simplicity, use network address (full CIDR support requires range)
+		destIP := ipToUint32(ip.To4())
+
+		for _, port := range egress.Ports {
+			key := policyKey{
+				IP:        destIP,
+				Port:      uint16(port.Port),
+				Protocol:  protocolToNum(port.Protocol),
+				Direction: DirectionEgress,
+			}
+
+			value := policyValue{
+				Action: 1, // allow
+			}
+
+			if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+				return fmt.Errorf("failed to update policy map: %w", err)
+			}
+
+			log.Printf("Added eBPF egress rule: %s -> %s:%d (ALLOW)",
+				policyName, ipnet.String(), port.Port)
+		}
+	}
+
+	// Handle label-based rules (requires resolution)
+	if len(egress.To.PodSelector.MatchLabels) > 0 {
+		log.Printf("Warning: Label-based egress rules require IP resolution for policy '%s'",
+			policyName)
+		// In production: resolve labels to IPs via service discovery, then add to map
+	}
+
+	return nil
+}
+
+// addIngressRule adds an ingress rule to the eBPF map
+func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressRule) error {
+	// Handle IP-based rules
+	if ingress.From.IPBlock.CIDR != "" {
+		ip, ipnet, err := net.ParseCIDR(ingress.From.IPBlock.CIDR)
+		if err != nil {
+			return fmt.Errorf("invalid CIDR %s: %w", ingress.From.IPBlock.CIDR, err)
+		}
+
+		// For simplicity, use network address (full CIDR support requires range)
+		srcIP := ipToUint32(ip.To4())
+
+		for _, port := range ingress.Ports {
+			key := policyKey{
+				IP:        srcIP,
+				Port:      uint16(port.Port),
+				Protocol:  protocolToNum(port.Protocol),
+				Direction: DirectionIngress,
+			}
+
+			value := policyValue{
+				Action: 1, // allow
+			}
+
+			if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+				return fmt.Errorf("failed to update policy map: %w", err)
+			}
+
+			log.Printf("Added eBPF ingress rule: %s <- %s:%d (ALLOW)",
+				policyName, ipnet.String(), port.Port)
+		}
+	}
+
+	// Handle label-based rules (requires resolution)
+	if len(ingress.From.PodSelector.MatchLabels) > 0 {
+		log.Printf("Warning: Label-based ingress rules require IP resolution for policy '%s'",
+			policyName)
+		// In production: resolve labels to IPs via service discovery, then add to map
+	}
+
+	return nil
+}
+
+// Attach attaches the eBPF programs to cgroup for both egress and ingress
 func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 	if e.objs == nil {
 		return fmt.Errorf("eBPF objects not loaded")
 	}
 
-	// Attach to cgroup egress
-	l, err := link.AttachCgroup(link.CgroupOptions{
-		Path:    cgroupPath,
-		Attach:  ebpf.AttachCGroupInetEgress,
-		Program: e.objs.FilterProg,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to attach to cgroup: %w", err)
+	// Attach egress filter to cgroup
+	if e.objs.FilterEgress != nil {
+		l, err := link.AttachCgroup(link.CgroupOptions{
+			Path:    cgroupPath,
+			Attach:  ebpf.AttachCGroupInetEgress,
+			Program: e.objs.FilterEgress,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to attach egress filter to cgroup: %w", err)
+		}
+		e.links = append(e.links, l)
+		log.Printf("eBPF egress filter attached to cgroup: %s", cgroupPath)
 	}
 
-	e.links = append(e.links, l)
-	log.Printf("eBPF program attached to cgroup: %s", cgroupPath)
+	// Attach ingress filter to cgroup
+	if e.objs.FilterIngress != nil {
+		l, err := link.AttachCgroup(link.CgroupOptions{
+			Path:    cgroupPath,
+			Attach:  ebpf.AttachCGroupInetIngress,
+			Program: e.objs.FilterIngress,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to attach ingress filter to cgroup: %w", err)
+		}
+		e.links = append(e.links, l)
+		log.Printf("eBPF ingress filter attached to cgroup: %s", cgroupPath)
+	}
 
 	return nil
 }
@@ -215,8 +299,11 @@ func (e *eBPFEnforcer) Close() error {
 		if e.objs.PolicyMap != nil {
 			e.objs.PolicyMap.Close()
 		}
-		if e.objs.FilterProg != nil {
-			e.objs.FilterProg.Close()
+		if e.objs.FilterEgress != nil {
+			e.objs.FilterEgress.Close()
+		}
+		if e.objs.FilterIngress != nil {
+			e.objs.FilterIngress.Close()
 		}
 	}
 

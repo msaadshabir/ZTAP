@@ -132,30 +132,15 @@ func TestSyncPolicyWithIPBlock(t *testing.T) {
 	var np policy.NetworkPolicy
 	np.Metadata.Name = "allow-db"
 
-	egress := struct {
-		To struct {
-			PodSelector struct {
-				MatchLabels map[string]string `yaml:"matchLabels"`
-			} `yaml:"podSelector,omitempty"`
-			IPBlock struct {
-				CIDR string `yaml:"cidr"`
-			} `yaml:"ipBlock,omitempty"`
-		} `yaml:"to"`
-		Ports []struct {
-			Protocol string `yaml:"protocol"`
-			Port     int    `yaml:"port"`
-		} `yaml:"ports"`
-	}{}
-
-	egress.To.IPBlock.CIDR = "10.0.0.0/24"
-	egress.Ports = append(egress.Ports, struct {
-		Protocol string `yaml:"protocol"`
-		Port     int    `yaml:"port"`
-	}{Protocol: "TCP", Port: 5432})
-	egress.Ports = append(egress.Ports, struct {
-		Protocol string `yaml:"protocol"`
-		Port     int    `yaml:"port"`
-	}{Protocol: "UDP", Port: 53})
+	egress := policy.EgressRule{
+		To: policy.EgressTarget{
+			IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.0/24"},
+		},
+		Ports: []policy.PortSpec{
+			{Protocol: "TCP", Port: 5432},
+			{Protocol: "UDP", Port: 53},
+		},
+	}
 
 	np.Spec.Egress = append(np.Spec.Egress, egress)
 
@@ -190,25 +175,14 @@ func TestSyncPolicyAuthorizeError(t *testing.T) {
 	var np policy.NetworkPolicy
 	np.Metadata.Name = "allow-web"
 
-	egress := struct {
-		To struct {
-			PodSelector struct {
-				MatchLabels map[string]string `yaml:"matchLabels"`
-			} `yaml:"podSelector,omitempty"`
-			IPBlock struct {
-				CIDR string `yaml:"cidr"`
-			} `yaml:"ipBlock,omitempty"`
-		} `yaml:"to"`
-		Ports []struct {
-			Protocol string `yaml:"protocol"`
-			Port     int    `yaml:"port"`
-		} `yaml:"ports"`
-	}{}
-	egress.To.IPBlock.CIDR = "10.0.0.0/24"
-	egress.Ports = append(egress.Ports, struct {
-		Protocol string `yaml:"protocol"`
-		Port     int    `yaml:"port"`
-	}{Protocol: "TCP", Port: 443})
+	egress := policy.EgressRule{
+		To: policy.EgressTarget{
+			IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.0/24"},
+		},
+		Ports: []policy.PortSpec{
+			{Protocol: "TCP", Port: 443},
+		},
+	}
 	np.Spec.Egress = append(np.Spec.Egress, egress)
 
 	err := client.SyncPolicy(context.Background(), np, "sg-456")

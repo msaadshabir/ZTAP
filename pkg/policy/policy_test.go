@@ -83,76 +83,226 @@ spec:
 	}
 }
 
+func TestLoadFromFileWithIngress(t *testing.T) {
+	tmpDir := t.TempDir()
+	policyFile := filepath.Join(tmpDir, "test-ingress-policy.yaml")
+
+	policyContent := `
+apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: test-ingress-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: api
+  ingress:
+    - from:
+        ipBlock:
+          cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+`
+	err := os.WriteFile(policyFile, []byte(policyContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test policy: %v", err)
+	}
+
+	policies, err := LoadFromFile(policyFile)
+	if err != nil {
+		t.Fatalf("Failed to load policy: %v", err)
+	}
+
+	if len(policies) != 1 {
+		t.Fatalf("Expected 1 policy, got %d", len(policies))
+	}
+
+	policy := policies[0]
+
+	if len(policy.Spec.Ingress) != 1 {
+		t.Fatalf("Expected 1 ingress rule, got %d", len(policy.Spec.Ingress))
+	}
+
+	ingress := policy.Spec.Ingress[0]
+	if ingress.From.IPBlock.CIDR != "10.0.0.0/8" {
+		t.Errorf("Expected CIDR '10.0.0.0/8', got '%s'", ingress.From.IPBlock.CIDR)
+	}
+
+	if len(ingress.Ports) != 1 {
+		t.Fatalf("Expected 1 port, got %d", len(ingress.Ports))
+	}
+
+	if ingress.Ports[0].Protocol != "TCP" {
+		t.Errorf("Expected protocol 'TCP', got '%s'", ingress.Ports[0].Protocol)
+	}
+
+	if ingress.Ports[0].Port != 8080 {
+		t.Errorf("Expected port 8080, got %d", ingress.Ports[0].Port)
+	}
+}
+
+func TestLoadFromFileWithBidirectional(t *testing.T) {
+	tmpDir := t.TempDir()
+	policyFile := filepath.Join(tmpDir, "test-bidirectional-policy.yaml")
+
+	policyContent := `
+apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: test-bidirectional
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  egress:
+    - to:
+        ipBlock:
+          cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+  ingress:
+    - from:
+        ipBlock:
+          cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+`
+	err := os.WriteFile(policyFile, []byte(policyContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test policy: %v", err)
+	}
+
+	policies, err := LoadFromFile(policyFile)
+	if err != nil {
+		t.Fatalf("Failed to load policy: %v", err)
+	}
+
+	if len(policies) != 1 {
+		t.Fatalf("Expected 1 policy, got %d", len(policies))
+	}
+
+	policy := policies[0]
+
+	if len(policy.Spec.Egress) != 1 {
+		t.Errorf("Expected 1 egress rule, got %d", len(policy.Spec.Egress))
+	}
+
+	if len(policy.Spec.Ingress) != 1 {
+		t.Errorf("Expected 1 ingress rule, got %d", len(policy.Spec.Ingress))
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name        string
 		policy      NetworkPolicy
 		expectError bool
+		errorField  string
 	}{
 		{
-			name: "valid policy",
+			name: "valid egress policy",
 			policy: NetworkPolicy{
 				APIVersion: "ztap/v1",
 				Kind:       "NetworkPolicy",
-				Metadata: struct {
-					Name string `yaml:"name"`
-				}{Name: "valid-policy"},
-				Spec: struct {
-					PodSelector struct {
-						MatchLabels map[string]string `yaml:"matchLabels"`
-					} `yaml:"podSelector"`
-					Egress []struct {
-						To struct {
-							PodSelector struct {
-								MatchLabels map[string]string `yaml:"matchLabels"`
-							} `yaml:"podSelector,omitempty"`
-							IPBlock struct {
-								CIDR string `yaml:"cidr"`
-							} `yaml:"ipBlock,omitempty"`
-						} `yaml:"to"`
-						Ports []struct {
-							Protocol string `yaml:"protocol"`
-							Port     int    `yaml:"port"`
-						} `yaml:"ports"`
-					} `yaml:"egress"`
-				}{
-					PodSelector: struct {
-						MatchLabels map[string]string `yaml:"matchLabels"`
-					}{
+				Metadata:   NetworkPolicyMetadata{Name: "valid-policy"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
 						MatchLabels: map[string]string{"app": "web"},
 					},
-					Egress: []struct {
-						To struct {
-							PodSelector struct {
-								MatchLabels map[string]string `yaml:"matchLabels"`
-							} `yaml:"podSelector,omitempty"`
-							IPBlock struct {
-								CIDR string `yaml:"cidr"`
-							} `yaml:"ipBlock,omitempty"`
-						} `yaml:"to"`
-						Ports []struct {
-							Protocol string `yaml:"protocol"`
-							Port     int    `yaml:"port"`
-						} `yaml:"ports"`
-					}{
+					Egress: []EgressRule{
 						{
-							To: struct {
-								PodSelector struct {
-									MatchLabels map[string]string `yaml:"matchLabels"`
-								} `yaml:"podSelector,omitempty"`
-								IPBlock struct {
-									CIDR string `yaml:"cidr"`
-								} `yaml:"ipBlock,omitempty"`
-							}{
-								IPBlock: struct {
-									CIDR string `yaml:"cidr"`
-								}{CIDR: "10.0.0.0/8"},
+							To: EgressTarget{
+								IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"},
 							},
-							Ports: []struct {
-								Protocol string `yaml:"protocol"`
-								Port     int    `yaml:"port"`
-							}{
+							Ports: []PortSpec{
 								{Protocol: "TCP", Port: 443},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid ingress policy",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "valid-ingress"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "api"},
+					},
+					Ingress: []IngressRule{
+						{
+							From: IngressSource{
+								IPBlock: IPBlockSpec{CIDR: "192.168.0.0/16"},
+							},
+							Ports: []PortSpec{
+								{Protocol: "TCP", Port: 8080},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid bidirectional policy",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "valid-bidirectional"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "web"},
+					},
+					Egress: []EgressRule{
+						{
+							To: EgressTarget{
+								IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"},
+							},
+							Ports: []PortSpec{
+								{Protocol: "TCP", Port: 5432},
+							},
+						},
+					},
+					Ingress: []IngressRule{
+						{
+							From: IngressSource{
+								IPBlock: IPBlockSpec{CIDR: "192.168.0.0/16"},
+							},
+							Ports: []PortSpec{
+								{Protocol: "TCP", Port: 443},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid ingress with pod selector",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "ingress-pod-selector"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "db"},
+					},
+					Ingress: []IngressRule{
+						{
+							From: IngressSource{
+								PodSelector: PodSelectorSpec{
+									MatchLabels: map[string]string{"app": "web"},
+								},
+							},
+							Ports: []PortSpec{
+								{Protocol: "TCP", Port: 5432},
 							},
 						},
 					},
@@ -163,76 +313,43 @@ func TestValidate(t *testing.T) {
 		{
 			name: "missing apiVersion",
 			policy: NetworkPolicy{
-				Kind: "NetworkPolicy",
-				Metadata: struct {
-					Name string `yaml:"name"`
-				}{Name: "test"},
+				Kind:     "NetworkPolicy",
+				Metadata: NetworkPolicyMetadata{Name: "test"},
 			},
 			expectError: true,
+			errorField:  "apiVersion",
 		},
 		{
-			name: "invalid CIDR",
+			name: "no egress or ingress rules",
 			policy: NetworkPolicy{
 				APIVersion: "ztap/v1",
 				Kind:       "NetworkPolicy",
-				Metadata: struct {
-					Name string `yaml:"name"`
-				}{Name: "test"},
-				Spec: struct {
-					PodSelector struct {
-						MatchLabels map[string]string `yaml:"matchLabels"`
-					} `yaml:"podSelector"`
-					Egress []struct {
-						To struct {
-							PodSelector struct {
-								MatchLabels map[string]string `yaml:"matchLabels"`
-							} `yaml:"podSelector,omitempty"`
-							IPBlock struct {
-								CIDR string `yaml:"cidr"`
-							} `yaml:"ipBlock,omitempty"`
-						} `yaml:"to"`
-						Ports []struct {
-							Protocol string `yaml:"protocol"`
-							Port     int    `yaml:"port"`
-						} `yaml:"ports"`
-					} `yaml:"egress"`
-				}{
-					PodSelector: struct {
-						MatchLabels map[string]string `yaml:"matchLabels"`
-					}{
+				Metadata:   NetworkPolicyMetadata{Name: "no-rules"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
 						MatchLabels: map[string]string{"app": "web"},
 					},
-					Egress: []struct {
-						To struct {
-							PodSelector struct {
-								MatchLabels map[string]string `yaml:"matchLabels"`
-							} `yaml:"podSelector,omitempty"`
-							IPBlock struct {
-								CIDR string `yaml:"cidr"`
-							} `yaml:"ipBlock,omitempty"`
-						} `yaml:"to"`
-						Ports []struct {
-							Protocol string `yaml:"protocol"`
-							Port     int    `yaml:"port"`
-						} `yaml:"ports"`
-					}{
+				},
+			},
+			expectError: true,
+			errorField:  "spec",
+		},
+		{
+			name: "invalid egress CIDR",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "invalid-egress-cidr"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "web"},
+					},
+					Egress: []EgressRule{
 						{
-							To: struct {
-								PodSelector struct {
-									MatchLabels map[string]string `yaml:"matchLabels"`
-								} `yaml:"podSelector,omitempty"`
-								IPBlock struct {
-									CIDR string `yaml:"cidr"`
-								} `yaml:"ipBlock,omitempty"`
-							}{
-								IPBlock: struct {
-									CIDR string `yaml:"cidr"`
-								}{CIDR: "invalid-cidr"},
+							To: EgressTarget{
+								IPBlock: IPBlockSpec{CIDR: "invalid-cidr"},
 							},
-							Ports: []struct {
-								Protocol string `yaml:"protocol"`
-								Port     int    `yaml:"port"`
-							}{
+							Ports: []PortSpec{
 								{Protocol: "TCP", Port: 443},
 							},
 						},
@@ -240,70 +357,49 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			expectError: true,
+			errorField:  "spec.egress[0].to.ipBlock.cidr",
 		},
 		{
-			name: "invalid port",
+			name: "invalid ingress CIDR",
 			policy: NetworkPolicy{
 				APIVersion: "ztap/v1",
 				Kind:       "NetworkPolicy",
-				Metadata: struct {
-					Name string `yaml:"name"`
-				}{Name: "test"},
-				Spec: struct {
-					PodSelector struct {
-						MatchLabels map[string]string `yaml:"matchLabels"`
-					} `yaml:"podSelector"`
-					Egress []struct {
-						To struct {
-							PodSelector struct {
-								MatchLabels map[string]string `yaml:"matchLabels"`
-							} `yaml:"podSelector,omitempty"`
-							IPBlock struct {
-								CIDR string `yaml:"cidr"`
-							} `yaml:"ipBlock,omitempty"`
-						} `yaml:"to"`
-						Ports []struct {
-							Protocol string `yaml:"protocol"`
-							Port     int    `yaml:"port"`
-						} `yaml:"ports"`
-					} `yaml:"egress"`
-				}{
-					PodSelector: struct {
-						MatchLabels map[string]string `yaml:"matchLabels"`
-					}{
+				Metadata:   NetworkPolicyMetadata{Name: "invalid-ingress-cidr"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "api"},
+					},
+					Ingress: []IngressRule{
+						{
+							From: IngressSource{
+								IPBlock: IPBlockSpec{CIDR: "not-a-cidr"},
+							},
+							Ports: []PortSpec{
+								{Protocol: "TCP", Port: 8080},
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.ingress[0].from.ipBlock.cidr",
+		},
+		{
+			name: "invalid egress port",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "invalid-port"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
 						MatchLabels: map[string]string{"app": "web"},
 					},
-					Egress: []struct {
-						To struct {
-							PodSelector struct {
-								MatchLabels map[string]string `yaml:"matchLabels"`
-							} `yaml:"podSelector,omitempty"`
-							IPBlock struct {
-								CIDR string `yaml:"cidr"`
-							} `yaml:"ipBlock,omitempty"`
-						} `yaml:"to"`
-						Ports []struct {
-							Protocol string `yaml:"protocol"`
-							Port     int    `yaml:"port"`
-						} `yaml:"ports"`
-					}{
+					Egress: []EgressRule{
 						{
-							To: struct {
-								PodSelector struct {
-									MatchLabels map[string]string `yaml:"matchLabels"`
-								} `yaml:"podSelector,omitempty"`
-								IPBlock struct {
-									CIDR string `yaml:"cidr"`
-								} `yaml:"ipBlock,omitempty"`
-							}{
-								IPBlock: struct {
-									CIDR string `yaml:"cidr"`
-								}{CIDR: "10.0.0.0/8"},
+							To: EgressTarget{
+								IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"},
 							},
-							Ports: []struct {
-								Protocol string `yaml:"protocol"`
-								Port     int    `yaml:"port"`
-							}{
+							Ports: []PortSpec{
 								{Protocol: "TCP", Port: 99999},
 							},
 						},
@@ -311,6 +407,127 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			expectError: true,
+			errorField:  "spec.egress[0].ports[0].port",
+		},
+		{
+			name: "invalid ingress port",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "invalid-ingress-port"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "api"},
+					},
+					Ingress: []IngressRule{
+						{
+							From: IngressSource{
+								IPBlock: IPBlockSpec{CIDR: "192.168.0.0/16"},
+							},
+							Ports: []PortSpec{
+								{Protocol: "TCP", Port: 0},
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.ingress[0].ports[0].port",
+		},
+		{
+			name: "ingress missing from selector",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "missing-from"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "api"},
+					},
+					Ingress: []IngressRule{
+						{
+							From:  IngressSource{},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 8080}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.ingress[0].from",
+		},
+		{
+			name: "ingress both podSelector and ipBlock",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "both-selectors"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "api"},
+					},
+					Ingress: []IngressRule{
+						{
+							From: IngressSource{
+								PodSelector: PodSelectorSpec{
+									MatchLabels: map[string]string{"app": "web"},
+								},
+								IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"},
+							},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 8080}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.ingress[0].from",
+		},
+		{
+			name: "ingress missing ports",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "missing-ports"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "api"},
+					},
+					Ingress: []IngressRule{
+						{
+							From: IngressSource{
+								IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"},
+							},
+							Ports: []PortSpec{},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.ingress[0].ports",
+		},
+		{
+			name: "ingress invalid protocol",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "invalid-protocol"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "api"},
+					},
+					Ingress: []IngressRule{
+						{
+							From: IngressSource{
+								IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"},
+							},
+							Ports: []PortSpec{
+								{Protocol: "SCTP", Port: 8080},
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.ingress[0].ports[0].protocol",
 		},
 	}
 
@@ -322,6 +539,13 @@ func TestValidate(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Unexpected error: %v", err)
+			}
+			if tt.expectError && err != nil {
+				if ve, ok := err.(ValidationError); ok {
+					if tt.errorField != "" && ve.Field != tt.errorField {
+						t.Errorf("Expected error field '%s', got '%s'", tt.errorField, ve.Field)
+					}
+				}
 			}
 		})
 	}

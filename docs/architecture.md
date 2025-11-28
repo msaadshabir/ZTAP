@@ -13,6 +13,7 @@ ZTAP (Zero Trust Access Platform) implements microsegmentation across hybrid env
 **Features**:
 
 - Kubernetes-style YAML parsing
+- Bidirectional enforcement (ingress and egress rules)
 - Policy validation (CIDR, protocols, ports)
 - Label resolution interface
 - Multi-document YAML support
@@ -32,13 +33,15 @@ ResolveLabels(labels map[string]string) ([]string, error)
 **Implementations**:
 
 - **Linux**: eBPF
-  - Attach to cgroup hooks
+  - Attach to cgroup hooks (egress and ingress)
   - Per-pod traffic control
   - Kernel-level enforcement with BTF support
   - Safe packet parsing using bpf_skb_load_bytes
+  - Bidirectional filtering (cgroup_skb/egress and cgroup_skb/ingress)
 - **macOS**: pf (Packet Filter)
   - Manages `/etc/pf.anchors/ztap`
   - Updates `/etc/pf.conf`
+  - Supports pass in/out rules for ingress/egress
   - Requires sudo for full functionality
 
 **Key Functions**:

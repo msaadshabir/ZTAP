@@ -56,6 +56,7 @@ ztap status
 ### Security & Enforcement
 
 - **Kernel-Level Filtering** – Real eBPF on Linux
+- **Bidirectional Enforcement** – Ingress and egress policies
 - **RBAC** – Admin, Operator, Viewer roles
 - **Session Management** – 24-hour TTL
 - **Tamper-Proof Audit Logging** – Cryptographic hash chaining
@@ -155,6 +156,37 @@ spec:
     - to:
         ipBlock:
           cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443
+```
+
+</details>
+
+<details>
+<summary><b>Bidirectional (Ingress + Egress)</b></summary>
+
+```yaml
+apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: web-tier
+spec:
+  podSelector:
+    matchLabels:
+      tier: web
+  egress:
+    - to:
+        podSelector:
+          matchLabels:
+            tier: database
+      ports:
+        - protocol: TCP
+          port: 5432
+  ingress:
+    - from:
+        ipBlock:
+          cidr: 10.0.0.0/24
       ports:
         - protocol: TCP
           port: 443
