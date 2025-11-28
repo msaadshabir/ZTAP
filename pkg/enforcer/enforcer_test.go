@@ -66,23 +66,40 @@ func TestIPToUint32_Nil(t *testing.T) {
 }
 
 func TestPolicyKey(t *testing.T) {
-	// Verify policyKey struct has correct fields
-	key := policyKey{
-		DestIP:   0xC0A80101, // 192.168.1.1
-		DestPort: 443,
-		Protocol: 6, // TCP
+	// Verify policyKey struct has correct fields for egress
+	egressKey := policyKey{
+		IP:        0xC0A80101, // 192.168.1.1
+		Port:      443,
+		Protocol:  6, // TCP
+		Direction: DirectionEgress,
 	}
 
-	if key.DestIP != 0xC0A80101 {
-		t.Errorf("policyKey.DestIP incorrect")
+	if egressKey.IP != 0xC0A80101 {
+		t.Errorf("policyKey.IP incorrect")
 	}
 
-	if key.DestPort != 443 {
-		t.Errorf("policyKey.DestPort incorrect")
+	if egressKey.Port != 443 {
+		t.Errorf("policyKey.Port incorrect")
 	}
 
-	if key.Protocol != 6 {
+	if egressKey.Protocol != 6 {
 		t.Errorf("policyKey.Protocol incorrect")
+	}
+
+	if egressKey.Direction != DirectionEgress {
+		t.Errorf("policyKey.Direction should be DirectionEgress (0)")
+	}
+
+	// Verify policyKey struct has correct fields for ingress
+	ingressKey := policyKey{
+		IP:        0x0A000001, // 10.0.0.1
+		Port:      8080,
+		Protocol:  6, // TCP
+		Direction: DirectionIngress,
+	}
+
+	if ingressKey.Direction != DirectionIngress {
+		t.Errorf("policyKey.Direction should be DirectionIngress (1)")
 	}
 }
 
@@ -124,28 +141,18 @@ func TestCreatePolicyFromYAML(t *testing.T) {
 	pol.Metadata.Name = "test-policy"
 	pol.Spec.PodSelector.MatchLabels = map[string]string{"app": "web"}
 
-	// Add egress rule
-	egress := struct {
-		To struct {
-			PodSelector struct {
-				MatchLabels map[string]string `yaml:"matchLabels"`
-			} `yaml:"podSelector,omitempty"`
-			IPBlock struct {
+	// Add egress rule using named types
+	egress := policy.EgressRule{
+		To: policy.EgressTarget{
+			IPBlock: struct {
 				CIDR string `yaml:"cidr"`
-			} `yaml:"ipBlock,omitempty"`
-		} `yaml:"to"`
-		Ports []struct {
-			Protocol string `yaml:"protocol"`
-			Port     int    `yaml:"port"`
-		} `yaml:"ports"`
-	}{}
-
-	egress.To.IPBlock.CIDR = "10.0.0.0/8"
-	egress.Ports = []struct {
-		Protocol string `yaml:"protocol"`
-		Port     int    `yaml:"port"`
-	}{
-		{Protocol: "TCP", Port: 443},
+			}{
+				CIDR: "10.0.0.0/8",
+			},
+		},
+		Ports: []policy.PortSpec{
+			{Protocol: "TCP", Port: 443},
+		},
 	}
 
 	pol.Spec.Egress = append(pol.Spec.Egress, egress)
@@ -164,6 +171,49 @@ func TestCreatePolicyFromYAML(t *testing.T) {
 	}
 
 	if pol.Spec.Egress[0].Ports[0].Port != 443 {
+		t.Errorf("Port mismatch")
+	}
+}
+
+func TestCreatePolicyWithIngress(t *testing.T) {
+	// Test that we can create a valid policy with ingress rules
+	pol := policy.NetworkPolicy{
+		APIVersion: "ztap/v1",
+		Kind:       "NetworkPolicy",
+	}
+	pol.Metadata.Name = "test-ingress-policy"
+	pol.Spec.PodSelector.MatchLabels = map[string]string{"app": "api"}
+
+	// Add ingress rule using named types
+	ingress := policy.IngressRule{
+		From: policy.IngressSource{
+			IPBlock: struct {
+				CIDR string `yaml:"cidr"`
+			}{
+				CIDR: "192.168.0.0/16",
+			},
+		},
+		Ports: []policy.PortSpec{
+			{Protocol: "TCP", Port: 8080},
+		},
+	}
+
+	pol.Spec.Ingress = append(pol.Spec.Ingress, ingress)
+
+	// Verify policy structure
+	if len(pol.Spec.Ingress) != 1 {
+		t.Errorf("Expected 1 ingress rule, got %d", len(pol.Spec.Ingress))
+	}
+
+	if pol.Spec.Ingress[0].From.IPBlock.CIDR != "192.168.0.0/16" {
+		t.Errorf("CIDR mismatch")
+	}
+
+	if pol.Spec.Ingress[0].Ports[0].Protocol != "TCP" {
+		t.Errorf("Protocol mismatch")
+	}
+
+	if pol.Spec.Ingress[0].Ports[0].Port != 8080 {
 		t.Errorf("Port mismatch")
 	}
 }
