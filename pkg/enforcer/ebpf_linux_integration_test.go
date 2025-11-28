@@ -55,9 +55,10 @@ func TestEBPFIntegrationLoadAndAttach(t *testing.T) {
 	}
 
 	key := policyKey{
-		DestIP:   ipToUint32(targetIP),
-		DestPort: 443,
-		Protocol: protocolToNum("TCP"),
+		IP:        ipToUint32(targetIP),
+		Port:      443,
+		Protocol:  protocolToNum("TCP"),
+		Direction: DirectionEgress,
 	}
 	var value policyValue
 	if err := enf.objs.PolicyMap.Lookup(&key, &value); err != nil {
@@ -115,29 +116,14 @@ func allowTCPPolicy(name, cidr string, port int) policy.NetworkPolicy {
 	policyObj.Metadata.Name = name
 	policyObj.Spec.PodSelector.MatchLabels = map[string]string{"app": "test"}
 
-	egressRule := struct {
-		To struct {
-			PodSelector struct {
-				MatchLabels map[string]string "yaml:\"matchLabels\""
-			} "yaml:\"podSelector,omitempty\""
-			IPBlock struct {
-				CIDR string "yaml:\"cidr\""
-			} "yaml:\"ipBlock,omitempty\""
-		} "yaml:\"to\""
-		Ports []struct {
-			Protocol string "yaml:\"protocol\""
-			Port     int    "yaml:\"port\""
-		} "yaml:\"ports\""
-	}{}
-
-	egressRule.To.IPBlock.CIDR = cidr
-	egressRule.Ports = append(egressRule.Ports, struct {
-		Protocol string "yaml:\"protocol\""
-		Port     int    "yaml:\"port\""
-	}{
-		Protocol: "TCP",
-		Port:     port,
-	})
+	egressRule := policy.EgressRule{
+		To: policy.EgressTarget{
+			IPBlock: policy.IPBlockSpec{CIDR: cidr},
+		},
+		Ports: []policy.PortSpec{
+			{Protocol: "TCP", Port: port},
+		},
+	}
 
 	policyObj.Spec.Egress = append(policyObj.Spec.Egress, egressRule)
 	return policyObj
