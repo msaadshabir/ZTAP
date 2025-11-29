@@ -349,30 +349,6 @@ go fmt ./... && go vet ./...
 
 ---
 
-## Contributing
-
-We welcome contributions! See the [Roadmap](docs/roadmap.md) for delivered features and what's planned.
-
-**Good First Issues:**
-
-- Add Python tests for anomaly detection
-- Document AWS label-to-IP resolution workflow
-- Create smoke tests for `ztap status`
-
-**High Impact:**
-
-- Real-time flow monitoring
-- Advanced alerting
-- Performance optimization
-
-**Resources:**
-
-- [Testing Guide](docs/testing.md)
-- [Roadmap](docs/roadmap.md)
-- [eBPF Development](docs/ebpf.md)
-
----
-
 ## License
 
 MIT License - See [LICENSE](LICENSE)
