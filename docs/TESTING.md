@@ -191,28 +191,6 @@ jobs:
 4. **Table-Driven**: Complex scenarios use table-driven tests for clarity
 5. **Error Checking**: Both success and failure paths are validated
 
-## Future Testing Needs
-
-### Unit Tests (TODO)
-
-- [ ] `pkg/anomaly/detector_test.go` - Anomaly detection microservice
-- [ ] `pkg/cmd/...` - CLI command flows (enforce, status, logs)
-- [ ] Expand `pkg/enforcer` coverage on Linux runners
-
-### Integration Tests (TODO)
-
-- [ ] End-to-end policy enforcement with eBPF
-- [ ] AWS Security Group synchronization against live AWS account
-- [ ] Anomaly detection with real traffic
-- [ ] Multi-node distributed testing
-
-### Performance Tests (TODO)
-
-- [ ] Policy evaluation latency benchmarks
-- [ ] Service discovery scalability tests
-- [ ] Memory usage under load
-- [ ] Concurrent policy enforcement
-
 ## Troubleshooting
 
 ### Test Failures

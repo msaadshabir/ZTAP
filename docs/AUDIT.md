@@ -359,16 +359,6 @@ ztap audit verify
 # Next audit event will create new file
 ```
 
-## Future Enhancements
-
-- [ ] Log rotation with chain continuation
-- [ ] Remote syslog integration
-- [ ] Real-time event streaming
-- [ ] Audit log encryption at rest
-- [ ] Distributed audit log aggregation
-- [ ] Advanced query DSL
-- [ ] Audit log compression
-
 ## References
 
 - [NIST SP 800-92: Guide to Computer Security Log Management](https://csrc.nist.gov/publications/detail/sp/800-92/final)
