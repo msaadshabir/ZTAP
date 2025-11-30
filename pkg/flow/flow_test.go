@@ -281,7 +281,7 @@ func TestMonitorSubscription(t *testing.T) {
 	if err := monitor.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer monitor.Stop()
+	defer func() { _ = monitor.Stop() }()
 
 	// Subscribe after starting (monitor is now running)
 	eventCh := monitor.Subscribe(ctx)
@@ -368,8 +368,8 @@ func TestMonitorStats(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	monitor.Start(ctx)
-	defer monitor.Stop()
+	_ = monitor.Start(ctx)
+	defer func() { _ = monitor.Stop() }()
 
 	// Subscribe and drain events
 	eventCh := monitor.Subscribe(ctx)

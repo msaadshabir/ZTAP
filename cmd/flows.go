@@ -110,7 +110,7 @@ func streamFlows(filter flow.FlowFilter, output string) {
 		fmt.Printf("Error starting flow monitor: %v\n", err)
 		return
 	}
-	defer monitor.Stop()
+	defer func() { _ = monitor.Stop() }()
 
 	// Subscribe to events
 	events := monitor.Subscribe(ctx)

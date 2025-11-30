@@ -139,7 +139,7 @@ func (m *Monitor) Subscribe(ctx context.Context) <-chan FlowEvent {
 				}
 				// Use recover to handle double-close panic
 				func() {
-					defer func() { recover() }()
+					defer func() { _ = recover() }()
 					close(ch)
 				}()
 				break

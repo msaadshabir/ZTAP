@@ -14,10 +14,9 @@ import (
 // StubReader provides a stub flow reader for non-Linux platforms.
 // On macOS, this could be extended to parse pf logs in the future.
 type StubReader struct {
-	mu        sync.Mutex
-	running   bool
-	stopCh    chan struct{}
-	simulated bool
+	mu      sync.Mutex
+	running bool
+	stopCh  chan struct{}
 }
 
 // NewStubReader creates a stub reader for non-Linux platforms.
