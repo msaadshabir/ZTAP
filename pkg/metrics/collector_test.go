@@ -18,6 +18,7 @@ func resetCollector(t *testing.T) {
 		prometheus.Unregister(globalCollector.flowsBlocked)
 		prometheus.Unregister(globalCollector.anomalyScore)
 		prometheus.Unregister(globalCollector.policyLoadTime)
+		prometheus.Unregister(globalCollector.flowsTotal)
 	}
 	globalCollector = nil
 	once = sync.Once{}

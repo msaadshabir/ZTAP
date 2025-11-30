@@ -139,6 +139,34 @@ struct policy_value {
 };
 ```
 
+### Flow Events Ring Buffer
+
+Flow events are streamed to userspace via a ring buffer:
+
+```c
+struct flow_event {
+    __u64 timestamp_ns;  // Kernel timestamp (nanoseconds since boot)
+    __u32 src_ip;        // Source IP address
+    __u32 dest_ip;       // Destination IP address
+    __u16 src_port;      // Source port
+    __u16 dest_port;     // Destination port
+    __u8  protocol;      // Protocol (TCP=6, UDP=17, ICMP=1)
+    __u8  direction;     // 0=egress, 1=ingress
+    __u8  action;        // 0=blocked, 1=allowed
+    __u8  pad;           // Padding
+};
+```
+
+The ring buffer (256KB) enables real-time flow monitoring:
+
+```bash
+# Stream flow events
+ztap flows --follow
+
+# Filter by action
+ztap flows --action blocked
+```
+
 ### Attachment Points
 
 eBPF programs attach to cgroups using `BPF_CGROUP_INET_EGRESS`:

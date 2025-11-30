@@ -16,6 +16,7 @@ type Collector struct {
 	flowsBlocked     prometheus.Counter
 	anomalyScore     prometheus.Gauge
 	policyLoadTime   prometheus.Histogram
+	flowsTotal       *prometheus.CounterVec
 	mu               sync.Mutex
 }
 
@@ -49,6 +50,10 @@ func GetCollector() *Collector {
 				Help:    "Time taken to load policies",
 				Buckets: prometheus.DefBuckets,
 			}),
+			flowsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+				Name: "ztap_flows_total",
+				Help: "Total number of network flows by action, protocol, and direction",
+			}, []string{"action", "protocol", "direction"}),
 		}
 
 		// Register metrics with Prometheus
@@ -57,6 +62,7 @@ func GetCollector() *Collector {
 		prometheus.MustRegister(globalCollector.flowsBlocked)
 		prometheus.MustRegister(globalCollector.anomalyScore)
 		prometheus.MustRegister(globalCollector.policyLoadTime)
+		prometheus.MustRegister(globalCollector.flowsTotal)
 	})
 
 	return globalCollector
@@ -95,6 +101,20 @@ func (c *Collector) ObservePolicyLoadTime(seconds float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.policyLoadTime.Observe(seconds)
+}
+
+// RecordFlow records a flow event with labels for action, protocol, and direction.
+func (c *Collector) RecordFlow(action, protocol, direction string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.flowsTotal.WithLabelValues(action, protocol, direction).Inc()
+
+	// Also update legacy counters for backward compatibility
+	if action == "allowed" {
+		c.flowsAllowed.Inc()
+	} else {
+		c.flowsBlocked.Inc()
+	}
 }
 
 // StartServer starts the Prometheus metrics HTTP server

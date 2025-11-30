@@ -8,18 +8,24 @@ typedef unsigned short __u16;
 typedef unsigned int __u32;
 typedef unsigned long long __u64;
 
-// BPF helper return types
+// BPF map types
 #define BPF_MAP_TYPE_HASH 1
+#define BPF_MAP_TYPE_RINGBUF 27
 
 // BPF constants
 #define ETH_P_IP 0x0800
 #define IPPROTO_TCP 6
 #define IPPROTO_UDP 17
+#define IPPROTO_ICMP 1
 
 // BPF helper function declarations
 static void *(*bpf_map_lookup_elem)(void *map, void *key) = (void *)1;
 static long (*bpf_map_update_elem)(void *map, void *key, void *value, unsigned long flags) = (void *)2;
 static long (*bpf_skb_load_bytes)(const void *skb, __u32 offset, void *to, __u32 len) = (void *)26;
+static __u64 (*bpf_ktime_get_ns)(void) = (void *)5;
+static void *(*bpf_ringbuf_reserve)(void *ringbuf, __u64 size, __u64 flags) = (void *)131;
+static void (*bpf_ringbuf_submit)(void *data, __u64 flags) = (void *)132;
+static void (*bpf_ringbuf_discard)(void *data, __u64 flags) = (void *)133;
 
 // Byte order conversion helpers (inline, not actual BPF helpers)
 #define bpf_htons(x) __builtin_bswap16(x)
@@ -113,6 +119,51 @@ struct
     __type(value, struct policy_value);
 } policy_map SEC(".maps");
 
+// Flow event structure for real-time monitoring (must match Go struct in pkg/flow/types.go)
+struct flow_event
+{
+    __u64 timestamp_ns; // Kernel timestamp in nanoseconds
+    __u32 src_ip;       // Source IP address
+    __u32 dest_ip;      // Destination IP address
+    __u16 src_port;     // Source port
+    __u16 dest_port;    // Destination port
+    __u8 protocol;      // Protocol (6=TCP, 17=UDP, 1=ICMP)
+    __u8 direction;     // 0=egress, 1=ingress
+    __u8 action;        // 0=blocked, 1=allowed
+    __u8 _pad;          // Padding for alignment
+};
+
+// Ring buffer for flow events (256KB buffer)
+struct
+{
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 256 * 1024);
+} flow_events SEC(".maps");
+
+// Helper to emit flow event to ring buffer
+static __always_inline void emit_flow_event(__u32 src_ip, __u32 dest_ip,
+                                            __u16 src_port, __u16 dest_port,
+                                            __u8 protocol, __u8 direction, __u8 action)
+{
+    struct flow_event *event;
+
+    event = bpf_ringbuf_reserve(&flow_events, sizeof(*event), 0);
+    if (!event)
+        return;
+
+    event->timestamp_ns = bpf_ktime_get_ns();
+    event->src_ip = src_ip;
+    event->dest_ip = dest_ip;
+    event->src_port = src_port;
+    event->dest_port = dest_port;
+    event->protocol = protocol;
+    event->direction = direction;
+    event->action = action;
+    event->_pad = 0;
+
+    bpf_ringbuf_submit(event, 0);
+}
+
 // Helper to parse IPv4 packet and extract addresses and ports
 static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *src_ip, __u32 *dest_ip,
                                       __u8 *protocol, __u16 *src_port, __u16 *dest_port)
@@ -201,16 +252,19 @@ int filter_egress(struct __sk_buff *skb)
         if (value->action == 1)
         {
             // ALLOW
+            emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 1);
             return 1;
         }
         else
         {
             // BLOCK
+            emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 0);
             return 0;
         }
     }
 
     // Default deny: if no policy matches, block
+    emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 0);
     return 0;
 }
 
@@ -245,16 +299,19 @@ int filter_ingress(struct __sk_buff *skb)
         if (value->action == 1)
         {
             // ALLOW
+            emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 1);
             return 1;
         }
         else
         {
             // BLOCK
+            emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 0);
             return 0;
         }
     }
 
     // Default deny: if no policy matches, block
+    emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 0);
     return 0;
 }
 

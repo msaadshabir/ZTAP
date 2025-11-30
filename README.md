@@ -81,6 +81,7 @@ ztap status
 
 ### Observability
 
+- **Real-Time Flow Monitoring** – Stream network events via eBPF ring buffer
 - **Prometheus Metrics** – Pre-built exporters
 - **Grafana Dashboards** – Auto-provisioned
 - **ML Anomaly Detection** – Isolation Forest
@@ -208,6 +209,7 @@ Commands:
   status      Show on-premises and cloud resource status
   cluster     Manage cluster coordination (status, join, leave, list)
   policy      Distributed policy management (sync, list, watch, show)
+  flows       Real-time flow event monitoring (--follow, --action, --protocol)
   logs        View enforcement logs (with --follow and --policy filters)
   metrics     Start Prometheus metrics server
   user        Manage users (create, login, list, change-password)
@@ -258,6 +260,27 @@ ztap policy show web-to-db                   # Show policy details
 </details>
 
 <details>
+<summary><b>Flow Monitoring</b></summary>
+
+```bash
+# View recent flow events
+ztap flows
+
+# Stream flow events in real-time
+ztap flows --follow
+
+# Filter by action/protocol/direction
+ztap flows --action blocked --protocol TCP
+ztap flows --direction egress --limit 100
+
+# Output formats
+ztap flows --output json    # JSON format
+ztap flows --output wide    # Extended details
+```
+
+</details>
+
+<details>
 <summary><b>Audit Logging</b></summary>
 
 ```bash
@@ -283,18 +306,19 @@ ztap audit stats                                  # Show log stats
 
 ### Prometheus Metrics
 
-| Metric                                     | Description                           |
-| ------------------------------------------ | ------------------------------------- |
-| `ztap_policies_enforced_total`             | Number of policies enforced           |
-| `ztap_flows_allowed_total`                 | Allowed flows counter                 |
-| `ztap_flows_blocked_total`                 | Blocked flows counter                 |
-| `ztap_anomaly_score`                       | Current anomaly score (0-100)         |
-| `ztap_policy_load_duration_seconds`        | Policy load time histogram            |
-| `ztap_policies_synced_total`               | Total policy sync operations          |
-| `ztap_policy_sync_duration_seconds`        | Policy sync duration histogram        |
-| `ztap_policy_version_current`              | Current version of each policy        |
-| `ztap_policy_enforcement_duration_seconds` | Policy enforcement duration histogram |
-| `ztap_policy_subscribers_active`           | Active policy subscribers count       |
+| Metric                                     | Description                              |
+| ------------------------------------------ | ---------------------------------------- |
+| `ztap_policies_enforced_total`             | Number of policies enforced              |
+| `ztap_flows_allowed_total`                 | Allowed flows counter                    |
+| `ztap_flows_blocked_total`                 | Blocked flows counter                    |
+| `ztap_anomaly_score`                       | Current anomaly score (0-100)            |
+| `ztap_policy_load_duration_seconds`        | Policy load time histogram               |
+| `ztap_policies_synced_total`               | Total policy sync operations             |
+| `ztap_policy_sync_duration_seconds`        | Policy sync duration histogram           |
+| `ztap_policy_version_current`              | Current version of each policy           |
+| `ztap_policy_enforcement_duration_seconds` | Policy enforcement duration histogram    |
+| `ztap_policy_subscribers_active`           | Active policy subscribers count          |
+| `ztap_flows_total`                         | Flow events by action/protocol/direction |
 
 ### Grafana Dashboard
 

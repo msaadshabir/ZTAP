@@ -20,10 +20,10 @@
 - Automatic enforcement on all nodes
 - Policy version tracking
 - Ingress policy support (bidirectional enforcement)
+- Real-time flow event monitoring (`ztap flows` with `--follow` streaming)
 
 ## Planned
 
-- Real-time flow event monitoring
 - Policy conflict detection
 - REST API / gRPC interface
 - Alerting with webhook integrations (Slack, PagerDuty)

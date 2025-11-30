@@ -29,6 +29,7 @@ type eBPFEnforcer struct {
 // bpfObjects contains loaded eBPF programs and maps
 type bpfObjects struct {
 	PolicyMap     *ebpf.Map     `ebpf:"policy_map"`
+	FlowEvents    *ebpf.Map     `ebpf:"flow_events"`
 	FilterEgress  *ebpf.Program `ebpf:"filter_egress"`
 	FilterIngress *ebpf.Program `ebpf:"filter_ingress"`
 }
@@ -299,6 +300,9 @@ func (e *eBPFEnforcer) Close() error {
 		if e.objs.PolicyMap != nil {
 			e.objs.PolicyMap.Close()
 		}
+		if e.objs.FlowEvents != nil {
+			e.objs.FlowEvents.Close()
+		}
 		if e.objs.FilterEgress != nil {
 			e.objs.FilterEgress.Close()
 		}
@@ -308,6 +312,15 @@ func (e *eBPFEnforcer) Close() error {
 	}
 
 	return nil
+}
+
+// GetFlowEventsMap returns the flow_events ring buffer map for flow monitoring.
+// Returns nil if the eBPF program is not loaded.
+func (e *eBPFEnforcer) GetFlowEventsMap() *ebpf.Map {
+	if e.objs == nil {
+		return nil
+	}
+	return e.objs.FlowEvents
 }
 
 // Helper functions
