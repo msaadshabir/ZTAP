@@ -250,6 +250,8 @@ func GetLinuxUptimeNs() int64 {
 		return 0
 	}
 	var uptime float64
-	fmt.Sscanf(string(data), "%f", &uptime)
+	if _, err := fmt.Sscanf(string(data), "%f", &uptime); err != nil {
+		return 0
+	}
 	return int64(uptime * 1e9)
 }
