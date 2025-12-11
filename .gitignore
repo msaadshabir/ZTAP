@@ -98,5 +98,3 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# AI instructions (development only)
-.github/copilot-instructions.md
