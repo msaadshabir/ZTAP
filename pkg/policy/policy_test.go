@@ -670,7 +670,7 @@ func TestCheckConflicts(t *testing.T) {
 		},
 	}
 
-	if err := CheckConflicts(existing, candidate); err == nil {
+	if err := CheckConflicts([]NamedPolicy{{PolicyName: "existing", Policy: existing[0]}}, NamedPolicy{PolicyName: "new-policy", Policy: candidate}); err == nil {
 		t.Fatal("expected conflict but got none")
 	}
 
@@ -689,7 +689,7 @@ func TestCheckConflicts(t *testing.T) {
 		},
 	}
 
-	if err := CheckConflicts(existing, nonConflict); err != nil {
+	if err := CheckConflicts([]NamedPolicy{{PolicyName: "existing", Policy: existing[0]}}, NamedPolicy{PolicyName: "non-conflict", Policy: nonConflict}); err != nil {
 		t.Fatalf("expected no conflict, got %v", err)
 	}
 }

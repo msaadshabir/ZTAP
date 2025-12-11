@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"os"
 	"regexp"
@@ -76,6 +77,12 @@ type NetworkPolicy struct {
 	Kind       string                `yaml:"kind"`
 	Metadata   NetworkPolicyMetadata `yaml:"metadata"`
 	Spec       NetworkPolicySpec     `yaml:"spec"`
+}
+
+// NamedPolicy couples a policy with its source identifier (e.g., sync name).
+type NamedPolicy struct {
+	PolicyName string
+	Policy     NetworkPolicy
 }
 
 // LoadFromFile reads policies from a YAML file
@@ -315,35 +322,74 @@ func (p *NetworkPolicy) validatePort(field string, port PortSpec) error {
 }
 
 func (p *NetworkPolicy) detectRuleConflicts() error {
-	seen := make(map[string]int)
+	type ruleRef struct {
+		dir      string
+		cidr     string
+		labels   map[string]string
+		protocol string
+		port     int
+		index    int
+	}
+
+	var refs []ruleRef
 
 	for i, egress := range p.Spec.Egress {
-		target := targetKey(egress.To.PodSelector.MatchLabels, egress.To.IPBlock.CIDR)
-		for _, port := range egress.Ports {
-			key := fmt.Sprintf("egress|%s|%s|%d", target, port.Protocol, port.Port)
-			if prev, ok := seen[key]; ok {
-				return ValidationError{
-					PolicyName: p.Metadata.Name,
-					Field:      fmt.Sprintf("spec.egress[%d]", i),
-					Message:    fmt.Sprintf("duplicate rule overlaps with spec.egress[%d]", prev),
-				}
-			}
-			seen[key] = i
+		refs = append(refs, ruleRef{
+			dir:      "egress",
+			cidr:     egress.To.IPBlock.CIDR,
+			labels:   egress.To.PodSelector.MatchLabels,
+			protocol: egress.Ports[0].Protocol,
+			port:     egress.Ports[0].Port,
+			index:    i,
+		})
+		for j := 1; j < len(egress.Ports); j++ {
+			refs = append(refs, ruleRef{
+				dir:      "egress",
+				cidr:     egress.To.IPBlock.CIDR,
+				labels:   egress.To.PodSelector.MatchLabels,
+				protocol: egress.Ports[j].Protocol,
+				port:     egress.Ports[j].Port,
+				index:    i,
+			})
 		}
 	}
 
 	for i, ingress := range p.Spec.Ingress {
-		target := targetKey(ingress.From.PodSelector.MatchLabels, ingress.From.IPBlock.CIDR)
-		for _, port := range ingress.Ports {
-			key := fmt.Sprintf("ingress|%s|%s|%d", target, port.Protocol, port.Port)
-			if prev, ok := seen[key]; ok {
+		refs = append(refs, ruleRef{
+			dir:      "ingress",
+			cidr:     ingress.From.IPBlock.CIDR,
+			labels:   ingress.From.PodSelector.MatchLabels,
+			protocol: ingress.Ports[0].Protocol,
+			port:     ingress.Ports[0].Port,
+			index:    i,
+		})
+		for j := 1; j < len(ingress.Ports); j++ {
+			refs = append(refs, ruleRef{
+				dir:      "ingress",
+				cidr:     ingress.From.IPBlock.CIDR,
+				labels:   ingress.From.PodSelector.MatchLabels,
+				protocol: ingress.Ports[j].Protocol,
+				port:     ingress.Ports[j].Port,
+				index:    i,
+			})
+		}
+	}
+
+	for i := 0; i < len(refs); i++ {
+		a := refs[i]
+		for j := 0; j < i; j++ {
+			b := refs[j]
+			if a.dir != b.dir || a.protocol != b.protocol || a.port != b.port {
+				continue
+			}
+			if targetsOverlap(a.labels, a.cidr, b.labels, b.cidr) {
+				field := fmt.Sprintf("spec.%s[%d]", a.dir, a.index)
 				return ValidationError{
 					PolicyName: p.Metadata.Name,
-					Field:      fmt.Sprintf("spec.ingress[%d]", i),
-					Message:    fmt.Sprintf("duplicate rule overlaps with spec.ingress[%d]", prev),
+					Field:      field,
+					Message:    fmt.Sprintf("overlaps with spec.%s[%d]", b.dir, b.index),
 				}
 			}
-			seen[key] = i
 		}
 	}
 
@@ -373,60 +419,139 @@ func labelsKey(labels map[string]string) string {
 	return strings.Join(parts, ",")
 }
 
-// CheckConflicts verifies that a candidate policy does not overlap existing policies on identical peers/ports.
-func CheckConflicts(existing []NetworkPolicy, candidate NetworkPolicy) error {
-	existingKeys := make(map[string]string)
-
-	for _, p := range existing {
-		addPolicyKeys(existingKeys, p)
+func labelsOverlap(a, b map[string]string) bool {
+	for k, v := range a {
+		if bv, ok := b[k]; ok && bv != v {
+			return false
+		}
 	}
+	for k, v := range b {
+		if av, ok := a[k]; ok && av != v {
+			return false
+		}
+	}
+	return true
+}
 
-	for _, egress := range candidate.Spec.Egress {
-		target := targetKey(egress.To.PodSelector.MatchLabels, egress.To.IPBlock.CIDR)
-		for _, port := range egress.Ports {
-			key := fmt.Sprintf("egress|%s|%s|%d", target, port.Protocol, port.Port)
-			if other, ok := existingKeys[key]; ok && other != candidate.Metadata.Name {
-				return ValidationError{
-					PolicyName: candidate.Metadata.Name,
-					Field:      "conflict",
-					Message:    fmt.Sprintf("conflicts with policy %s on %s %s/%d", other, target, port.Protocol, port.Port),
-				}
+func cidrOverlap(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	_, na, errA := net.ParseCIDR(a)
+	_, nb, errB := net.ParseCIDR(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	if len(na.IP) != len(nb.IP) {
+		return false
+	}
+	saStart, saEnd := cidrRange(na)
+	sbStart, sbEnd := cidrRange(nb)
+	if saStart == nil || sbStart == nil {
+		return false
+	}
+	// overlap if ranges intersect
+	if saStart.Cmp(sbEnd) == 1 || sbStart.Cmp(saEnd) == 1 {
+		return false
+	}
+	return true
+}
+
+func cidrRange(n *net.IPNet) (*big.Int, *big.Int) {
+	ip := n.IP
+	mask := n.Mask
+	if len(ip) == 0 || len(mask) == 0 {
+		return nil, nil
+	}
+	start := ipToInt(ip)
+	maskInt := new(big.Int).SetBytes(mask)
+	if start == nil || maskInt == nil {
+		return nil, nil
+	}
+	bits := len(ip) * 8
+	max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), uint(bits)), big.NewInt(1))
+	invMask := new(big.Int).Xor(maskInt, max)
+	end := new(big.Int).Or(start, invMask)
+	return start, end
+}
+
+func ipToInt(ip net.IP) *big.Int {
+	if len(ip) == 0 {
+		return nil
+	}
+	return new(big.Int).SetBytes(ip)
+}
+
+func targetsOverlap(labelsA map[string]string, cidrA string, labelsB map[string]string, cidrB string) bool {
+	if cidrA != "" && cidrB != "" {
+		return cidrOverlap(cidrA, cidrB)
+	}
+	if len(labelsA) > 0 && len(labelsB) > 0 {
+		return labelsOverlap(labelsA, labelsB)
+	}
+	return false
+}
+
+func overlapsEgress(rule EgressRule, port PortSpec, other NetworkPolicy) bool {
+	for _, r := range other.Spec.Egress {
+		for _, p := range r.Ports {
+			if p.Protocol != port.Protocol || p.Port != port.Port {
+				continue
+			}
+			if targetsOverlap(rule.To.PodSelector.MatchLabels, rule.To.IPBlock.CIDR, r.To.PodSelector.MatchLabels, r.To.IPBlock.CIDR) {
+				return true
 			}
 		}
 	}
+	return false
+}
 
-	for _, ingress := range candidate.Spec.Ingress {
-		target := targetKey(ingress.From.PodSelector.MatchLabels, ingress.From.IPBlock.CIDR)
-		for _, port := range ingress.Ports {
-			key := fmt.Sprintf("ingress|%s|%s|%d", target, port.Protocol, port.Port)
-			if other, ok := existingKeys[key]; ok && other != candidate.Metadata.Name {
-				return ValidationError{
-					PolicyName: candidate.Metadata.Name,
-					Field:      "conflict",
-					Message:    fmt.Sprintf("conflicts with policy %s on %s %s/%d", other, target, port.Protocol, port.Port),
+func overlapsIngress(rule IngressRule, port PortSpec, other NetworkPolicy) bool {
+	for _, r := range other.Spec.Ingress {
+		for _, p := range r.Ports {
+			if p.Protocol != port.Protocol || p.Port != port.Port {
+				continue
+			}
+			if targetsOverlap(rule.From.PodSelector.MatchLabels, rule.From.IPBlock.CIDR, r.From.PodSelector.MatchLabels, r.From.IPBlock.CIDR) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// CheckConflicts verifies that a candidate policy does not overlap existing policies on identical peers/ports.
+func CheckConflicts(existing []NamedPolicy, candidate NamedPolicy) error {
+	for _, np := range existing {
+		if np.PolicyName == candidate.PolicyName {
+			continue
+		}
+		for _, egress := range candidate.Policy.Spec.Egress {
+			for _, port := range egress.Ports {
+				if overlapsEgress(egress, port, np.Policy) {
+					return ValidationError{
+						PolicyName: candidate.Policy.Metadata.Name,
+						Field:      "conflict",
+						Message:    fmt.Sprintf("conflicts with policy %s on %s/%d", np.PolicyName, port.Protocol, port.Port),
+					}
+				}
+			}
+		}
+
+		for _, ingress := range candidate.Policy.Spec.Ingress {
+			for _, port := range ingress.Ports {
+				if overlapsIngress(ingress, port, np.Policy) {
+					return ValidationError{
+						PolicyName: candidate.Policy.Metadata.Name,
+						Field:      "conflict",
+						Message:    fmt.Sprintf("conflicts with policy %s on %s/%d", np.PolicyName, port.Protocol, port.Port),
+					}
 				}
 			}
 		}
 	}
 
 	return nil
-}
-
-func addPolicyKeys(target map[string]string, p NetworkPolicy) {
-	for _, egress := range p.Spec.Egress {
-		t := targetKey(egress.To.PodSelector.MatchLabels, egress.To.IPBlock.CIDR)
-		for _, port := range egress.Ports {
-			key := fmt.Sprintf("egress|%s|%s|%d", t, port.Protocol, port.Port)
-			target[key] = p.Metadata.Name
-		}
-	}
-	for _, ingress := range p.Spec.Ingress {
-		t := targetKey(ingress.From.PodSelector.MatchLabels, ingress.From.IPBlock.CIDR)
-		for _, port := range ingress.Ports {
-			key := fmt.Sprintf("ingress|%s|%s|%d", t, port.Protocol, port.Port)
-			target[key] = p.Metadata.Name
-		}
-	}
 }
 
 // PolicyResolver handles label resolution with service discovery

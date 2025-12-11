@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"ztap/pkg/enforcer"
 	"ztap/pkg/policy"
@@ -18,6 +19,20 @@ var enforceCmd = &cobra.Command{
 		policies, err := policy.LoadFromFile(policyFile)
 		if err != nil {
 			log.Fatalf("Failed to load policy: %v", err)
+		}
+
+		policyName := filepath.Base(policyFile)
+		named := make([]policy.NamedPolicy, 0, len(policies))
+		for _, p := range policies {
+			if err := p.Validate(); err != nil {
+				log.Fatalf("Invalid policy: %v", err)
+			}
+			named = append(named, policy.NamedPolicy{PolicyName: policyName, Policy: p})
+		}
+		for i, np := range named {
+			if err := policy.CheckConflicts(named[:i], np); err != nil {
+				log.Fatalf("Policy conflict: %v", err)
+			}
 		}
 
 		fmt.Printf("Loaded %d policy(ies) from %s\n", len(policies), policyFile)

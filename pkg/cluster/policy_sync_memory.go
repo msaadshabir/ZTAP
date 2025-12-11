@@ -97,7 +97,7 @@ func (ps *InMemoryPolicySync) SyncPolicy(ctx context.Context, policyName string,
 		return fmt.Errorf("policy YAML cannot be empty")
 	}
 
-	if _, err := ps.parseAndValidate(policyYAML); err != nil {
+	if _, err := ps.parseAndValidate(policyName, policyYAML); err != nil {
 		recordPolicySyncError("invalid_policy", policyName)
 		return err
 	}
@@ -298,7 +298,7 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 		return fmt.Errorf("policy YAML cannot be empty")
 	}
 
-	if _, err := ps.parseAndValidate(update.YAML); err != nil {
+	if _, err := ps.parseAndValidate(update.PolicyName, update.YAML); err != nil {
 		return err
 	}
 
@@ -333,7 +333,7 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 	return nil
 }
 
-func (ps *InMemoryPolicySync) parseAndValidate(policyYAML []byte) ([]policy.NetworkPolicy, error) {
+func (ps *InMemoryPolicySync) parseAndValidate(policyName string, policyYAML []byte) ([]policy.NetworkPolicy, error) {
 	policies, err := policy.LoadFromBytes(policyYAML)
 	if err != nil {
 		return nil, err
@@ -353,32 +353,37 @@ func (ps *InMemoryPolicySync) parseAndValidate(policyYAML []byte) ([]policy.Netw
 		return nil, err
 	}
 
-	combined := append([]policy.NetworkPolicy{}, existing...)
+	combined := append([]policy.NamedPolicy{}, existing...)
 	for _, p := range policies {
-		if err := policy.CheckConflicts(combined, p); err != nil {
+		candidate := policy.NamedPolicy{PolicyName: policyName, Policy: p}
+		if err := policy.CheckConflicts(combined, candidate); err != nil {
 			return nil, err
 		}
-		combined = append(combined, p)
+		combined = append(combined, candidate)
 	}
 
 	return policies, nil
 }
 
-func (ps *InMemoryPolicySync) currentPolicies() ([]policy.NetworkPolicy, error) {
+func (ps *InMemoryPolicySync) currentPolicies() ([]policy.NamedPolicy, error) {
 	ps.mu.RLock()
 	data := make([][]byte, 0, len(ps.policies))
-	for _, state := range ps.policies {
+	names := make([]string, 0, len(ps.policies))
+	for name, state := range ps.policies {
 		data = append(data, append([]byte(nil), state.YAML...))
+		names = append(names, name)
 	}
 	ps.mu.RUnlock()
 
-	policies := make([]policy.NetworkPolicy, 0, len(data))
-	for _, yamlBytes := range data {
+	policies := make([]policy.NamedPolicy, 0, len(data))
+	for i, yamlBytes := range data {
 		loaded, err := policy.LoadFromBytes(yamlBytes)
 		if err != nil {
 			return nil, err
 		}
-		policies = append(policies, loaded...)
+		for _, p := range loaded {
+			policies = append(policies, policy.NamedPolicy{PolicyName: names[i], Policy: p})
+		}
 	}
 
 	return policies, nil
