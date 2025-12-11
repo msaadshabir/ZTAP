@@ -202,13 +202,19 @@ func (c *AWSClient) RevokeAllEgress(ctx context.Context, sgID string) error {
 	return nil
 }
 
+const (
+	// Capacity estimates for pre-allocation
+	minResourceMatchCapacity     = 4
+	defaultResourceMatchFraction = 10 // Expect 1/10 (10%) of resources to match
+)
+
 // MatchResourcesByLabels finds resources matching the given labels
 func MatchResourcesByLabels(resources []Resource, labels map[string]string) []Resource {
 	// Pre-allocate with conservative capacity estimate
 	// Start with 10% of resources or minimum of 4 items
-	estimatedMatches := len(resources) / 10
-	if estimatedMatches < 4 {
-		estimatedMatches = 4
+	estimatedMatches := len(resources) / defaultResourceMatchFraction
+	if estimatedMatches < minResourceMatchCapacity {
+		estimatedMatches = minResourceMatchCapacity
 	}
 	if estimatedMatches > len(resources) {
 		estimatedMatches = len(resources)

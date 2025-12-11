@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -64,8 +63,9 @@ type AuditLogger struct {
 }
 
 // indexEntry provides quick access to audit entries
+// The offset field is not used for file seeking (which would be complex with variable-length JSON)
+// but reserved for potential future use
 type indexEntry struct {
-	offset    int64
 	timestamp time.Time
 	eventType EventType
 	actor     string
@@ -111,12 +111,6 @@ func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, acti
 	al.mu.Lock()
 	defer al.mu.Unlock()
 
-	// Get current file offset for indexing
-	offset, err := al.logFile.Seek(0, io.SeekCurrent)
-	if err != nil {
-		offset = 0 // Best effort
-	}
-
 	entry := AuditEntry{
 		ID:           generateID(),
 		Timestamp:    time.Now().UTC(),
@@ -150,7 +144,6 @@ func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, acti
 	// Update index cache
 	al.cacheMu.Lock()
 	al.indexCache = append(al.indexCache, indexEntry{
-		offset:    offset,
 		timestamp: entry.Timestamp,
 		eventType: entry.EventType,
 		actor:     entry.Actor,
@@ -403,10 +396,8 @@ func (al *AuditLogger) loadLastHash() error {
 		lastEntry = entry
 		al.entryCount++
 		
-		// Add to index cache (offset tracking removed to avoid marshaling overhead)
-		// The cache is used for filtering only, not for direct file seeking
+		// Add to index cache (sequential access, no file seeking needed)
 		al.indexCache = append(al.indexCache, indexEntry{
-			offset:    0, // Not used for filtering, only sequential access matters
 			timestamp: entry.Timestamp,
 			eventType: entry.EventType,
 			actor:     entry.Actor,

@@ -95,6 +95,11 @@ func (d *PythonDetector) Train(flows []FlowRecord) error {
 	return nil
 }
 
+const (
+	// Maximum number of anomaly reasons we track
+	maxAnomalyReasons = 3
+)
+
 // SimpleDetector provides basic rule-based anomaly detection (no ML)
 type SimpleDetector struct {
 	suspiciousPorts  map[int]bool // Changed to map for O(1) lookup
@@ -123,7 +128,7 @@ func NewSimpleDetector() *SimpleDetector {
 // Detect performs rule-based anomaly detection
 func (d *SimpleDetector) Detect(flow FlowRecord) (*AnomalyScore, error) {
 	score := 0.0
-	reasons := make([]string, 0, 3) // Pre-allocate with estimated capacity
+	reasons := make([]string, 0, maxAnomalyReasons) // Pre-allocate with max capacity
 
 	// Check for suspicious ports - O(1) map lookup
 	if d.suspiciousPorts[flow.Port] {
