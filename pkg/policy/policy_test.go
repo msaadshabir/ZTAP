@@ -529,6 +529,31 @@ func TestValidate(t *testing.T) {
 			expectError: true,
 			errorField:  "spec.ingress[0].ports[0].protocol",
 		},
+		{
+			name: "duplicate egress rule",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "dupe-egress"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchLabels: map[string]string{"app": "web"},
+					},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 80}},
+						},
+						{
+							To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 80}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.egress[1]",
+		},
 	}
 
 	for _, tt := range tests {
@@ -610,4 +635,61 @@ func (m *mockDiscovery) DeregisterService(name string) error {
 
 func (m *mockDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
 	return nil, nil
+}
+
+func TestCheckConflicts(t *testing.T) {
+	existing := []NetworkPolicy{
+		{
+			APIVersion: "ztap/v1",
+			Kind:       "NetworkPolicy",
+			Metadata:   NetworkPolicyMetadata{Name: "existing"},
+			Spec: NetworkPolicySpec{
+				PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "db"}},
+				Egress: []EgressRule{
+					{
+						To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
+						Ports: []PortSpec{{Protocol: "TCP", Port: 5432}},
+					},
+				},
+			},
+		},
+	}
+
+	candidate := NetworkPolicy{
+		APIVersion: "ztap/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   NetworkPolicyMetadata{Name: "new-policy"},
+		Spec: NetworkPolicySpec{
+			PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+			Egress: []EgressRule{
+				{
+					To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
+					Ports: []PortSpec{{Protocol: "TCP", Port: 5432}},
+				},
+			},
+		},
+	}
+
+	if err := CheckConflicts(existing, candidate); err == nil {
+		t.Fatal("expected conflict but got none")
+	}
+
+	nonConflict := NetworkPolicy{
+		APIVersion: "ztap/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   NetworkPolicyMetadata{Name: "non-conflict"},
+		Spec: NetworkPolicySpec{
+			PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+			Egress: []EgressRule{
+				{
+					To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "192.168.0.0/16"}},
+					Ports: []PortSpec{{Protocol: "TCP", Port: 80}},
+				},
+			},
+		},
+	}
+
+	if err := CheckConflicts(existing, nonConflict); err != nil {
+		t.Fatalf("expected no conflict, got %v", err)
+	}
 }

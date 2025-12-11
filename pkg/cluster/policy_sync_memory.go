@@ -6,6 +6,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"ztap/pkg/policy"
 )
 
 // InMemoryPolicySync implements distributed policy synchronization using in-memory storage.
@@ -93,6 +95,11 @@ func (ps *InMemoryPolicySync) SyncPolicy(ctx context.Context, policyName string,
 	if len(policyYAML) == 0 {
 		recordPolicySyncError("empty_yaml", policyName)
 		return fmt.Errorf("policy YAML cannot be empty")
+	}
+
+	if _, err := ps.parseAndValidate(policyYAML); err != nil {
+		recordPolicySyncError("invalid_policy", policyName)
+		return err
 	}
 
 	// Verify this node is the leader
@@ -291,6 +298,10 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 		return fmt.Errorf("policy YAML cannot be empty")
 	}
 
+	if _, err := ps.parseAndValidate(update.YAML); err != nil {
+		return err
+	}
+
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
@@ -320,4 +331,55 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 		update.PolicyName, update.Version, update.Source)
 
 	return nil
+}
+
+func (ps *InMemoryPolicySync) parseAndValidate(policyYAML []byte) ([]policy.NetworkPolicy, error) {
+	policies, err := policy.LoadFromBytes(policyYAML)
+	if err != nil {
+		return nil, err
+	}
+	if len(policies) == 0 {
+		return nil, fmt.Errorf("policy YAML contains no NetworkPolicy objects")
+	}
+
+	for _, p := range policies {
+		if err := p.Validate(); err != nil {
+			return nil, err
+		}
+	}
+
+	existing, err := ps.currentPolicies()
+	if err != nil {
+		return nil, err
+	}
+
+	combined := append([]policy.NetworkPolicy{}, existing...)
+	for _, p := range policies {
+		if err := policy.CheckConflicts(combined, p); err != nil {
+			return nil, err
+		}
+		combined = append(combined, p)
+	}
+
+	return policies, nil
+}
+
+func (ps *InMemoryPolicySync) currentPolicies() ([]policy.NetworkPolicy, error) {
+	ps.mu.RLock()
+	data := make([][]byte, 0, len(ps.policies))
+	for _, state := range ps.policies {
+		data = append(data, append([]byte(nil), state.YAML...))
+	}
+	ps.mu.RUnlock()
+
+	policies := make([]policy.NetworkPolicy, 0, len(data))
+	for _, yamlBytes := range data {
+		loaded, err := policy.LoadFromBytes(yamlBytes)
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, loaded...)
+	}
+
+	return policies, nil
 }

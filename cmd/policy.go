@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"text/tabwriter"
 	"time"
 
 	"ztap/pkg/cluster"
+	"ztap/pkg/policy"
 
 	"github.com/spf13/cobra"
 )
@@ -52,12 +54,28 @@ Only the leader can initiate policy synchronization.`,
 			log.Fatalf("Failed to read policy file: %v", err)
 		}
 
+		policies, err := policy.LoadFromBytes(policyYAML)
+		if err != nil {
+			log.Fatalf("Failed to parse policy file: %v", err)
+		}
+		if len(policies) == 0 {
+			log.Fatalf("Policy file contains no NetworkPolicy objects")
+		}
+		for _, p := range policies {
+			if err := p.Validate(); err != nil {
+				log.Fatalf("Invalid policy: %v", err)
+			}
+		}
+
 		// Extract policy name from the file (simple: use filename without extension)
 		// In production, we'd parse the YAML to get metadata.name
 		policyName, err := cmd.Flags().GetString("name")
 		if err != nil || policyName == "" {
-			// Use filename as fallback
-			policyName = policyFile
+			if len(policies) == 1 && policies[0].Metadata.Name != "" {
+				policyName = policies[0].Metadata.Name
+			} else {
+				policyName = filepath.Base(policyFile)
+			}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

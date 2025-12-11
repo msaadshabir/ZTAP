@@ -8,6 +8,25 @@ import (
 	"time"
 )
 
+func makePolicyYAML(name, cidr string, port int) []byte {
+	const tpl = "apiVersion: ztap/v1\n" +
+		"kind: NetworkPolicy\n" +
+		"metadata:\n" +
+		"  name: %s\n" +
+		"spec:\n" +
+		"  podSelector:\n" +
+		"    matchLabels:\n" +
+		"      app: %s\n" +
+		"  egress:\n" +
+		"  - to:\n" +
+		"      ipBlock:\n" +
+		"        cidr: %s\n" +
+		"    ports:\n" +
+		"    - protocol: TCP\n" +
+		"      port: %d\n"
+	return []byte(fmt.Sprintf(tpl, name, name, cidr, port))
+}
+
 // mockElection is a simple mock for LeaderElection used in tests
 type mockElection struct {
 	isLeader  bool
@@ -183,8 +202,7 @@ func TestSyncPolicyAsFollower(t *testing.T) {
 	}
 	defer func() { _ = ps.Stop() }()
 
-	policyYAML := []byte(`apiVersion: ztap/v1
-kind: NetworkPolicy`)
+	policyYAML := makePolicyYAML("test-policy", "10.1.0.0/24", 80)
 
 	// Sync policy should fail (not leader)
 	err := ps.SyncPolicy(ctx, "test-policy", policyYAML)
@@ -208,24 +226,8 @@ func TestSyncPolicyVersionIncrement(t *testing.T) {
 	}
 	defer func() { _ = ps.Stop() }()
 
-	policyYAML1 := []byte(`apiVersion: ztap/v1
-kind: NetworkPolicy
-metadata:
-  name: test-policy
-spec:
-  podSelector:
-    matchLabels:
-      app: web`)
-
-	policyYAML2 := []byte(`apiVersion: ztap/v1
-kind: NetworkPolicy
-metadata:
-  name: test-policy
-spec:
-  podSelector:
-    matchLabels:
-      app: web
-      tier: frontend`)
+	policyYAML1 := makePolicyYAML("test-policy", "10.0.0.0/24", 80)
+	policyYAML2 := makePolicyYAML("test-policy", "10.0.1.0/24", 80)
 
 	// First sync
 	if err := ps.SyncPolicy(ctx, "test-policy", policyYAML1); err != nil {
@@ -321,9 +323,9 @@ func TestListPolicies(t *testing.T) {
 	}
 
 	// Add policies
-	_ = ps.SyncPolicy(ctx, "policy-1", []byte("yaml content 1"))
-	_ = ps.SyncPolicy(ctx, "policy-2", []byte("yaml content 2"))
-	_ = ps.SyncPolicy(ctx, "policy-3", []byte("yaml content 3"))
+	_ = ps.SyncPolicy(ctx, "policy-1", makePolicyYAML("policy-1", "10.0.1.0/24", 80))
+	_ = ps.SyncPolicy(ctx, "policy-2", makePolicyYAML("policy-2", "10.0.2.0/24", 80))
+	_ = ps.SyncPolicy(ctx, "policy-3", makePolicyYAML("policy-3", "10.0.3.0/24", 80))
 
 	policies = ps.ListPolicies()
 	if len(policies) != 3 {
@@ -356,7 +358,7 @@ func TestSubscribePolicies(t *testing.T) {
 	updateCh := ps.SubscribePolicies(ctx)
 
 	// Sync a policy
-	policyYAML := []byte("test policy content")
+	policyYAML := makePolicyYAML("test-policy", "10.0.4.0/24", 80)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		_ = ps.SyncPolicy(ctx, "test-policy", policyYAML)
@@ -400,7 +402,7 @@ func TestSubscribePoliciesMultipleSubscribers(t *testing.T) {
 	sub3 := ps.SubscribePolicies(ctx)
 
 	// Sync a policy
-	policyYAML := []byte("test policy content")
+	policyYAML := makePolicyYAML("test-policy", "10.0.5.0/24", 80)
 	if err := ps.SyncPolicy(ctx, "test-policy", policyYAML); err != nil {
 		t.Fatalf("SyncPolicy() failed: %v", err)
 	}
@@ -451,7 +453,7 @@ func TestApplyRemoteUpdate(t *testing.T) {
 	// Apply a remote update (simulating receiving from leader)
 	update := PolicyUpdate{
 		PolicyName: "remote-policy",
-		YAML:       []byte("remote policy content"),
+		YAML:       makePolicyYAML("remote-policy", "10.0.6.0/24", 80),
 		Version:    1,
 		Source:     "node-1",
 		Timestamp:  time.Now(),
@@ -491,7 +493,7 @@ func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 	// Apply initial update
 	update1 := PolicyUpdate{
 		PolicyName: "test-policy",
-		YAML:       []byte("version 2 content"),
+		YAML:       makePolicyYAML("test-policy", "10.0.7.0/24", 80),
 		Version:    2,
 		Source:     "node-1",
 		Timestamp:  time.Now(),
@@ -501,7 +503,7 @@ func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 	// Try to apply older version (should be ignored)
 	update2 := PolicyUpdate{
 		PolicyName: "test-policy",
-		YAML:       []byte("version 1 content"),
+		YAML:       makePolicyYAML("test-policy", "10.0.7.0/24", 80),
 		Version:    1,
 		Source:     "node-1",
 		Timestamp:  time.Now(),
@@ -515,7 +517,7 @@ func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 	}
 
 	policyState, _ := ps.GetPolicy("test-policy")
-	if string(policyState.YAML) != "version 2 content" {
+	if string(policyState.YAML) != string(update1.YAML) {
 		t.Error("policy was incorrectly updated with older version")
 	}
 }
@@ -567,7 +569,7 @@ func TestConcurrentPolicySync(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			policyName := fmt.Sprintf("concurrent-policy-%d", id)
-			policyYAML := []byte(fmt.Sprintf("concurrent policy content %d", id))
+			policyYAML := makePolicyYAML(policyName, fmt.Sprintf("10.0.%d.0/24", id+10), 80)
 			if err := ps.SyncPolicy(ctx, policyName, policyYAML); err != nil {
 				t.Errorf("concurrent SyncPolicy() failed: %v", err)
 			}
