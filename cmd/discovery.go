@@ -1,14 +1,25 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"ztap/pkg/discovery"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v2"
 )
+
+const (
+	defaultDiscoveryBackend = "inmemory"
+	dnsDiscoveryBackend     = "dns"
+)
+
+var supportedDiscoveryBackends = defaultDiscoveryBackend + ", " + dnsDiscoveryBackend
 
 var discoveryCmd = &cobra.Command{
 	Use:   "discovery",
@@ -21,14 +32,17 @@ var registerCmd = &cobra.Command{
 	Short: "Register a service",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		disc, err := getDiscoveryBackend()
+		if err != nil {
+			return fmt.Errorf("failed to load discovery backend: %w", err)
+		}
+
 		name := args[0]
 		ip := args[1]
 
 		labels, _ := cmd.Flags().GetStringToString("labels")
 
-		disc := getDiscoveryBackend()
-		err := disc.RegisterService(name, ip, labels)
-		if err != nil {
+		if err := disc.RegisterService(name, ip, labels); err != nil {
 			return fmt.Errorf("failed to register service: %w", err)
 		}
 
@@ -42,11 +56,14 @@ var deregisterCmd = &cobra.Command{
 	Short: "Deregister a service",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		disc, err := getDiscoveryBackend()
+		if err != nil {
+			return fmt.Errorf("failed to load discovery backend: %w", err)
+		}
+
 		name := args[0]
 
-		disc := getDiscoveryBackend()
-		err := disc.DeregisterService(name)
-		if err != nil {
+		if err := disc.DeregisterService(name); err != nil {
 			return fmt.Errorf("failed to deregister service: %w", err)
 		}
 
@@ -64,7 +81,11 @@ var resolveCmd = &cobra.Command{
 			return fmt.Errorf("no labels provided")
 		}
 
-		disc := getDiscoveryBackend()
+		disc, err := getDiscoveryBackend()
+		if err != nil {
+			return fmt.Errorf("failed to load discovery backend: %w", err)
+		}
+
 		ips, err := disc.ResolveLabels(labels)
 		if err != nil {
 			return fmt.Errorf("failed to resolve labels: %w", err)
@@ -83,7 +104,10 @@ var listServicesCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all registered services",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		disc := getDiscoveryBackend()
+		disc, err := getDiscoveryBackend()
+		if err != nil {
+			return fmt.Errorf("failed to load discovery backend: %w", err)
+		}
 
 		// Only works with InMemoryDiscovery
 		memDisc, ok := disc.(*discovery.InMemoryDiscovery)
@@ -134,13 +158,85 @@ func init() {
 }
 
 // getDiscoveryBackend returns the configured discovery backend
-func getDiscoveryBackend() discovery.ServiceDiscovery {
-	// TODO: Read from config.yaml to support different backends
-	// For now, use in-memory
-	if globalDiscovery == nil {
-		globalDiscovery = discovery.NewInMemoryDiscovery()
+func getDiscoveryBackend() (discovery.ServiceDiscovery, error) {
+	if globalDiscovery != nil {
+		return globalDiscovery, nil
 	}
-	return globalDiscovery
+
+	backend, err := loadDiscoveryFromConfig()
+	if err != nil {
+		return nil, err
+	}
+	if backend == nil {
+		backend = discovery.NewInMemoryDiscovery()
+	}
+
+	globalDiscovery = backend
+	return globalDiscovery, nil
 }
 
 var globalDiscovery discovery.ServiceDiscovery
+
+func loadDiscoveryFromConfig() (discovery.ServiceDiscovery, error) {
+	path := os.Getenv("ZTAP_CONFIG")
+	if path == "" {
+		path = "config.yaml"
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading config file %s: %w", path, err)
+	}
+
+	var cfg struct {
+		Discovery struct {
+			Backend string `yaml:"backend"`
+			DNS     struct {
+				Domain string `yaml:"domain"`
+			} `yaml:"dns"`
+			Cache struct {
+				TTL string `yaml:"ttl"`
+			} `yaml:"cache"`
+		} `yaml:"discovery"`
+	}
+
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config file %s: %w", path, err)
+	}
+
+	backendName := normalizeBackendName(cfg.Discovery.Backend)
+	if backendName == "" {
+		backendName = defaultDiscoveryBackend
+	}
+
+	var backend discovery.ServiceDiscovery
+	switch backendName {
+	case defaultDiscoveryBackend:
+		backend = discovery.NewInMemoryDiscovery()
+	case dnsDiscoveryBackend:
+		domain := strings.TrimSpace(cfg.Discovery.DNS.Domain)
+		if domain == "" {
+			return nil, fmt.Errorf("discovery.dns.domain is required for dns backend")
+		}
+		backend = discovery.NewDNSDiscovery(domain)
+	default:
+		return nil, fmt.Errorf("unsupported discovery backend: %s (supported: %s)", backendName, supportedDiscoveryBackends)
+	}
+
+	if ttl := strings.TrimSpace(cfg.Discovery.Cache.TTL); ttl != "" {
+		parsedTTL, err := time.ParseDuration(ttl)
+		if err != nil {
+			return nil, fmt.Errorf("invalid discovery.cache.ttl: %w", err)
+		}
+		backend = discovery.NewCacheDiscovery(backend, parsedTTL)
+	}
+
+	return backend, nil
+}
+
+func normalizeBackendName(name string) string {
+	return strings.TrimSpace(strings.ToLower(name))
+}
