@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -50,12 +51,24 @@ type AuditEntry struct {
 
 // AuditLogger provides tamper-proof audit logging with cryptographic hash chaining.
 type AuditLogger struct {
-	mu         sync.RWMutex
-	logFile    *os.File
-	logPath    string
-	lastHash   string
-	entryCount int64
-	encoder    *json.Encoder
+	mu          sync.RWMutex
+	logFile     *os.File
+	logPath     string
+	lastHash    string
+	entryCount  int64
+	encoder     *json.Encoder
+	indexCache  []indexEntry // Cache for faster queries
+	cacheMu     sync.RWMutex
+	cacheValid  bool
+}
+
+// indexEntry provides quick access to audit entries
+type indexEntry struct {
+	offset    int64
+	timestamp time.Time
+	eventType EventType
+	actor     string
+	resource  string
 }
 
 // NewAuditLogger creates a new audit logger instance.
@@ -71,13 +84,15 @@ func NewAuditLogger(logPath string) (*AuditLogger, error) {
 	}
 
 	logger := &AuditLogger{
-		logFile:  file,
-		logPath:  logPath,
-		lastHash: "0000000000000000000000000000000000000000000000000000000000000000",
-		encoder:  json.NewEncoder(file),
+		logFile:    file,
+		logPath:    logPath,
+		lastHash:   "0000000000000000000000000000000000000000000000000000000000000000",
+		encoder:    json.NewEncoder(file),
+		indexCache: make([]indexEntry, 0, 1000),
+		cacheValid: false,
 	}
 
-	// Load last hash from existing log file
+	// Load last hash from existing log file and build index
 	if err := logger.loadLastHash(); err != nil {
 		return nil, fmt.Errorf("failed to load last hash: %w", err)
 	}
@@ -94,6 +109,12 @@ func (al *AuditLogger) Log(eventType EventType, actor, resource, action string, 
 func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, action, outcome, errorMsg string, details map[string]interface{}) error {
 	al.mu.Lock()
 	defer al.mu.Unlock()
+
+	// Get current file offset for indexing
+	offset, err := al.logFile.Seek(0, io.SeekCurrent)
+	if err != nil {
+		offset = 0 // Best effort
+	}
 
 	entry := AuditEntry{
 		ID:           generateID(),
@@ -125,6 +146,17 @@ func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, acti
 	al.lastHash = entry.Hash
 	al.entryCount++
 
+	// Update index cache
+	al.cacheMu.Lock()
+	al.indexCache = append(al.indexCache, indexEntry{
+		offset:    offset,
+		timestamp: entry.Timestamp,
+		eventType: entry.EventType,
+		actor:     entry.Actor,
+		resource:  entry.Resource,
+	})
+	al.cacheMu.Unlock()
+
 	return nil
 }
 
@@ -154,8 +186,20 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 	}
 	defer file.Close()
 
-	var entries []AuditEntry
+	// Pre-allocate with estimated capacity
+	estimatedSize := 100
+	if opts.Limit > 0 && opts.Limit < estimatedSize {
+		estimatedSize = opts.Limit
+	}
+	entries := make([]AuditEntry, 0, estimatedSize)
+	
+	// Use index cache for faster filtering when available
+	al.cacheMu.RLock()
+	canUseCache := al.cacheValid && len(al.indexCache) > 0
+	al.cacheMu.RUnlock()
+
 	decoder := json.NewDecoder(file)
+	entryNum := 0
 
 	for {
 		var entry AuditEntry
@@ -163,7 +207,35 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 			break // EOF or error
 		}
 
-		// Apply filters
+		// Fast path: use cache to skip entries that don't match
+		if canUseCache && entryNum < len(al.indexCache) {
+			idx := al.indexCache[entryNum]
+			
+			// Pre-filter using cache before full decode
+			if opts.EventType != nil && idx.eventType != *opts.EventType {
+				entryNum++
+				continue
+			}
+			if opts.Actor != nil && idx.actor != *opts.Actor {
+				entryNum++
+				continue
+			}
+			if opts.Resource != nil && idx.resource != *opts.Resource {
+				entryNum++
+				continue
+			}
+			if opts.StartTime != nil && idx.timestamp.Before(*opts.StartTime) {
+				entryNum++
+				continue
+			}
+			if opts.EndTime != nil && idx.timestamp.After(*opts.EndTime) {
+				entryNum++
+				continue
+			}
+		}
+		entryNum++
+
+		// Apply filters on full entry
 		if opts.StartTime != nil && entry.Timestamp.Before(*opts.StartTime) {
 			continue
 		}
@@ -304,6 +376,7 @@ func (al *AuditLogger) loadLastHash() error {
 	file, err := os.Open(al.logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			al.cacheValid = true
 			return nil // New log file
 		}
 		return err
@@ -312,15 +385,38 @@ func (al *AuditLogger) loadLastHash() error {
 
 	decoder := json.NewDecoder(file)
 	var lastEntry AuditEntry
-
+	
+	// Build index cache while scanning
+	al.cacheMu.Lock()
+	al.indexCache = make([]indexEntry, 0, 1000)
+	offset := int64(0)
+	
 	for {
+		currentOffset := offset
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
 			break // EOF
 		}
+		
+		// Update offset (approximate - based on JSON size)
+		entryBytes, _ := json.Marshal(entry)
+		offset += int64(len(entryBytes)) + 1 // +1 for newline
+		
 		lastEntry = entry
 		al.entryCount++
+		
+		// Add to index cache
+		al.indexCache = append(al.indexCache, indexEntry{
+			offset:    currentOffset,
+			timestamp: entry.Timestamp,
+			eventType: entry.EventType,
+			actor:     entry.Actor,
+			resource:  entry.Resource,
+		})
 	}
+	
+	al.cacheValid = true
+	al.cacheMu.Unlock()
 
 	if lastEntry.Hash != "" {
 		al.lastHash = lastEntry.Hash

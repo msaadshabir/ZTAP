@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -96,23 +97,25 @@ func (d *PythonDetector) Train(flows []FlowRecord) error {
 
 // SimpleDetector provides basic rule-based anomaly detection (no ML)
 type SimpleDetector struct {
-	suspiciousPorts  []int
-	blockedCountries []string
+	suspiciousPorts  map[int]bool // Changed to map for O(1) lookup
+	blockedCountries map[string]bool // Changed to map for O(1) lookup
 }
 
 // NewSimpleDetector creates a rule-based detector
 func NewSimpleDetector() *SimpleDetector {
 	return &SimpleDetector{
-		suspiciousPorts: []int{
-			22,   // SSH (common for attacks)
-			23,   // Telnet
-			3389, // RDP
-			1433, // SQL Server
-			3306, // MySQL
-			5432, // PostgreSQL
+		suspiciousPorts: map[int]bool{
+			22:   true, // SSH (common for attacks)
+			23:   true, // Telnet
+			3389: true, // RDP
+			1433: true, // SQL Server
+			3306: true, // MySQL
+			5432: true, // PostgreSQL
 		},
-		blockedCountries: []string{
-			"RU", "CN", "KP", // Example: Russia, China, North Korea
+		blockedCountries: map[string]bool{
+			"RU": true, // Russia
+			"CN": true, // China
+			"KP": true, // North Korea
 		},
 	}
 }
@@ -120,24 +123,22 @@ func NewSimpleDetector() *SimpleDetector {
 // Detect performs rule-based anomaly detection
 func (d *SimpleDetector) Detect(flow FlowRecord) (*AnomalyScore, error) {
 	score := 0.0
-	reasons := []string{}
+	reasons := make([]string, 0, 3) // Pre-allocate with estimated capacity
 
-	// Check for suspicious ports
-	for _, port := range d.suspiciousPorts {
-		if flow.Port == port {
-			score += 30.0
-			reasons = append(reasons, fmt.Sprintf("suspicious port %d", port))
-			break
-		}
+	// Check for suspicious ports - O(1) map lookup
+	if d.suspiciousPorts[flow.Port] {
+		score += 30.0
+		reasons = append(reasons, fmt.Sprintf("suspicious port %d", flow.Port))
 	}
 
-	// Check for blocked countries
-	for _, country := range d.blockedCountries {
-		if flow.DestGeo == country || flow.SourceGeo == country {
-			score += 50.0
-			reasons = append(reasons, fmt.Sprintf("traffic to/from blocked country %s", country))
-			break
+	// Check for blocked countries - O(1) map lookup
+	if d.blockedCountries[flow.DestGeo] || d.blockedCountries[flow.SourceGeo] {
+		score += 50.0
+		country := flow.DestGeo
+		if d.blockedCountries[flow.SourceGeo] {
+			country = flow.SourceGeo
 		}
+		reasons = append(reasons, fmt.Sprintf("traffic to/from blocked country %s", country))
 	}
 
 	// Check for unusual traffic volume
@@ -148,10 +149,7 @@ func (d *SimpleDetector) Detect(flow FlowRecord) (*AnomalyScore, error) {
 
 	reason := "normal traffic"
 	if len(reasons) > 0 {
-		reason = reasons[0]
-		for i := 1; i < len(reasons); i++ {
-			reason += ", " + reasons[i]
-		}
+		reason = strings.Join(reasons, ", ")
 	}
 
 	return &AnomalyScore{

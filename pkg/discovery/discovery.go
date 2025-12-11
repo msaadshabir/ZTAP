@@ -46,7 +46,8 @@ func (d *InMemoryDiscovery) ResolveLabels(labels map[string]string) ([]string, e
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ips := make([]string, 0)
+	// Pre-allocate with estimated capacity to reduce allocations
+	ips := make([]string, 0, len(d.services))
 	for _, service := range d.services {
 		if matchLabels(service.Labels, labels) {
 			ips = append(ips, service.IP)
@@ -111,10 +112,13 @@ func (d *InMemoryDiscovery) Watch(ctx context.Context, labels map[string]string)
 		d.mu.Lock()
 		defer d.mu.Unlock()
 
-		// Remove watcher
+		// Remove watcher efficiently without preserving order
 		for i, w := range d.watchers {
 			if w == ch {
-				d.watchers = append(d.watchers[:i], d.watchers[i+1:]...)
+				// Replace with last element and truncate (faster removal)
+				last := len(d.watchers) - 1
+				d.watchers[i] = d.watchers[last]
+				d.watchers = d.watchers[:last]
 				break
 			}
 		}
@@ -177,6 +181,7 @@ func NewDNSDiscovery(domain string) *DNSDiscovery {
 func (d *DNSDiscovery) ResolveLabels(labels map[string]string) ([]string, error) {
 	// Build DNS query from labels
 	// Format: app-value.tier-value.domain
+	// Pre-allocate capacity for efficiency
 	parts := make([]string, 0, len(labels))
 	for key, value := range labels {
 		parts = append(parts, fmt.Sprintf("%s-%s", key, value))
