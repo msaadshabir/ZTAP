@@ -21,10 +21,10 @@
 - Policy version tracking
 - Ingress policy support (bidirectional enforcement)
 - Real-time flow event monitoring (`ztap flows` with `--follow` streaming)
+- Policy conflict detection (structural + overlap)
 
 ## Planned
 
-- Policy conflict detection
 - REST API / gRPC interface
 - Alerting with webhook integrations (Slack, PagerDuty)
 - Policy versioning and rollback

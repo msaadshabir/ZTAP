@@ -15,6 +15,7 @@ ZTAP (Zero Trust Access Platform) implements microsegmentation across hybrid env
 - Kubernetes-style YAML parsing
 - Bidirectional enforcement (ingress and egress rules)
 - Policy validation (CIDR, protocols, ports)
+- Conflict detection (intra- and cross-policy overlap)
 - Label resolution interface
 - Multi-document YAML support
 

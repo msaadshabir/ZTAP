@@ -124,6 +124,7 @@ ztap enforce -f examples/web-to-db.yaml
 
 # Output:
 # Loaded 2 policy(ies) from examples/web-to-db.yaml
+# Validated policy set (structural + conflict checks)
 # Enforcing via pf (macOS)...
 # Applying 2 pf-based policies on macOS
 # Enforcement complete.
