@@ -204,8 +204,16 @@ func (c *AWSClient) RevokeAllEgress(ctx context.Context, sgID string) error {
 
 // MatchResourcesByLabels finds resources matching the given labels
 func MatchResourcesByLabels(resources []Resource, labels map[string]string) []Resource {
-	// Pre-allocate with estimated capacity
-	matched := make([]Resource, 0, len(resources)/4) // Assume 25% match rate
+	// Pre-allocate with conservative capacity estimate
+	// Start with 10% of resources or minimum of 4 items
+	estimatedMatches := len(resources) / 10
+	if estimatedMatches < 4 {
+		estimatedMatches = 4
+	}
+	if estimatedMatches > len(resources) {
+		estimatedMatches = len(resources)
+	}
+	matched := make([]Resource, 0, estimatedMatches)
 	
 	for _, r := range resources {
 		// Early exit optimization: check if resource has at least as many labels

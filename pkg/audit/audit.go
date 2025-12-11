@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -196,6 +197,7 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 	// Use index cache for faster filtering when available
 	al.cacheMu.RLock()
 	canUseCache := al.cacheValid && len(al.indexCache) > 0
+	cacheLen := len(al.indexCache)
 	al.cacheMu.RUnlock()
 
 	decoder := json.NewDecoder(file)
@@ -207,8 +209,8 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 			break // EOF or error
 		}
 
-		// Fast path: use cache to skip entries that don't match
-		if canUseCache && entryNum < len(al.indexCache) {
+		// Fast path: use cache to skip entries that don't match (if within cache bounds)
+		if canUseCache && entryNum < cacheLen {
 			idx := al.indexCache[entryNum]
 			
 			// Pre-filter using cache before full decode
@@ -383,31 +385,28 @@ func (al *AuditLogger) loadLastHash() error {
 	}
 	defer file.Close()
 
-	decoder := json.NewDecoder(file)
+	// Use buffered reader for better performance
+	reader := bufio.NewReader(file)
+	decoder := json.NewDecoder(reader)
 	var lastEntry AuditEntry
 	
-	// Build index cache while scanning
+	// Build index cache while scanning (without expensive marshaling)
 	al.cacheMu.Lock()
 	al.indexCache = make([]indexEntry, 0, 1000)
-	offset := int64(0)
 	
 	for {
-		currentOffset := offset
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
 			break // EOF
 		}
 		
-		// Update offset (approximate - based on JSON size)
-		entryBytes, _ := json.Marshal(entry)
-		offset += int64(len(entryBytes)) + 1 // +1 for newline
-		
 		lastEntry = entry
 		al.entryCount++
 		
-		// Add to index cache
+		// Add to index cache (offset tracking removed to avoid marshaling overhead)
+		// The cache is used for filtering only, not for direct file seeking
 		al.indexCache = append(al.indexCache, indexEntry{
-			offset:    currentOffset,
+			offset:    0, // Not used for filtering, only sequential access matters
 			timestamp: entry.Timestamp,
 			eventType: entry.EventType,
 			actor:     entry.Actor,

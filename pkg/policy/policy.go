@@ -87,8 +87,9 @@ func LoadFromFile(filename string) ([]NetworkPolicy, error) {
 
 // LoadFromBytes reads policies from YAML bytes
 func LoadFromBytes(data []byte) ([]NetworkPolicy, error) {
-	// Pre-allocate with estimated capacity (assume ~1 policy per 500 bytes)
-	estimatedPolicies := len(data)/500 + 1
+	// Pre-allocate with estimated capacity (assume ~1000 bytes per policy)
+	// This is a conservative estimate to reduce reallocations while not over-allocating
+	estimatedPolicies := len(data)/1000 + 1
 	if estimatedPolicies < 1 {
 		estimatedPolicies = 1
 	}
