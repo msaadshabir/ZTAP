@@ -8,8 +8,6 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"sort"
-	"strings"
 
 	"gopkg.in/yaml.v2"
 )
@@ -394,29 +392,6 @@ func (p *NetworkPolicy) detectRuleConflicts() error {
 	}
 
 	return nil
-}
-
-func targetKey(labels map[string]string, cidr string) string {
-	if cidr != "" {
-		return "cidr:" + cidr
-	}
-	return "pod:" + labelsKey(labels)
-}
-
-func labelsKey(labels map[string]string) string {
-	if len(labels) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(labels))
-	for k := range labels {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, k+"="+labels[k])
-	}
-	return strings.Join(parts, ",")
 }
 
 func labelsOverlap(a, b map[string]string) bool {
