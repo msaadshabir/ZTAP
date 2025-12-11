@@ -239,6 +239,18 @@ ztap discovery resolve --labels app=web
 ztap discovery list
 ```
 
+Configuration (optional):
+
+```yaml
+# config.yaml (or file set via ZTAP_CONFIG)
+discovery:
+  backend: dns   # inmemory (default) or dns
+  dns:
+    domain: example.com
+  cache:
+    ttl: 30s      # optional cache layer for the selected backend
+```
+
 </details>
 
 <details>

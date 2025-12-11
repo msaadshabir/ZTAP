@@ -1,13 +1,16 @@
 # ZTAP Configuration File (TEMPLATE)
 # 
-# NOTE: This file is currently NOT loaded by the application.
-# It serves as an example of future configuration options.
-# All settings are currently hardcoded or controlled via CLI flags.
-#
-# To use this template:
-#   1. Copy to config.yaml: cp config.yaml.example config.yaml
-#   2. Customize values as needed
-#   3. Wait for configuration loading to be implemented (see cmd/discovery.go:138)
+# Copy to config.yaml: cp config.yaml.example config.yaml
+# Customize values as needed. The CLI reads config.yaml by default or the path
+# specified via the ZTAP_CONFIG environment variable.
+
+# Service discovery
+discovery:
+  backend: inmemory # inmemory or dns (cache can wrap the selected backend)
+  dns:
+    domain: example.com
+  cache:
+    ttl: "" # Optional cache TTL applied to the selected backend (e.g., 30s). Leave empty to disable caching.
 
 # Logging settings
 logging:
