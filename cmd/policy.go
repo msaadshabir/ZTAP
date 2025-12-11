@@ -193,7 +193,13 @@ var policyValidateCmd = &cobra.Command{
 		// Load policies from file
 		policies, err := policy.LoadFromFile(policyFile)
 		if err != nil {
-			fmt.Printf("Error loading policy file: %v\n", err)
+			if os.IsNotExist(err) {
+				fmt.Printf("Error: Policy file not found: %s\n", policyFile)
+			} else if os.IsPermission(err) {
+				fmt.Printf("Error: Permission denied reading policy file: %s\n", policyFile)
+			} else {
+				fmt.Printf("Error loading policy file: %v\n", err)
+			}
 			os.Exit(1)
 		}
 

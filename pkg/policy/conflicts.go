@@ -169,19 +169,25 @@ func labelsMatch(labels1, labels2 map[string]string) bool {
 	return true
 }
 
+// portKey is used as a map key for efficient port comparison
+type portKey struct {
+	Protocol string
+	Port     int
+}
+
 // portsMatch checks if two port specifications are identical
 func portsMatch(ports1, ports2 []PortSpec) bool {
 	if len(ports1) != len(ports2) {
 		return false
 	}
 
-	portMap := make(map[string]bool)
+	portSet := make(map[portKey]struct{})
 	for _, p := range ports1 {
-		portMap[fmt.Sprintf("%s:%d", p.Protocol, p.Port)] = true
+		portSet[portKey{Protocol: p.Protocol, Port: p.Port}] = struct{}{}
 	}
 
 	for _, p := range ports2 {
-		if !portMap[fmt.Sprintf("%s:%d", p.Protocol, p.Port)] {
+		if _, exists := portSet[portKey{Protocol: p.Protocol, Port: p.Port}]; !exists {
 			return false
 		}
 	}
