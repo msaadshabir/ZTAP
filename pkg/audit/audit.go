@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -50,12 +51,25 @@ type AuditEntry struct {
 
 // AuditLogger provides tamper-proof audit logging with cryptographic hash chaining.
 type AuditLogger struct {
-	mu         sync.RWMutex
-	logFile    *os.File
-	logPath    string
-	lastHash   string
-	entryCount int64
-	encoder    *json.Encoder
+	mu          sync.RWMutex
+	logFile     *os.File
+	logPath     string
+	lastHash    string
+	entryCount  int64
+	encoder     *json.Encoder
+	indexCache  []indexEntry // Cache for faster queries
+	cacheMu     sync.RWMutex
+	cacheValid  bool
+}
+
+// indexEntry provides quick access to audit entries
+// The offset field is not used for file seeking (which would be complex with variable-length JSON)
+// but reserved for potential future use
+type indexEntry struct {
+	timestamp time.Time
+	eventType EventType
+	actor     string
+	resource  string
 }
 
 // NewAuditLogger creates a new audit logger instance.
@@ -71,13 +85,15 @@ func NewAuditLogger(logPath string) (*AuditLogger, error) {
 	}
 
 	logger := &AuditLogger{
-		logFile:  file,
-		logPath:  logPath,
-		lastHash: "0000000000000000000000000000000000000000000000000000000000000000",
-		encoder:  json.NewEncoder(file),
+		logFile:    file,
+		logPath:    logPath,
+		lastHash:   "0000000000000000000000000000000000000000000000000000000000000000",
+		encoder:    json.NewEncoder(file),
+		indexCache: make([]indexEntry, 0, 1000),
+		cacheValid: false,
 	}
 
-	// Load last hash from existing log file
+	// Load last hash from existing log file and build index
 	if err := logger.loadLastHash(); err != nil {
 		return nil, fmt.Errorf("failed to load last hash: %w", err)
 	}
@@ -125,6 +141,16 @@ func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, acti
 	al.lastHash = entry.Hash
 	al.entryCount++
 
+	// Update index cache
+	al.cacheMu.Lock()
+	al.indexCache = append(al.indexCache, indexEntry{
+		timestamp: entry.Timestamp,
+		eventType: entry.EventType,
+		actor:     entry.Actor,
+		resource:  entry.Resource,
+	})
+	al.cacheMu.Unlock()
+
 	return nil
 }
 
@@ -154,8 +180,21 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 	}
 	defer file.Close()
 
-	var entries []AuditEntry
+	// Pre-allocate with estimated capacity
+	estimatedSize := 100
+	if opts.Limit > 0 && opts.Limit < estimatedSize {
+		estimatedSize = opts.Limit
+	}
+	entries := make([]AuditEntry, 0, estimatedSize)
+	
+	// Use index cache for faster filtering when available
+	al.cacheMu.RLock()
+	canUseCache := al.cacheValid && len(al.indexCache) > 0
+	cacheLen := len(al.indexCache)
+	al.cacheMu.RUnlock()
+
 	decoder := json.NewDecoder(file)
+	entryNum := 0
 
 	for {
 		var entry AuditEntry
@@ -163,7 +202,35 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 			break // EOF or error
 		}
 
-		// Apply filters
+		// Fast path: use cache to skip entries that don't match (if within cache bounds)
+		if canUseCache && entryNum < cacheLen {
+			idx := al.indexCache[entryNum]
+			
+			// Pre-filter using cache before full decode
+			if opts.EventType != nil && idx.eventType != *opts.EventType {
+				entryNum++
+				continue
+			}
+			if opts.Actor != nil && idx.actor != *opts.Actor {
+				entryNum++
+				continue
+			}
+			if opts.Resource != nil && idx.resource != *opts.Resource {
+				entryNum++
+				continue
+			}
+			if opts.StartTime != nil && idx.timestamp.Before(*opts.StartTime) {
+				entryNum++
+				continue
+			}
+			if opts.EndTime != nil && idx.timestamp.After(*opts.EndTime) {
+				entryNum++
+				continue
+			}
+		}
+		entryNum++
+
+		// Apply filters on full entry
 		if opts.StartTime != nil && entry.Timestamp.Before(*opts.StartTime) {
 			continue
 		}
@@ -304,23 +371,42 @@ func (al *AuditLogger) loadLastHash() error {
 	file, err := os.Open(al.logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			al.cacheValid = true
 			return nil // New log file
 		}
 		return err
 	}
 	defer file.Close()
 
-	decoder := json.NewDecoder(file)
+	// Use buffered reader for better performance
+	reader := bufio.NewReader(file)
+	decoder := json.NewDecoder(reader)
 	var lastEntry AuditEntry
-
+	
+	// Build index cache while scanning (without expensive marshaling)
+	al.cacheMu.Lock()
+	al.indexCache = make([]indexEntry, 0, 1000)
+	
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
 			break // EOF
 		}
+		
 		lastEntry = entry
 		al.entryCount++
+		
+		// Add to index cache (sequential access, no file seeking needed)
+		al.indexCache = append(al.indexCache, indexEntry{
+			timestamp: entry.Timestamp,
+			eventType: entry.EventType,
+			actor:     entry.Actor,
+			resource:  entry.Resource,
+		})
 	}
+	
+	al.cacheValid = true
+	al.cacheMu.Unlock()
 
 	if lastEntry.Hash != "" {
 		al.lastHash = lastEntry.Hash

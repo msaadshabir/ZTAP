@@ -61,7 +61,13 @@ func (c *AWSClient) DiscoverResources(ctx context.Context) ([]Resource, error) {
 		return nil, fmt.Errorf("failed to describe instances: %w", err)
 	}
 
-	var resources []Resource
+	// Pre-allocate with estimated capacity
+	estimatedCapacity := 0
+	for _, reservation := range result.Reservations {
+		estimatedCapacity += len(reservation.Instances)
+	}
+	resources := make([]Resource, 0, estimatedCapacity)
+
 	for _, reservation := range result.Reservations {
 		for _, instance := range reservation.Instances {
 			// Skip terminated instances
@@ -69,7 +75,8 @@ func (c *AWSClient) DiscoverResources(ctx context.Context) ([]Resource, error) {
 				continue
 			}
 
-			labels := make(map[string]string)
+			// Pre-allocate labels map
+			labels := make(map[string]string, len(instance.Tags))
 			var name string
 			for _, tag := range instance.Tags {
 				key := aws.ToString(tag.Key)
@@ -195,10 +202,31 @@ func (c *AWSClient) RevokeAllEgress(ctx context.Context, sgID string) error {
 	return nil
 }
 
+const (
+	// Capacity estimates for pre-allocation
+	minResourceMatchCapacity     = 4
+	defaultResourceMatchFraction = 10 // Expect 1/10 (10%) of resources to match
+)
+
 // MatchResourcesByLabels finds resources matching the given labels
 func MatchResourcesByLabels(resources []Resource, labels map[string]string) []Resource {
-	var matched []Resource
+	// Pre-allocate with conservative capacity estimate
+	// Start with 10% of resources or minimum of 4 items
+	estimatedMatches := len(resources) / defaultResourceMatchFraction
+	if estimatedMatches < minResourceMatchCapacity {
+		estimatedMatches = minResourceMatchCapacity
+	}
+	if estimatedMatches > len(resources) {
+		estimatedMatches = len(resources)
+	}
+	matched := make([]Resource, 0, estimatedMatches)
+	
 	for _, r := range resources {
+		// Early exit optimization: check if resource has at least as many labels
+		if len(r.Labels) < len(labels) {
+			continue
+		}
+		
 		match := true
 		for key, value := range labels {
 			if r.Labels[key] != value {

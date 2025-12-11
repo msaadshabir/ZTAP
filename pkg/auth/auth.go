@@ -63,27 +63,27 @@ type AuthManager struct {
 }
 
 // Role permissions mapping
-var rolePermissions = map[Role][]Permission{
+var rolePermissions = map[Role]map[Permission]bool{
 	RoleAdmin: {
-		PermEnforce,
-		PermViewPolicies,
-		PermViewLogs,
-		PermViewStatus,
-		PermManageUsers,
-		PermViewMetrics,
+		PermEnforce:      true,
+		PermViewPolicies: true,
+		PermViewLogs:     true,
+		PermViewStatus:   true,
+		PermManageUsers:  true,
+		PermViewMetrics:  true,
 	},
 	RoleOperator: {
-		PermEnforce,
-		PermViewPolicies,
-		PermViewLogs,
-		PermViewStatus,
-		PermViewMetrics,
+		PermEnforce:      true,
+		PermViewPolicies: true,
+		PermViewLogs:     true,
+		PermViewStatus:   true,
+		PermViewMetrics:  true,
 	},
 	RoleViewer: {
-		PermViewPolicies,
-		PermViewLogs,
-		PermViewStatus,
-		PermViewMetrics,
+		PermViewPolicies: true,
+		PermViewLogs:     true,
+		PermViewStatus:   true,
+		PermViewMetrics:  true,
 	},
 }
 
@@ -235,10 +235,9 @@ func (am *AuthManager) HasPermission(token string, perm Permission) error {
 		return ErrPermissionDenied
 	}
 
-	for _, p := range permissions {
-		if p == perm {
-			return nil
-		}
+	// O(1) map lookup instead of O(n) slice iteration
+	if permissions[perm] {
+		return nil
 	}
 
 	return ErrPermissionDenied
