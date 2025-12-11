@@ -220,13 +220,13 @@ func MatchResourcesByLabels(resources []Resource, labels map[string]string) []Re
 		estimatedMatches = len(resources)
 	}
 	matched := make([]Resource, 0, estimatedMatches)
-	
+
 	for _, r := range resources {
 		// Early exit optimization: check if resource has at least as many labels
 		if len(r.Labels) < len(labels) {
 			continue
 		}
-		
+
 		match := true
 		for key, value := range labels {
 			if r.Labels[key] != value {
