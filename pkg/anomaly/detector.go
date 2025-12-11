@@ -102,7 +102,7 @@ const (
 
 // SimpleDetector provides basic rule-based anomaly detection (no ML)
 type SimpleDetector struct {
-	suspiciousPorts  map[int]bool // Changed to map for O(1) lookup
+	suspiciousPorts  map[int]bool    // Changed to map for O(1) lookup
 	blockedCountries map[string]bool // Changed to map for O(1) lookup
 }
 

@@ -99,7 +99,7 @@ func LoadFromBytes(data []byte) ([]NetworkPolicy, error) {
 		estimatedPolicies = 1
 	}
 	policies := make([]NetworkPolicy, 0, estimatedPolicies)
-	
+
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	for {
 		var policy NetworkPolicy

@@ -51,15 +51,15 @@ type AuditEntry struct {
 
 // AuditLogger provides tamper-proof audit logging with cryptographic hash chaining.
 type AuditLogger struct {
-	mu          sync.RWMutex
-	logFile     *os.File
-	logPath     string
-	lastHash    string
-	entryCount  int64
-	encoder     *json.Encoder
-	indexCache  []indexEntry // Cache for faster queries
-	cacheMu     sync.RWMutex
-	cacheValid  bool
+	mu         sync.RWMutex
+	logFile    *os.File
+	logPath    string
+	lastHash   string
+	entryCount int64
+	encoder    *json.Encoder
+	indexCache []indexEntry // Cache for faster queries
+	cacheMu    sync.RWMutex
+	cacheValid bool
 }
 
 // indexEntry provides quick access to audit entries
@@ -186,7 +186,7 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 		estimatedSize = opts.Limit
 	}
 	entries := make([]AuditEntry, 0, estimatedSize)
-	
+
 	// Use index cache for faster filtering when available
 	al.cacheMu.RLock()
 	canUseCache := al.cacheValid && len(al.indexCache) > 0
@@ -205,7 +205,7 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 		// Fast path: use cache to skip entries that don't match (if within cache bounds)
 		if canUseCache && entryNum < cacheLen {
 			idx := al.indexCache[entryNum]
-			
+
 			// Pre-filter using cache before full decode
 			if opts.EventType != nil && idx.eventType != *opts.EventType {
 				entryNum++
@@ -382,20 +382,20 @@ func (al *AuditLogger) loadLastHash() error {
 	reader := bufio.NewReader(file)
 	decoder := json.NewDecoder(reader)
 	var lastEntry AuditEntry
-	
+
 	// Build index cache while scanning (without expensive marshaling)
 	al.cacheMu.Lock()
 	al.indexCache = make([]indexEntry, 0, 1000)
-	
+
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
 			break // EOF
 		}
-		
+
 		lastEntry = entry
 		al.entryCount++
-		
+
 		// Add to index cache (sequential access, no file seeking needed)
 		al.indexCache = append(al.indexCache, indexEntry{
 			timestamp: entry.Timestamp,
@@ -404,7 +404,7 @@ func (al *AuditLogger) loadLastHash() error {
 			resource:  entry.Resource,
 		})
 	}
-	
+
 	al.cacheValid = true
 	al.cacheMu.Unlock()
 
