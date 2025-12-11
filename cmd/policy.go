@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ztap/pkg/cluster"
+	"ztap/pkg/policy"
 
 	"github.com/spf13/cobra"
 )
@@ -181,6 +182,56 @@ var policyShowCmd = &cobra.Command{
 	},
 }
 
+var policyValidateCmd = &cobra.Command{
+	Use:   "validate <policy-file>",
+	Short: "Validate policy file and check for conflicts",
+	Long:  `Parse and validate a policy file, checking for syntax errors and conflicts between policies.`,
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		policyFile := args[0]
+
+		// Load policies from file
+		policies, err := policy.LoadFromFile(policyFile)
+		if err != nil {
+			fmt.Printf("Error loading policy file: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Loaded %d %s from %s\n\n", len(policies), pluralize(len(policies), "policy", "policies"), policyFile)
+
+		// Validate each policy
+		hasErrors := false
+		for i, p := range policies {
+			if err := p.Validate(); err != nil {
+				hasErrors = true
+				fmt.Printf("Policy %d (%s): ❌ INVALID\n", i+1, p.Metadata.Name)
+				fmt.Printf("  Error: %v\n\n", err)
+			} else {
+				fmt.Printf("Policy %d (%s): ✓ VALID\n", i+1, p.Metadata.Name)
+			}
+		}
+
+		// Check for conflicts
+		conflicts := policy.DetectConflicts(policies)
+		if len(conflicts) > 0 {
+			hasErrors = true
+			fmt.Printf("\n⚠️  Found %d %s:\n\n", len(conflicts), pluralize(len(conflicts), "conflict", "conflicts"))
+			for i, conflict := range conflicts {
+				fmt.Printf("%d. %s\n", i+1, conflict.Error())
+			}
+		} else if !hasErrors {
+			fmt.Println("\n✅ No conflicts detected")
+		}
+
+		if hasErrors {
+			fmt.Println("\n❌ Validation failed")
+			os.Exit(1)
+		} else {
+			fmt.Println("\n✅ All policies are valid")
+		}
+	},
+}
+
 // pluralize is a simple helper for singular/plural forms
 func pluralize(count int, singular, plural string) string {
 	if count == 1 {
@@ -198,6 +249,7 @@ func init() {
 	policyCmd.AddCommand(policyListCmd)
 	policyCmd.AddCommand(policyWatchCmd)
 	policyCmd.AddCommand(policyShowCmd)
+	policyCmd.AddCommand(policyValidateCmd)
 
 	// Register with root command
 	rootCmd.AddCommand(policyCmd)
