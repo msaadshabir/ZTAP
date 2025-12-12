@@ -250,14 +250,14 @@ spec:
         cidr: 10.0.0.0/8
     ports:
     - protocol: TCP
-      port: 443`
+      port: %d`
 
 	numPolicies := 10
 	errChan := make(chan error, numPolicies)
 
 	for i := 0; i < numPolicies; i++ {
 		go func(idx int) {
-			policyYAML := []byte(fmt.Sprintf(policyTemplate, idx, idx))
+			policyYAML := []byte(fmt.Sprintf(policyTemplate, idx, idx, 30000+idx))
 			policyName := fmt.Sprintf("policy-%d", idx)
 			err := policySync.SyncPolicy(ctx, policyName, policyYAML)
 			errChan <- err
