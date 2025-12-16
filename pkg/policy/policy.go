@@ -9,7 +9,7 @@ import (
 	"os"
 	"regexp"
 
-	"gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v2"
 )
 
 // ServiceDiscovery interface for label resolution

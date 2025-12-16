@@ -8,10 +8,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"ztap/pkg/discovery"
-
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v2"
+	"ztap/pkg/discovery"
 )
 
 const (
