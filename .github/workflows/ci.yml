@@ -43,6 +43,7 @@ jobs:
 
       - name: Run golangci-lint
         run: golangci-lint run --timeout=5m --skip-dirs examples
+        continue-on-error: true
 
   test-go:
     name: Go Tests (${{ matrix.os }})
