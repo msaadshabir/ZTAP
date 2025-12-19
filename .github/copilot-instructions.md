@@ -15,7 +15,7 @@ CLI (cmd/) -> Policy Engine (pkg/policy) -> Enforcer (pkg/enforcer)
 
 - **Policy Engine**: Parses Kubernetes-style YAML (`apiVersion: ztap/v1`), validates CIDR/ports/protocols, resolves labels via `ServiceDiscovery` interface
 - **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) and macOS pf (`enforcer.go`)
-- **Flow Monitor**: `pkg/flow/` provides the monitor + readers; the CLI `ztap flows` currently uses simulated/demo events
+- **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map)
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
 - **Discovery**: Label-to-IP resolution - `InMemoryDiscovery` (dev), DNS/Consul/K8s backends (stubs)
 

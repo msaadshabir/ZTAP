@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -75,8 +76,7 @@ func runFlows(cmd *cobra.Command, args []string) {
 }
 
 func isFlowMonitoringAvailable() bool {
-	// Check if we're on Linux
-	return os.Getenv("GOOS") == "linux" || fileExists("/proc/version")
+	return runtime.GOOS == "linux" || fileExists("/proc/version")
 }
 
 func fileExists(path string) bool {
@@ -274,15 +274,6 @@ func generateDemoFlows(limit int) []flow.FlowEvent {
 	}
 	return events
 }
-
-// createFlowReader creates a platform-appropriate flow reader.
-// On non-Linux platforms, returns a simulated reader.
-func createFlowReader() flow.FlowReader {
-	// For now, always use simulated reader
-	// The actual Linux reader requires the eBPF enforcer to be running
-	return flow.NewSimulatedReader(generateRawDemoFlows(), 500*time.Millisecond)
-}
-
 func generateRawDemoFlows() []flow.RawFlowEvent {
 	return []flow.RawFlowEvent{
 		{

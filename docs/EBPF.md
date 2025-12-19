@@ -159,7 +159,11 @@ struct flow_event {
 
 The ring buffer (256KB) is intended to enable real-time flow monitoring:
 
-Note: `ztap flows` currently shows simulated demo data; wiring to kernel events is pending.
+On Linux, `ztap enforce` pins the `flow_events` ring buffer map at:
+
+`/sys/fs/bpf/ztap/flow_events`
+
+`ztap flows --follow` opens this pinned map and streams events in real time. If enforcement isn't active (or the map isn't pinned), `ztap flows` falls back to simulated output.
 
 ### Attachment Points
 

@@ -87,7 +87,7 @@ ztap status
 
 ### Observability
 
-- **Flow Monitoring** – Currently simulated demo data (eBPF ring buffer wiring is pending)
+- **Flow Monitoring** – Real-time on Linux with eBPF enforcement active; simulated on macOS
 - **Prometheus Metrics** – Pre-built exporters
 - **Grafana Dashboards** – Auto-provisioned
 - **ML Anomaly Detection** – Isolation Forest
@@ -296,7 +296,7 @@ ztap flows --output json    # JSON format
 ztap flows --output wide    # Extended details
 ```
 
-Note: flow output is currently simulated demo data.
+On Linux, if `ztap enforce` is active, `ztap flows --follow` streams real events from the pinned eBPF ring buffer map (`/sys/fs/bpf/ztap/flow_events`). On macOS, flow output remains simulated.
 
 </details>
 

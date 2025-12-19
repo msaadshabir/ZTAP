@@ -24,6 +24,21 @@ type InMemoryElection struct {
 	lastElection time.Time
 }
 
+func cloneNode(n *Node) *Node {
+	if n == nil {
+		return nil
+	}
+	copyNode := *n
+	if n.Metadata != nil {
+		m := make(map[string]string, len(n.Metadata))
+		for k, v := range n.Metadata {
+			m[k] = v
+		}
+		copyNode.Metadata = m
+	}
+	return &copyNode
+}
+
 // NewInMemoryElection creates a new in-memory leader election backend.
 func NewInMemoryElection(config LeaderElectionConfig) *InMemoryElection {
 	if config.HeartbeatInterval == 0 {
@@ -118,7 +133,7 @@ func (e *InMemoryElection) IsLeader() bool {
 func (e *InMemoryElection) GetLeader() *Node {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.leader
+	return cloneNode(e.leader)
 }
 
 // RegisterNode adds or updates a node in the cluster.
@@ -134,13 +149,23 @@ func (e *InMemoryElection) RegisterNode(node *Node) error {
 		return fmt.Errorf("node ID cannot be empty")
 	}
 
-	node.LastSeen = time.Now()
-	e.state.Nodes[node.ID] = node
+	existing := e.state.Nodes[node.ID]
+	copyNode := cloneNode(node)
+	copyNode.LastSeen = time.Now()
+	if copyNode.Metadata == nil {
+		copyNode.Metadata = make(map[string]string)
+	}
+	if existing != nil && !existing.JoinedAt.IsZero() {
+		copyNode.JoinedAt = existing.JoinedAt
+	} else if copyNode.JoinedAt.IsZero() {
+		copyNode.JoinedAt = time.Now()
+	}
+	e.state.Nodes[copyNode.ID] = copyNode
 	e.state.Version++
 
 	change := ClusterStateChange{
 		Type:      ChangeNodeJoined,
-		Node:      node,
+		Node:      copyNode,
 		Timestamp: time.Now(),
 	}
 	e.broadcastChange(change)
@@ -183,7 +208,7 @@ func (e *InMemoryElection) GetNodes() []*Node {
 
 	nodes := make([]*Node, 0, len(e.state.Nodes))
 	for _, node := range e.state.Nodes {
-		nodes = append(nodes, node)
+		nodes = append(nodes, cloneNode(node))
 	}
 	return nodes
 }
@@ -192,8 +217,35 @@ func (e *InMemoryElection) GetNodes() []*Node {
 func (e *InMemoryElection) GetNode(nodeID string) *Node {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
+	return cloneNode(e.state.Nodes[nodeID])
+}
 
-	return e.state.Nodes[nodeID]
+// SetNodeState updates a node's health state in a concurrency-safe way.
+// This is primarily used by tests and the in-memory backend.
+func (e *InMemoryElection) SetNodeState(nodeID string, state NodeState) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	node, exists := e.state.Nodes[nodeID]
+	if !exists {
+		return fmt.Errorf("node %s not found", nodeID)
+	}
+
+	node.State = state
+	node.LastSeen = time.Now()
+	e.state.Version++
+
+	changeType := ChangeNodeUnwell
+	if state == StateHealthy {
+		changeType = ChangeNodeHealthy
+	}
+	e.broadcastChange(ClusterStateChange{Type: changeType, Node: node, Timestamp: time.Now()})
+
+	if e.leader != nil && e.leader.ID == nodeID && state != StateHealthy {
+		e.triggerElection()
+	}
+
+	return nil
 }
 
 // Watch returns a channel that receives notifications on cluster state changes.
@@ -325,6 +377,9 @@ func (e *InMemoryElection) triggerElection() {
 
 // broadcastChange sends a change notification to all watchers (requires holding mu lock).
 func (e *InMemoryElection) broadcastChange(change ClusterStateChange) {
+	if change.Node != nil {
+		change.Node = cloneNode(change.Node)
+	}
 	for _, ch := range e.nodeUpdates {
 		select {
 		case ch <- change:
@@ -336,6 +391,7 @@ func (e *InMemoryElection) broadcastChange(change ClusterStateChange) {
 
 // broadcastLeaderChange sends a leader change notification to all watchers (requires holding mu lock).
 func (e *InMemoryElection) broadcastLeaderChange(leader *Node) {
+	leader = cloneNode(leader)
 	for _, ch := range e.leaderChs {
 		select {
 		case ch <- leader:

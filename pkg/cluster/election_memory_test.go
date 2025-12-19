@@ -271,7 +271,7 @@ func TestInMemoryElectionLeaderChanges(t *testing.T) {
 	// Mark current leader as unhealthy to trigger election
 	leader := election.GetLeader()
 	if leader != nil {
-		leader.State = StateUnhealthy
+		_ = election.SetNodeState(leader.ID, StateUnhealthy)
 	}
 
 	// Wait for new election

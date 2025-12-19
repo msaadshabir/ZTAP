@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/cilium/ebpf"
@@ -19,12 +18,11 @@ import (
 
 // LinuxReader reads flow events from the eBPF ring buffer on Linux.
 type LinuxReader struct {
-	mu       sync.Mutex
-	ringbuf  *ringbuf.Reader
-	flowMap  *ebpf.Map
-	running  bool
-	stopCh   chan struct{}
-	bootTime int64 // nanoseconds since epoch at boot
+	mu      sync.Mutex
+	ringbuf *ringbuf.Reader
+	flowMap *ebpf.Map
+	running bool
+	stopCh  chan struct{}
 }
 
 // NewLinuxReader creates a new Linux flow reader.
@@ -44,9 +42,8 @@ func NewLinuxReader(flowEventsMap *ebpf.Map) (*LinuxReader, error) {
 	}
 
 	return &LinuxReader{
-		flowMap:  flowEventsMap,
-		stopCh:   make(chan struct{}),
-		bootTime: getBootTimeNs(),
+		flowMap: flowEventsMap,
+		stopCh:  make(chan struct{}),
 	}, nil
 }
 
@@ -154,15 +151,6 @@ func parseRawEvent(data []byte) (RawFlowEvent, error) {
 	return event, nil
 }
 
-// getBootTimeNs returns the boot time in nanoseconds since Unix epoch.
-func getBootTimeNs() int64 {
-	var info syscall.Sysinfo_t
-	if err := syscall.Sysinfo(&info); err != nil {
-		return 0
-	}
-	return int64(info.Uptime) * 1e9
-}
-
 // CreateFlowReader creates a flow reader for the given eBPF flow_events map.
 // This is the entry point for platform-specific reader creation.
 func CreateFlowReader(flowEventsMap *ebpf.Map) (FlowReader, error) {
@@ -211,7 +199,7 @@ func (r *SimulatedReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent
 				continue
 			}
 			event := r.events[idx%len(r.events)]
-			event.TimestampNs = uint64(time.Now().UnixNano())
+			event.TimestampNs = uint64(uptimeNsFunc())
 			select {
 			case eventCh <- event:
 			default:
@@ -237,12 +225,6 @@ func (r *SimulatedReader) Available() bool {
 	return true
 }
 
-// init registers the Linux-specific uptime function.
-func init() {
-	// Override the default getUptimeNs in monitor.go
-	// This is done via a package-level function registration
-}
-
 // GetLinuxUptimeNs returns uptime in nanoseconds on Linux.
 func GetLinuxUptimeNs() int64 {
 	data, err := os.ReadFile("/proc/uptime")
@@ -254,4 +236,8 @@ func GetLinuxUptimeNs() int64 {
 		return 0
 	}
 	return int64(uptime * 1e9)
+}
+
+func init() {
+	uptimeNsFunc = GetLinuxUptimeNs
 }

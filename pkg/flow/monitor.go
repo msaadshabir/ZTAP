@@ -220,13 +220,7 @@ func getBootTime() time.Time {
 	// Kernel timestamps from bpf_ktime_get_ns() are nanoseconds since boot.
 	// We need the boot time to convert to wall clock time.
 	// This is a simplified approach - on Linux we could read /proc/uptime.
-	return time.Now().Add(-time.Duration(getUptimeNs()))
+	return time.Now().Add(-time.Duration(uptimeNsFunc()))
 }
 
-// getUptimeNs returns system uptime in nanoseconds.
-// Platform-specific implementations can override this.
-func getUptimeNs() int64 {
-	// Default: return 0 (assumes boot time is now)
-	// The reader_linux.go will provide a proper implementation
-	return 0
-}
+var uptimeNsFunc = func() int64 { return 0 }

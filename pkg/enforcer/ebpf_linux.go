@@ -30,7 +30,11 @@ type eBPFEnforcer struct {
 	objs     *bpfObjects
 	links    []link.Link
 	policies []policy.NetworkPolicy
+	// flowEventsPinPath is the bpffs pin path for the flow_events map (if pinned).
+	flowEventsPinPath string
 }
+
+const DefaultFlowEventsPinPath = "/sys/fs/bpf/ztap/flow_events"
 
 // bpfObjects contains loaded eBPF programs and maps
 type bpfObjects struct {
@@ -317,6 +321,33 @@ func (e *eBPFEnforcer) Close() error {
 		}
 	}
 
+	if e.flowEventsPinPath != "" {
+		if err := os.Remove(e.flowEventsPinPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: Failed to remove pinned flow_events map: %v", err)
+		}
+		e.flowEventsPinPath = ""
+	}
+
+	return nil
+}
+
+// PinFlowEventsMap pins the flow_events ring buffer map to bpffs so other processes can open it.
+func (e *eBPFEnforcer) PinFlowEventsMap(path string) error {
+	if e.objs == nil || e.objs.FlowEvents == nil {
+		return fmt.Errorf("flow_events map not available")
+	}
+	if path == "" {
+		return fmt.Errorf("pin path is empty")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("creating pin directory: %w", err)
+	}
+	_ = os.Remove(path)
+	if err := e.objs.FlowEvents.Pin(path); err != nil {
+		return fmt.Errorf("pinning flow_events map: %w", err)
+	}
+	e.flowEventsPinPath = path
 	return nil
 }
 
@@ -374,6 +405,10 @@ func EnforceWithEBPFReal(policies []policy.NetworkPolicy, cgroupPath string) err
 	if err := enforcer.Attach(cgroupPath); err != nil {
 		_ = enforcer.Close()
 		return fmt.Errorf("failed to attach eBPF program: %w", err)
+	}
+
+	if err := enforcer.PinFlowEventsMap(DefaultFlowEventsPinPath); err != nil {
+		log.Printf("Warning: Failed to pin flow_events map (ztap flows may not work): %v", err)
 	}
 
 	log.Printf("Successfully enforced %d policies via eBPF", len(policies))

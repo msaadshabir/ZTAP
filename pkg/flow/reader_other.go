@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+var processStart = time.Now()
+
+func init() {
+	uptimeNsFunc = func() int64 { return time.Since(processStart).Nanoseconds() }
+}
+
 // StubReader provides a stub flow reader for non-Linux platforms.
 // On macOS, this could be extended to parse pf logs in the future.
 type StubReader struct {
@@ -110,7 +116,7 @@ func (r *SimulatedReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent
 				continue
 			}
 			event := r.events[idx%len(r.events)]
-			event.TimestampNs = uint64(time.Now().UnixNano())
+			event.TimestampNs = uint64(uptimeNsFunc())
 			select {
 			case eventCh <- event:
 			default:
