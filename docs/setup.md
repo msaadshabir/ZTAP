@@ -94,7 +94,7 @@ ls /sys/fs/bpf/
 sudo apt-get install clang llvm make linux-headers-$(uname -r)
 
 # Compile eBPF programs
-cd bpf && make
+cd bpf && make && cd ..
 ```
 
 See [eBPF Setup Guide](ebpf.md) for detailed Linux configuration.
@@ -119,15 +119,23 @@ ztap status --aws --region us-east-1
 ### 1. Enforce a Policy
 
 ```bash
-# Use example policy
+# macOS (pf)
 ztap enforce -f examples/web-to-db.yaml
 
 # Output:
 # Loaded 2 policy(ies) from examples/web-to-db.yaml
-# Validated policy set (structural + conflict checks)
 # Enforcing via pf (macOS)...
-# Applying 2 pf-based policies on macOS
 # Enforcement complete.
+
+# Linux (eBPF)
+# Note: this requires root and runs until Ctrl+C.
+# The Linux eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+sudo ztap enforce -f policy.yaml
+
+# Output:
+# Loaded N policy(ies) from policy.yaml
+# Enforcing via eBPF (Linux)...
+# Enforcement active. Press Ctrl+C to stop.
 ```
 
 ### 2. View Logs

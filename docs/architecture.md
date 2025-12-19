@@ -48,7 +48,8 @@ ResolveLabels(labels map[string]string) ([]string, error)
 **Key Functions**:
 
 ```go
-EnforceWithEBPF(policies []NetworkPolicy)
+EnforceWithEBPFIfAvailable(policies []NetworkPolicy, cgroupPath string) error
+StopEBPFEnforcement() error
 EnforceWithPF(policies []NetworkPolicy)
 ```
 

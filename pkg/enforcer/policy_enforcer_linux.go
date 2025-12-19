@@ -4,7 +4,7 @@ package enforcer
 
 import "ztap/pkg/policy"
 
-// enforceWithEBPFIfAvailable uses the real eBPF enforcer on Linux.
-func enforceWithEBPFIfAvailable(policies []policy.NetworkPolicy, cgroupPath string) error {
+// EnforceWithEBPFIfAvailable uses the real eBPF enforcer on Linux.
+func EnforceWithEBPFIfAvailable(policies []policy.NetworkPolicy, cgroupPath string) error {
 	return EnforceWithEBPFReal(policies, cgroupPath)
 }

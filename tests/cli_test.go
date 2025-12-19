@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -44,9 +46,6 @@ func possiblySkip(t *testing.T, err error, output string, hints ...string) bool 
 }
 
 func skipIfInCI(t *testing.T) {
-	// GitHub Actions automatically sets these environment variables
-	// Also check for CI environment variable (standard in many CI systems)
-	// Also check for BUILD_ID which some CI systems use
 	isGitHubActions := os.Getenv("GITHUB_ACTIONS") == "true"
 	isCI := os.Getenv("CI") == "true"
 	hasGitHubWorkspace := os.Getenv("GITHUB_WORKSPACE") != ""
@@ -56,7 +55,6 @@ func skipIfInCI(t *testing.T) {
 	}
 }
 
-// TestCLIHelp ensures the CLI help renders without error.
 func TestCLIHelp(t *testing.T) {
 	skipIfInCI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -71,7 +69,6 @@ func TestCLIHelp(t *testing.T) {
 	}
 }
 
-// TestCLIUserManagement exercises user list to ensure command wiring stays intact.
 func TestCLIUserManagement(t *testing.T) {
 	skipIfInCI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -86,7 +83,6 @@ func TestCLIUserManagement(t *testing.T) {
 	}
 }
 
-// TestCLIServiceDiscovery ensures discovery list returns promptly.
 func TestCLIServiceDiscovery(t *testing.T) {
 	skipIfInCI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -101,12 +97,11 @@ func TestCLIServiceDiscovery(t *testing.T) {
 	}
 }
 
-// TestCLIPolicyEnforce validates enforcing a simple policy.
 func TestCLIPolicyEnforce(t *testing.T) {
 	skipIfInCI(t)
 	tmpDir := t.TempDir()
 	policyPath := filepath.Join(tmpDir, "test-policy.yaml")
-	policy := `apiVersion: ztap/v1
+	policyYAML := `apiVersion: ztap/v1
 kind: NetworkPolicy
 metadata:
   name: test-policy
@@ -115,14 +110,14 @@ spec:
     matchLabels:
       app: web
   egress:
-  - to:
-      ipBlock:
-        cidr: 10.0.0.0/8
-    ports:
-    - protocol: TCP
-      port: 443
+    - to:
+        ipBlock:
+          cidr: 10.0.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
 `
-	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(policyYAML), 0o644); err != nil {
 		t.Fatalf("failed to write policy: %v", err)
 	}
 
@@ -132,17 +127,53 @@ spec:
 	env := append(os.Environ(), "ZTAP_SKIP_PF=1")
 	cmd := exec.CommandContext(ctx, "go", "run", cliEntry, "enforce", "-f", policyPath)
 	cmd.Env = env
-	outputBytes, err := cmd.CombinedOutput()
-	output := string(outputBytes)
-	if possiblySkip(t, err, output, "not implemented", "requires root", "unsupported platform") {
+
+	if runtime.GOOS != "linux" {
+		outputBytes, err := cmd.CombinedOutput()
+		output := string(outputBytes)
+		if possiblySkip(t, err, output, "not implemented", "requires root", "unsupported platform") {
+			return
+		}
+		if err != nil {
+			t.Fatalf("enforce failed: %v\noutput: %s", err, output)
+		}
 		return
 	}
+
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		t.Fatalf("enforce failed: %v\noutput: %s", err, output)
+		t.Fatalf("failed to get stdout pipe: %v", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start enforce: %v", err)
+	}
+
+	var out bytes.Buffer
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		out.WriteString(line)
+		out.WriteByte('\n')
+		if strings.Contains(line, "Enforcement active") {
+			_ = cmd.Process.Signal(os.Interrupt)
+			break
+		}
+	}
+	_ = stdout.Close()
+
+	waitErr := cmd.Wait()
+	output := out.String() + stderr.String()
+	if possiblySkip(t, waitErr, output, "not implemented", "requires root", "unsupported platform") {
+		return
+	}
+	if waitErr != nil {
+		t.Fatalf("enforce failed: %v\noutput: %s", waitErr, output)
 	}
 }
 
-// TestCLIStatus ensures status command returns quickly.
 func TestCLIStatus(t *testing.T) {
 	skipIfInCI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -157,13 +188,8 @@ func TestCLIStatus(t *testing.T) {
 	}
 }
 
-// TestCLIMetrics verifies the metrics server starts and responds.
 func TestCLIMetrics(t *testing.T) {
 	skipIfInCI(t)
-	if os.Getenv("CI") != "" {
-		t.Skip("metrics command can be flaky under shared CI")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -215,7 +241,6 @@ func TestCLIMetrics(t *testing.T) {
 	}
 }
 
-// TestCLILogs ensures logs command runs without crashing.
 func TestCLILogs(t *testing.T) {
 	skipIfInCI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -230,7 +255,6 @@ func TestCLILogs(t *testing.T) {
 	}
 }
 
-// TestCLIPolicyValidation confirms invalid policies surface parse errors.
 func TestCLIPolicyValidation(t *testing.T) {
 	skipIfInCI(t)
 	tmpDir := t.TempDir()

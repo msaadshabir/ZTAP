@@ -14,8 +14,8 @@ CLI (cmd/) -> Policy Engine (pkg/policy) -> Enforcer (pkg/enforcer)
 ```
 
 - **Policy Engine**: Parses Kubernetes-style YAML (`apiVersion: ztap/v1`), validates CIDR/ports/protocols, resolves labels via `ServiceDiscovery` interface
-- **Enforcer**: Platform-specific - `ebpf_linux.go` (production), `enforcer.go` (simulation/macOS pf)
-- **Flow Monitor**: Real-time flow events via eBPF ring buffer - `pkg/flow/` with `reader_linux.go` (production), `reader_other.go` (stub)
+- **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) and macOS pf (`enforcer.go`)
+- **Flow Monitor**: `pkg/flow/` provides the monitor + readers; the CLI `ztap flows` currently uses simulated/demo events
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
 - **Discovery**: Label-to-IP resolution - `InMemoryDiscovery` (dev), DNS/Consul/K8s backends (stubs)
 
@@ -55,6 +55,8 @@ type FlowMonitor interface {
 - Linux eBPF: `pkg/enforcer/ebpf_linux.go` with `//go:build linux` tag
 - macOS pf: Falls back to `EnforceWithPF()` in `pkg/enforcer/enforcer.go`
 - eBPF requires: compiled `bpf/filter.o`, root/CAP_BPF, kernel 5.7+
+- Linux `ztap enforce` keeps running while enforcement is active; Ctrl+C detaches and exits
+- CLI flags for Linux enforcement: `--cgroup`, `--bpf-object`, `--debug-ebpf` (and env vars `ZTAP_BPF_OBJECT`, `ZTAP_DEBUG_EBPF`)
 
 ## Testing Patterns
 
@@ -100,6 +102,8 @@ auditLogger.VerifyIntegrity() // Detects tampering
 
 ## Policy YAML Format
 
+The policy engine supports Kubernetes-style constructs (selectors, CIDRs, TCP/UDP/ICMP), but the Linux eBPF enforcer is currently more limited and will fail fast to avoid partial enforcement.
+
 ```yaml
 apiVersion: ztap/v1
 kind: NetworkPolicy
@@ -118,6 +122,12 @@ spec:
           port: 5432 # 1-65535
   ingress: # Optional, same structure as egress
 ```
+
+Current Linux eBPF enforcement constraints:
+
+- Only IPv4 `ipBlock` rules with `/32` CIDRs
+- TCP/UDP only (ICMP is rejected)
+- `podSelector` targets are not supported yet
 
 ## Code Standards
 

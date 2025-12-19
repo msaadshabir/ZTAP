@@ -150,8 +150,14 @@ For eBPF enforcement on Linux:
 docker cp examples/web-to-db.yaml ztap:/tmp/
 
 # Enforce the policy
-docker exec ztap ztap enforce -f /tmp/web-to-db.yaml
+docker exec -it ztap ztap enforce -f /tmp/web-to-db.yaml
 ```
+
+Notes:
+
+- On Linux, `ztap enforce` keeps running while enforcement is active. Press Ctrl+C to detach and exit.
+- The Linux eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+  Policies that use `podSelector` targets or non-/32 CIDRs will be rejected.
 
 ### View Status
 

@@ -37,7 +37,13 @@ ztap discovery register web-1 10.0.1.1 --labels app=web,tier=frontend
 ztap discovery register db-1 10.0.2.1 --labels app=database,tier=backend
 
 # 3. Enforce a policy
+# macOS (pf)
 ztap enforce -f examples/web-to-db.yaml
+
+# Linux (eBPF)
+# Note: `ztap enforce` keeps running while enforcement is active.
+# The Linux eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+sudo ztap enforce -f policy.yaml
 
 # 4. Check status
 ztap status
@@ -81,7 +87,7 @@ ztap status
 
 ### Observability
 
-- **Real-Time Flow Monitoring** – Stream network events via eBPF ring buffer
+- **Flow Monitoring** – Currently simulated demo data (eBPF ring buffer wiring is pending)
 - **Prometheus Metrics** – Pre-built exporters
 - **Grafana Dashboards** – Auto-provisioned
 - **ML Anomaly Detection** – Isolation Forest
@@ -244,11 +250,11 @@ Configuration (optional):
 ```yaml
 # config.yaml (or file set via ZTAP_CONFIG)
 discovery:
-  backend: dns   # inmemory (default) or dns
+  backend: dns # inmemory (default) or dns
   dns:
     domain: example.com
   cache:
-    ttl: 30s      # optional cache layer for the selected backend
+    ttl: 30s # optional cache layer for the selected backend
 ```
 
 </details>
@@ -289,6 +295,8 @@ ztap flows --direction egress --limit 100
 ztap flows --output json    # JSON format
 ztap flows --output wide    # Extended details
 ```
+
+Note: flow output is currently simulated demo data.
 
 </details>
 

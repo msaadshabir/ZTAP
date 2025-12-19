@@ -192,7 +192,7 @@ func (pe *PolicyEnforcer) enforceLinux(policies []policy.NetworkPolicy) error {
 	if pe.cgroupPath != "" && IsLinux() {
 		// EnforceWithEBPFReal is only available on Linux (ebpf_linux.go)
 		// Call it through the generic enforcement function
-		return enforceWithEBPFIfAvailable(policies, pe.cgroupPath)
+		return EnforceWithEBPFIfAvailable(policies, pe.cgroupPath)
 	}
 
 	// Fallback to simulation

@@ -30,6 +30,9 @@ See [Cluster Documentation](../docs/cluster.md) for details.
 
 ## Policy Examples
 
+Note: on Linux, the eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+Policies that use `podSelector` targets or non-/32 CIDRs will be rejected. See `docs/ebpf.md`.
+
 ### web-to-db.yaml
 
 Three-tier application: web to API, IoT to internet.
@@ -73,6 +76,8 @@ ztap enforce -f ingress-only.yaml
 ## Policy Patterns
 
 ### Label-Based Rules
+
+Note: `podSelector` targets are not supported by the Linux eBPF enforcer yet.
 
 ```yaml
 egress:

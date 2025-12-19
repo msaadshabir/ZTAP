@@ -11,12 +11,18 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"ztap/pkg/policy"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
+)
+
+var (
+	activeEBPFMu       sync.Mutex
+	activeEBPFEnforcer *eBPFEnforcer
 )
 
 // eBPFEnforcer manages eBPF programs for network policy enforcement
@@ -347,19 +353,43 @@ func protocolToNum(protocol string) uint8 {
 
 // EnforceWithEBPFReal uses actual eBPF enforcement (requires root)
 func EnforceWithEBPFReal(policies []policy.NetworkPolicy, cgroupPath string) error {
+	activeEBPFMu.Lock()
+	defer activeEBPFMu.Unlock()
+
+	if activeEBPFEnforcer != nil {
+		_ = activeEBPFEnforcer.Close()
+		activeEBPFEnforcer = nil
+	}
+
 	enforcer, err := NewEBPFEnforcer()
 	if err != nil {
 		return fmt.Errorf("failed to create eBPF enforcer: %w", err)
 	}
 
 	if err := enforcer.LoadPolicies(policies); err != nil {
+		_ = enforcer.Close()
 		return fmt.Errorf("failed to load policies: %w", err)
 	}
 
 	if err := enforcer.Attach(cgroupPath); err != nil {
+		_ = enforcer.Close()
 		return fmt.Errorf("failed to attach eBPF program: %w", err)
 	}
 
 	log.Printf("Successfully enforced %d policies via eBPF", len(policies))
+	activeEBPFEnforcer = enforcer
 	return nil
+}
+
+// StopEBPFEnforcement detaches any active eBPF programs loaded by this process.
+func StopEBPFEnforcement() error {
+	activeEBPFMu.Lock()
+	defer activeEBPFMu.Unlock()
+
+	if activeEBPFEnforcer == nil {
+		return nil
+	}
+	err := activeEBPFEnforcer.Close()
+	activeEBPFEnforcer = nil
+	return err
 }

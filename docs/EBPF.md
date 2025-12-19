@@ -157,15 +157,9 @@ struct flow_event {
 };
 ```
 
-The ring buffer (256KB) enables real-time flow monitoring:
+The ring buffer (256KB) is intended to enable real-time flow monitoring:
 
-```bash
-# Stream flow events
-ztap flows --follow
-
-# Filter by action
-ztap flows --action blocked
-```
+Note: `ztap flows` currently shows simulated demo data; wiring to kernel events is pending.
 
 ### Attachment Points
 
@@ -183,11 +177,26 @@ ZTAP automatically loads and attaches eBPF programs when policies are enforced:
 
 ```bash
 # Enforce a policy (requires root on Linux)
-sudo ztap enforce -f examples/web-to-db.yaml
+sudo ztap enforce -f policy.yaml
+
+# Override cgroup path (Linux)
+sudo ztap enforce -f policy.yaml --cgroup /sys/fs/cgroup
+
+# Point directly at a compiled object file (Linux)
+sudo ztap enforce -f policy.yaml --bpf-object /absolute/path/to/bpf/filter.o
+
+# Enable debug logs for object load attempts (Linux)
+sudo ztap enforce -f policy.yaml --debug-ebpf
 
 # Check enforcement status
 ztap status
 ```
+
+Notes:
+
+- `ztap enforce` keeps running while enforcement is active. Press Ctrl+C to detach and exit.
+- The eBPF enforcer currently supports only IPv4 `ipBlock` rules with `/32` CIDRs, and TCP/UDP only.
+  Policies that use `podSelector` targets or non-/32 CIDRs will be rejected to avoid unsafe partial enforcement.
 
 ### Manual Testing (Advanced)
 
