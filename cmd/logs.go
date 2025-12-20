@@ -176,7 +176,7 @@ func printLogEntry(entry LogEntry) {
 }
 
 // LogEnforcement writes an enforcement action to the log file
-func LogEnforcement(policyName, action, sourceIP, destIP, protocol string, port int, labels map[string]string) error {
+func LogEnforcement(policyName, action, sourceIP, destIP, protocol string, port int, labels map[string]string) (retErr error) {
 	logFile := getLogFilePath()
 
 	// Ensure directory exists
@@ -200,7 +200,11 @@ func LogEnforcement(policyName, action, sourceIP, destIP, protocol string, port 
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil && retErr == nil {
+			retErr = err
+		}
+	}()
 
 	encoder := json.NewEncoder(file)
 	return encoder.Encode(entry)
