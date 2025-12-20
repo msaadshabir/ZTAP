@@ -276,7 +276,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach egress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF egress filter attached to cgroup: %s", cgroupPath)
+		log.Printf("eBPF egress filter attached to cgroup: %s", sanitizeLogString(cgroupPath))
 	}
 
 	// Attach ingress filter to cgroup
@@ -290,7 +290,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach ingress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF ingress filter attached to cgroup: %s", cgroupPath)
+		log.Printf("eBPF ingress filter attached to cgroup: %s", sanitizeLogString(cgroupPath))
 	}
 
 	return nil
@@ -380,6 +380,12 @@ func protocolToNum(protocol string) uint8 {
 	default:
 		return 0
 	}
+}
+
+func sanitizeLogString(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
 }
 
 // EnforceWithEBPFReal uses actual eBPF enforcement (requires root)
