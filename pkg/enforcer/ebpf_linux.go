@@ -253,8 +253,9 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 
 	// Handle label-based rules (requires resolution)
 	if len(ingress.From.PodSelector.MatchLabels) > 0 {
+		sanitizedPolicyName := strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", "")
 		log.Printf("Warning: Label-based ingress rules require IP resolution for policy '%s'",
-			policyName)
+			sanitizedPolicyName)
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
