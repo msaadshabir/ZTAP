@@ -246,8 +246,11 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 				return fmt.Errorf("failed to update policy map: %w", err)
 			}
 
+			safePolicyName := strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", "")
+			safeIPNet := strings.ReplaceAll(strings.ReplaceAll(ipnet.String(), "\n", ""), "\r", "")
+
 			log.Printf("Added eBPF ingress rule: %s <- %s:%d (ALLOW)",
-				policyName, ipnet.String(), port.Port)
+				safePolicyName, safeIPNet, port.Port)
 		}
 	}
 
