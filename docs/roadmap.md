@@ -22,10 +22,11 @@
 - Ingress policy support (bidirectional enforcement)
 - Real-time flow event monitoring (`ztap flows` with `--follow` streaming)
 - Policy conflict detection (structural + overlap)
+- REST API server (basic v1 endpoints via `ztap api serve`)
 
 ## Planned
 
-- REST API / gRPC interface
+- gRPC interface
 - Alerting with webhook integrations (Slack, PagerDuty)
 - Policy versioning and rollback
 - Azure NSG synchronization

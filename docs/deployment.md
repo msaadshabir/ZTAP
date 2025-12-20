@@ -53,6 +53,8 @@ The Docker Compose stack includes:
 - **Volumes**: Policy examples, logs, and data
 - **Command**: Runs metrics server by default
 
+ZTAP can also run a minimal REST API server (see `ztap api serve`). If you run it in a container, publish the configured listen port (default `127.0.0.1:8080` in `config.yaml.example`).
+
 ### Prometheus (`prometheus`)
 
 - **Port**: 9091 (web UI)

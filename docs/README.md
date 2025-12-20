@@ -28,4 +28,22 @@ Technical documentation for ZTAP.
 | [Examples](../examples/)                      | Sample policies and use cases  |
 | [Anomaly Detection](../pkg/anomaly/README.md) | ML service API                 |
 
+## API Server
+
+ZTAP includes a minimal REST API server.
+
+- Start: `ztap api serve`
+- Configure: set `api.listen` and `api.auth.enabled` in `config.yaml` (see `config.yaml.example`)
+
+Core endpoints:
+
+- `POST /v1/auth/login` (body: `{ "username": "...", "password": "..." }`)
+- `GET /v1/auth/whoami` (requires `Authorization: Bearer <token>`)
+- `GET /v1/status`
+- `GET /v1/enforcement/status`
+- `POST /v1/enforcement/start` (body includes `policy_yaml`)
+- `POST /v1/enforcement/stop` (Linux only)
+- `GET /v1/flows/stream` (SSE stream)
+- `GET /metrics`
+
 See the [main README](../README.md) for project overview and quick start.

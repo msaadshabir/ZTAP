@@ -24,6 +24,12 @@ metrics:
   port: 9090
   path: /metrics
 
+# REST API server
+api:
+  listen: 127.0.0.1:8080
+  auth:
+    enabled: true
+
 # AWS Cloud Integration
 aws:
   enabled: false

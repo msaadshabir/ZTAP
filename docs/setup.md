@@ -171,6 +171,28 @@ ztap metrics --port 9090
 curl http://localhost:9090/metrics
 ```
 
+### 5. Start API Server
+
+ZTAP includes a minimal REST API server.
+
+```bash
+# Starts HTTP server (defaults come from config.yaml.example)
+ztap api serve
+
+# Health check
+curl -s http://127.0.0.1:8080/healthz
+```
+
+Configuration:
+
+```yaml
+# config.yaml (or file set via ZTAP_CONFIG)
+api:
+  listen: 127.0.0.1:8080
+  auth:
+    enabled: true
+```
+
 ## Running Observability Stack
 
 ### Start Prometheus and Grafana

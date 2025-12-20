@@ -97,6 +97,7 @@ ztap status
 
 - **Kubernetes-Style YAML** – Familiar syntax
 - **Label-Based Discovery** – DNS + caching
+- **REST API Server** – Minimal v1 endpoints via `ztap api serve`
 - **79% Test Coverage** – Production-ready
 - **Multi-Platform** – Linux (eBPF) + macOS (pf)
 
@@ -211,6 +212,7 @@ spec:
 ztap [command]
 
 Commands:
+  api         Run REST API server (serve)
   enforce     Enforce zero-trust network policies
   status      Show on-premises and cloud resource status
   cluster     Manage cluster coordination (status, join, leave, list)
@@ -222,6 +224,35 @@ Commands:
   discovery   Service discovery (register, resolve, list)
   audit       Audit log management (view, verify, stats)
 ```
+
+<details>
+<summary><b>API Server</b></summary>
+
+```bash
+# Start REST API server (reads config.yaml or file set via ZTAP_CONFIG)
+ztap api serve
+
+# Health
+curl -s http://127.0.0.1:8080/healthz
+
+# Login (default users DB: ~/.ztap/users.json)
+token=$(curl -sS http://127.0.0.1:8080/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"ztap-admin-change-me"}' | jq -r .token)
+
+# Who am I
+curl -sS http://127.0.0.1:8080/v1/auth/whoami -H "Authorization: Bearer $token"
+```
+
+Core endpoints:
+
+- `POST /v1/auth/login`, `GET /v1/auth/whoami`
+- `GET /v1/status`
+- `GET /v1/enforcement/status`, `POST /v1/enforcement/start`, `POST /v1/enforcement/stop` (Linux only)
+- `GET /v1/flows/stream` (SSE)
+- `GET /metrics`
+
+</details>
 
 <details>
 <summary><b>User Management</b></summary>

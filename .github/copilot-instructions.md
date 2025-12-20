@@ -7,13 +7,14 @@ ZTAP (Zero Trust Access Platform) is a Go 1.24+ CLI for zero-trust microsegmenta
 ## Architecture
 
 ```
-CLI (cmd/) -> Policy Engine (pkg/policy) -> Enforcer (pkg/enforcer)
-                                         -> Flow Monitor (pkg/flow)
-                                         -> Cloud Sync (pkg/cloud)
-                                         -> Cluster Sync (pkg/cluster)
+CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer (pkg/enforcer)
+                                                           -> Flow Monitor (pkg/flow)
+                                                           -> Cloud Sync (pkg/cloud)
+                                                           -> Cluster Sync (pkg/cluster)
 ```
 
 - **Policy Engine**: Parses Kubernetes-style YAML (`apiVersion: ztap/v1`), validates CIDR/ports/protocols, resolves labels via `ServiceDiscovery` interface
+- **API Server**: Minimal REST server (`ztap api serve`) exposing auth/status/enforcement/flows/metrics endpoints
 - **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) and macOS pf (`enforcer.go`)
 - **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map)
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
@@ -57,6 +58,13 @@ type FlowMonitor interface {
 - eBPF requires: compiled `bpf/filter.o`, root/CAP_BPF, kernel 5.7+
 - Linux `ztap enforce` keeps running while enforcement is active; Ctrl+C detaches and exits
 - CLI flags for Linux enforcement: `--cgroup`, `--bpf-object`, `--debug-ebpf` (and env vars `ZTAP_BPF_OBJECT`, `ZTAP_DEBUG_EBPF`)
+
+## API Server Notes
+
+- Command: `ztap api serve` (implemented in `cmd/api.go` and `pkg/apihttp/`)
+- Auth: bearer tokens via `Authorization: Bearer <token>`; sessions are currently in-memory (non-persistent across restarts)
+- Flow streaming: `GET /v1/flows/stream` uses SSE; on Linux it will read the pinned eBPF map when available, otherwise it falls back to simulated events
+- Metrics: `GET /metrics` is served via promhttp; avoid registering Prometheus collectors in constructors (global registry)
 
 ## Testing Patterns
 
@@ -143,6 +151,9 @@ go build                  # Build CLI
 cd bpf && make           # Compile eBPF (Linux only)
 ./demo.sh                # Interactive demo
 docker-compose up -d     # Prometheus + Grafana stack
+
+# REST API server
+ztap api serve
 ```
 
 ## Output Rules
