@@ -147,7 +147,8 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	// Populate policy map
 	for _, p := range policies {
 		if err := e.addPolicyToMap(p); err != nil {
-			log.Printf("Warning: Failed to add policy '%s': %v", p.Metadata.Name, err)
+			sanitizedErr := strings.ReplaceAll(strings.ReplaceAll(err.Error(), "\n", " "), "\r", " ")
+			log.Printf("Warning: Failed to add policy '%s': %s", p.Metadata.Name, sanitizedErr)
 		}
 	}
 
