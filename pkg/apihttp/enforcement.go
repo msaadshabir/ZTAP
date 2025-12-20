@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -76,9 +77,19 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusForbidden, errors.New("eBPF enforcement requires root privileges"))
 			return
 		}
-		cgroupPath := strings.TrimSpace(req.CgroupPath)
-		if cgroupPath == "" {
-			cgroupPath = "/sys/fs/cgroup"
+		const defaultCgroupPath = "/sys/fs/cgroup"
+		rawCgroupPath := strings.TrimSpace(req.CgroupPath)
+		var cgroupPath string
+		if rawCgroupPath == "" {
+			cgroupPath = defaultCgroupPath
+		} else {
+			joined := filepath.Join(defaultCgroupPath, rawCgroupPath)
+			absCgroupPath, err := filepath.Abs(joined)
+			if err != nil || !strings.HasPrefix(absCgroupPath, defaultCgroupPath) {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s", rawCgroupPath))
+				return
+			}
+			cgroupPath = absCgroupPath
 		}
 		if _, err := os.Stat(cgroupPath); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s: %w", cgroupPath, err))
