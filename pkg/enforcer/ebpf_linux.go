@@ -177,6 +177,9 @@ func (e *eBPFEnforcer) addPolicyToMap(p policy.NetworkPolicy) error {
 
 // addEgressRule adds an egress rule to the eBPF map
 func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule) error {
+	// Sanitize policyName before logging to prevent log forging via embedded newlines.
+	safePolicyName := strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", "")
+
 	// Handle IP-based rules
 	if egress.To.IPBlock.CIDR != "" {
 		ip, ipnet, err := net.ParseCIDR(egress.To.IPBlock.CIDR)
@@ -204,14 +207,14 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			}
 
 			log.Printf("Added eBPF egress rule: %s -> %s:%d (ALLOW)",
-				policyName, ipnet.String(), port.Port)
+				safePolicyName, ipnet.String(), port.Port)
 		}
 	}
 
 	// Handle label-based rules (requires resolution)
 	if len(egress.To.PodSelector.MatchLabels) > 0 {
 		log.Printf("Warning: Label-based egress rules require IP resolution for policy '%s'",
-			policyName)
+			safePolicyName)
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
