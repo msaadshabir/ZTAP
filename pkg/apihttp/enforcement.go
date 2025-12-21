@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -76,20 +77,55 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusForbidden, errors.New("eBPF enforcement requires root privileges"))
 			return
 		}
-		cgroupPath := strings.TrimSpace(req.CgroupPath)
-		if cgroupPath == "" {
-			cgroupPath = "/sys/fs/cgroup"
+		const defaultCgroupPath = "/sys/fs/cgroup"
+		rawCgroupPath := strings.TrimSpace(req.CgroupPath)
+		var cgroupPath string
+		if rawCgroupPath == "" {
+			cgroupPath = defaultCgroupPath
+		} else {
+			joined := filepath.Join(defaultCgroupPath, rawCgroupPath)
+			absCgroupPath, err := filepath.Abs(joined)
+			if err != nil || !strings.HasPrefix(absCgroupPath, defaultCgroupPath) {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s", rawCgroupPath))
+				return
+			}
+			cgroupPath = absCgroupPath
 		}
 		if _, err := os.Stat(cgroupPath); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s: %w", cgroupPath, err))
 			return
 		}
 		if req.BPFObject != "" {
-			if _, err := os.Stat(req.BPFObject); err != nil {
-				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid bpf_object %s: %w", req.BPFObject, err))
+			const safeBPFDir = "/usr/lib/ztap/bpf"
+			trimmedObj := strings.TrimSpace(req.BPFObject)
+			if trimmedObj == "" {
+				writeError(w, http.StatusBadRequest, errors.New("bpf_object must not be empty"))
 				return
 			}
-			_ = os.Setenv("ZTAP_BPF_OBJECT", req.BPFObject)
+			baseDirAbs, err := filepath.Abs(safeBPFDir)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to resolve bpf directory: %w", err))
+				return
+			}
+			joinedPath := filepath.Join(baseDirAbs, trimmedObj)
+			absPath, err := filepath.Abs(joinedPath)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid bpf_object %s: %w", trimmedObj, err))
+				return
+			}
+			baseWithSep := baseDirAbs
+			if !strings.HasSuffix(baseWithSep, string(os.PathSeparator)) {
+				baseWithSep += string(os.PathSeparator)
+			}
+			if absPath != baseDirAbs && !strings.HasPrefix(absPath, baseWithSep) {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("bpf_object must be within %s", baseDirAbs))
+				return
+			}
+			if _, err := os.Stat(absPath); err != nil {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid bpf_object %s: %w", trimmedObj, err))
+				return
+			}
+			_ = os.Setenv("ZTAP_BPF_OBJECT", absPath)
 		}
 		if req.DebugEBPF {
 			_ = os.Setenv("ZTAP_DEBUG_EBPF", "1")
