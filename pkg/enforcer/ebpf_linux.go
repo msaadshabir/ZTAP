@@ -265,6 +265,10 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 		return fmt.Errorf("eBPF objects not loaded")
 	}
 
+	// Sanitize cgroupPath for logging to avoid log injection
+	safeCgroupPath := strings.ReplaceAll(cgroupPath, "\n", "")
+	safeCgroupPath = strings.ReplaceAll(safeCgroupPath, "\r", "")
+
 	// Attach egress filter to cgroup
 	if e.objs.FilterEgress != nil {
 		l, err := link.AttachCgroup(link.CgroupOptions{
@@ -276,7 +280,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach egress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF egress filter attached to cgroup: %s", sanitizeForLog(cgroupPath))
+		log.Printf("eBPF egress filter attached to cgroup: %s", cgroupPath)
 	}
 
 	// Attach ingress filter to cgroup
@@ -290,7 +294,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach ingress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF ingress filter attached to cgroup: %s", sanitizeForLog(cgroupPath))
+		log.Printf("eBPF ingress filter attached to cgroup: %s", cgroupPath)
 	}
 
 	return nil
@@ -370,6 +374,14 @@ func ipToUint32(ip net.IP) uint32 {
 }
 
 func protocolToNum(protocol string) uint8 {
+// sanitizeForLog removes characters that can be used to forge or obscure log entries.
+func sanitizeForLog(s string) string {
+	// Remove newline and carriage return characters to prevent log injection.
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	return s
+}
+
 	switch strings.ToUpper(protocol) {
 	case "TCP":
 		return 6
