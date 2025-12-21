@@ -266,8 +266,10 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 
 			safeSrc := strings.ReplaceAll(ipnet.String(), "\n", "")
 			safeSrc = strings.ReplaceAll(safeSrc, "\r", "")
+			// Normalize port before logging to avoid depending directly on user-controlled data.
+			safePort := uint16(port.Port)
 			log.Printf("Added eBPF ingress rule: %s <- %s:%d (ALLOW)",
-				safePolicyName, safeSrc, port.Port)
+				safePolicyName, safeSrc, safePort)
 		}
 	}
 
