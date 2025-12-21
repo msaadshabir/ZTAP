@@ -207,14 +207,14 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			}
 
 			log.Printf("Added eBPF egress rule: %s -> %s:%d (ALLOW)",
-				policyName, ipnet.String(), port.Port)
+				sanitizeForLog(policyName), ipnet.String(), port.Port)
 		}
 	}
 
 	// Handle label-based rules (requires resolution)
 	if len(egress.To.PodSelector.MatchLabels) > 0 {
 		log.Printf("Warning: Label-based egress rules require IP resolution for policy '%s'",
-			policyName)
+			sanitizeForLog(policyName))
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
@@ -253,7 +253,7 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 			safeIPNet := strings.ReplaceAll(strings.ReplaceAll(ipnet.String(), "\n", ""), "\r", "")
 
 			log.Printf("Added eBPF ingress rule: %s <- %s:%d (ALLOW)",
-				policyName, ipnet.String(), port.Port)
+				sanitizeForLog(policyName), ipnet.String(), port.Port)
 		}
 	}
 
@@ -261,7 +261,7 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 	if len(ingress.From.PodSelector.MatchLabels) > 0 {
 		sanitizedPolicyName := strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", "")
 		log.Printf("Warning: Label-based ingress rules require IP resolution for policy '%s'",
-			policyName)
+			sanitizeForLog(policyName))
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
@@ -379,6 +379,14 @@ func ipToUint32(ip net.IP) uint32 {
 }
 
 func protocolToNum(protocol string) uint8 {
+// sanitizeForLog removes characters that can be used to forge or obscure log entries.
+func sanitizeForLog(s string) string {
+	// Remove newline and carriage return characters to prevent log injection.
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	return s
+}
+
 	switch strings.ToUpper(protocol) {
 	case "TCP":
 		return 6
