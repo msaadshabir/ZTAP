@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,7 +55,9 @@ func (ps *InMemoryPolicySync) Start(ctx context.Context) error {
 	ps.running = true
 	ps.mu.Unlock()
 
-	log.Printf("Policy synchronization started for node %s", ps.nodeID)
+	safeNodeID := strings.ReplaceAll(ps.nodeID, "\n", "")
+	safeNodeID = strings.ReplaceAll(safeNodeID, "\r", "")
+	log.Printf("Policy synchronization started for node %s", safeNodeID)
 
 	// Watch for cluster state changes to handle node joins/leaves
 	go ps.watchClusterChanges(ctx)
@@ -149,7 +152,11 @@ func (ps *InMemoryPolicySync) SyncPolicy(ctx context.Context, policyName string,
 	policySyncDuration.WithLabelValues(policyName).Observe(duration)
 	recordPolicySynced(policyName, newVersion)
 
-	log.Printf("Policy %s synced to cluster (version %d) by leader %s", policyName, newVersion, ps.nodeID)
+	safePolicyName := strings.ReplaceAll(policyName, "\n", "")
+	safePolicyName = strings.ReplaceAll(safePolicyName, "\r", "")
+	safeNodeID := strings.ReplaceAll(ps.nodeID, "\n", "")
+	safeNodeID = strings.ReplaceAll(safeNodeID, "\r", "")
+	log.Printf("Policy %s synced to cluster (version %d) by leader %s", safePolicyName, newVersion, safeNodeID)
 
 	return nil
 }
@@ -266,7 +273,9 @@ func (ps *InMemoryPolicySync) watchClusterChanges(ctx context.Context) {
 			return
 		case leader := <-leaderChanges:
 			if leader != nil {
-				log.Printf("Leader changed to %s; policy sync adapting", leader.ID)
+				safeLeaderID := strings.ReplaceAll(leader.ID, "\n", "")
+				safeLeaderID = strings.ReplaceAll(safeLeaderID, "\r", "")
+				log.Printf("Leader changed to %s; policy sync adapting", safeLeaderID)
 				// In a real distributed system, we would:
 				// 1. If we're the new leader: start accepting policy sync requests
 				// 2. If we're a follower: fetch latest policies from new leader
@@ -282,7 +291,9 @@ func (ps *InMemoryPolicySync) broadcastUpdate(update PolicyUpdate) {
 		select {
 		case ch <- update:
 		default:
-			log.Printf("Warning: policy update channel full, dropping event for policy %s", update.PolicyName)
+			safePolicyName := strings.ReplaceAll(update.PolicyName, "\n", "")
+			safePolicyName = strings.ReplaceAll(safePolicyName, "\r", "")
+			log.Printf("Warning: policy update channel full, dropping event for policy %s", safePolicyName)
 		}
 	}
 }
@@ -308,8 +319,10 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 	// Check if we already have this version or newer
 	if existingPolicy, exists := ps.policies[update.PolicyName]; exists {
 		if existingPolicy.Version >= update.Version {
+			safePolicyName := strings.ReplaceAll(update.PolicyName, "\n", "")
+			safePolicyName = strings.ReplaceAll(safePolicyName, "\r", "")
 			log.Printf("Skipping policy %s update (existing version %d >= received version %d)",
-				update.PolicyName, existingPolicy.Version, update.Version)
+				safePolicyName, existingPolicy.Version, update.Version)
 			return nil
 		}
 	}
@@ -327,8 +340,12 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 	// Broadcast to local subscribers
 	ps.broadcastUpdate(update)
 
+	safePolicyName := strings.ReplaceAll(update.PolicyName, "\n", "")
+	safePolicyName = strings.ReplaceAll(safePolicyName, "\r", "")
+	safeSource := strings.ReplaceAll(update.Source, "\n", "")
+	safeSource = strings.ReplaceAll(safeSource, "\r", "")
 	log.Printf("Applied remote policy update for %s (version %d) from %s",
-		update.PolicyName, update.Version, update.Source)
+		safePolicyName, update.Version, safeSource)
 
 	return nil
 }

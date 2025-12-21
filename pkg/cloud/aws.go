@@ -106,7 +106,9 @@ func (c *AWSClient) DiscoverResources(ctx context.Context) ([]Resource, error) {
 
 // SyncPolicy converts ZTAP policy to AWS Security Group rules
 func (c *AWSClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, sgID string) error {
-	log.Printf("Syncing policy '%s' to Security Group %s", p.Metadata.Name, sgID)
+	safeName := strings.ReplaceAll(p.Metadata.Name, "\n", "")
+	safeName = strings.ReplaceAll(safeName, "\r", "")
+	log.Printf("Syncing policy '%s' to Security Group %s", safeName, sgID)
 
 	// For each egress rule in policy
 	for _, egress := range p.Spec.Egress {
