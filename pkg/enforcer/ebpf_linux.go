@@ -274,6 +274,10 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 		return fmt.Errorf("eBPF objects not loaded")
 	}
 
+	// Sanitize cgroupPath for logging to avoid log injection
+	safeCgroupPath := strings.ReplaceAll(cgroupPath, "\n", "")
+	safeCgroupPath = strings.ReplaceAll(safeCgroupPath, "\r", "")
+
 	// Attach egress filter to cgroup
 	if e.objs.FilterEgress != nil {
 		l, err := link.AttachCgroup(link.CgroupOptions{
@@ -285,7 +289,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach egress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF egress filter attached to cgroup: %s", cgroupPath)
+		log.Printf("eBPF egress filter attached to cgroup: %s", safeCgroupPath)
 	}
 
 	// Attach ingress filter to cgroup
@@ -299,7 +303,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach ingress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF ingress filter attached to cgroup: %s", cgroupPath)
+		log.Printf("eBPF ingress filter attached to cgroup: %s", safeCgroupPath)
 	}
 
 	return nil
