@@ -224,7 +224,7 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 	// Handle label-based rules (requires resolution)
 	if len(egress.To.PodSelector.MatchLabels) > 0 {
 		log.Printf("Warning: Label-based egress rules require IP resolution for policy '%s'",
-			safePolicyName)
+			strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", ""))
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
@@ -272,7 +272,7 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 	// Handle label-based rules (requires resolution)
 	if len(ingress.From.PodSelector.MatchLabels) > 0 {
 		log.Printf("Warning: Label-based ingress rules require IP resolution for policy '%s'",
-			safePolicyName)
+			strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", ""))
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
