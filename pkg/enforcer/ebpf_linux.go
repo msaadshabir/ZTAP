@@ -155,7 +155,9 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 		if err := e.addPolicyToMap(p); err != nil {
 			safeName := strings.ReplaceAll(p.Metadata.Name, "\n", "")
 			safeName = strings.ReplaceAll(safeName, "\r", "")
-			log.Printf("Warning: Failed to add policy '%s': %v", safeName, err)
+			safeErr := strings.ReplaceAll(err.Error(), "\n", "")
+			safeErr = strings.ReplaceAll(safeErr, "\r", "")
+			log.Printf("Warning: Failed to add policy '%s': %s", safeName, safeErr)
 		}
 	}
 
@@ -212,8 +214,10 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 				return fmt.Errorf("failed to update policy map: %w", err)
 			}
 
+			safeDest := strings.ReplaceAll(ipnet.String(), "\n", "")
+			safeDest = strings.ReplaceAll(safeDest, "\r", "")
 			log.Printf("Added eBPF egress rule: %s -> %s:%d (ALLOW)",
-				safePolicyName, ipnet.String(), port.Port)
+				safePolicyName, safeDest, port.Port)
 		}
 	}
 
@@ -258,8 +262,10 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 				return fmt.Errorf("failed to update policy map: %w", err)
 			}
 
+			safeSrc := strings.ReplaceAll(ipnet.String(), "\n", "")
+			safeSrc = strings.ReplaceAll(safeSrc, "\r", "")
 			log.Printf("Added eBPF ingress rule: %s <- %s:%d (ALLOW)",
-				safePolicyName, ipnet.String(), port.Port)
+				safePolicyName, safeSrc, port.Port)
 		}
 	}
 
