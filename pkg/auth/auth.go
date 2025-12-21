@@ -2,7 +2,6 @@ package auth
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Role represents a user role
@@ -135,9 +136,16 @@ func (am *AuthManager) createDefaultAdmin() error {
 }
 
 // HashPassword creates a hash of the password
-func HashPassword(password string) string {
-	hash := sha256.Sum256([]byte(password))
-	return base64.StdEncoding.EncodeToString(hash[:])
+func HashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hash), nil
+}
+
+func VerifyPassword(passwordHash, password string) error {
+	return bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password))
 }
 
 // CreateUser creates a new user
@@ -149,9 +157,14 @@ func (am *AuthManager) CreateUser(username, password string, role Role) error {
 		return ErrUserExists
 	}
 
+	passwordHash, err := HashPassword(password)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
 	user := &User{
 		Username:     username,
-		PasswordHash: HashPassword(password),
+		PasswordHash: passwordHash,
 		Role:         role,
 		CreatedAt:    time.Now(),
 		Enabled:      true,
@@ -175,8 +188,7 @@ func (am *AuthManager) Authenticate(username, password string) (*Session, error)
 		return nil, ErrUserDisabled
 	}
 
-	passwordHash := HashPassword(password)
-	if user.PasswordHash != passwordHash {
+	if err := VerifyPassword(user.PasswordHash, password); err != nil {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -262,12 +274,15 @@ func (am *AuthManager) ChangePassword(username, oldPassword, newPassword string)
 		return ErrUserNotFound
 	}
 
-	oldHash := HashPassword(oldPassword)
-	if user.PasswordHash != oldHash {
+	if err := VerifyPassword(user.PasswordHash, oldPassword); err != nil {
 		return ErrInvalidCredentials
 	}
 
-	user.PasswordHash = HashPassword(newPassword)
+	newHash, err := HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hashing new password: %w", err)
+	}
+	user.PasswordHash = newHash
 	return am.saveUsers()
 }
 
