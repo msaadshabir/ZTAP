@@ -91,7 +91,7 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 
 	// Allow explicit override via environment variable
 	if p := os.Getenv("ZTAP_BPF_OBJECT"); p != "" {
-		log.Printf("ZTAP_BPF_OBJECT override set: %s", p)
+		log.Printf("ZTAP_BPF_OBJECT override set: %s", sanitizeForLog(p))
 	}
 
 	bpfPaths := []string{
@@ -118,7 +118,7 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 		}
 		// Log attempt in debug mode
 		if os.Getenv("ZTAP_DEBUG_EBPF") == "1" {
-			log.Printf("Attempting to load eBPF object: %s", path)
+			log.Printf("Attempting to load eBPF object: %s", sanitizeForLog(path))
 		}
 		if _, statErr := os.Stat(path); statErr != nil {
 			attempts = append(attempts, fmt.Sprintf("%s: %v", path, statErr))
@@ -126,7 +126,7 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 		}
 		spec, err = ebpf.LoadCollectionSpec(path)
 		if err == nil {
-			log.Printf("Loaded eBPF spec from: %s", path)
+			log.Printf("Loaded eBPF spec from: %s", sanitizeForLog(path))
 			break
 		}
 		attempts = append(attempts, fmt.Sprintf("%s: %v", path, err))
@@ -149,7 +149,7 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 		if err := e.addPolicyToMap(p); err != nil {
 			safeName := strings.ReplaceAll(p.Metadata.Name, "\n", "")
 			safeName = strings.ReplaceAll(safeName, "\r", "")
-			log.Printf("Warning: Failed to add policy '%s': %v", safeName, err)
+			log.Printf("Warning: Failed to add policy '%s': %v", sanitizeForLog(safeName), err)
 		}
 	}
 
@@ -204,14 +204,14 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			}
 
 			log.Printf("Added eBPF egress rule: %s -> %s:%d (ALLOW)",
-				policyName, ipnet.String(), port.Port)
+				sanitizeForLog(policyName), ipnet.String(), port.Port)
 		}
 	}
 
 	// Handle label-based rules (requires resolution)
 	if len(egress.To.PodSelector.MatchLabels) > 0 {
 		log.Printf("Warning: Label-based egress rules require IP resolution for policy '%s'",
-			policyName)
+			sanitizeForLog(policyName))
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
@@ -247,14 +247,14 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 			}
 
 			log.Printf("Added eBPF ingress rule: %s <- %s:%d (ALLOW)",
-				policyName, ipnet.String(), port.Port)
+				sanitizeForLog(policyName), ipnet.String(), port.Port)
 		}
 	}
 
 	// Handle label-based rules (requires resolution)
 	if len(ingress.From.PodSelector.MatchLabels) > 0 {
 		log.Printf("Warning: Label-based ingress rules require IP resolution for policy '%s'",
-			policyName)
+			sanitizeForLog(policyName))
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
@@ -278,7 +278,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach egress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF egress filter attached to cgroup: %s", cgroupPath)
+		log.Printf("eBPF egress filter attached to cgroup: %s", sanitizeForLog(cgroupPath))
 	}
 
 	// Attach ingress filter to cgroup
@@ -292,7 +292,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach ingress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF ingress filter attached to cgroup: %s", cgroupPath)
+		log.Printf("eBPF ingress filter attached to cgroup: %s", sanitizeForLog(cgroupPath))
 	}
 
 	return nil
