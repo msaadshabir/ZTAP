@@ -216,8 +216,10 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 
 			safeDest := strings.ReplaceAll(ipnet.String(), "\n", "")
 			safeDest = strings.ReplaceAll(safeDest, "\r", "")
-			log.Printf("Added eBPF egress rule: %s -> %s:%d (ALLOW)",
-				safePolicyName, safeDest, port.Port)
+			safePort := strings.ReplaceAll(fmt.Sprint(port.Port), "\n", "")
+			safePort = strings.ReplaceAll(safePort, "\r", "")
+			log.Printf("Added eBPF egress rule: %s -> %s:%s (ALLOW)",
+				safePolicyName, safeDest, safePort)
 		}
 	}
 
