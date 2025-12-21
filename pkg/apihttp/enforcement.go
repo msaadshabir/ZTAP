@@ -83,9 +83,23 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 		if rawCgroupPath == "" {
 			cgroupPath = defaultCgroupPath
 		} else {
-			joined := filepath.Join(defaultCgroupPath, rawCgroupPath)
+			if filepath.IsAbs(rawCgroupPath) {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s", rawCgroupPath))
+				return
+			}
+			cleaned := filepath.Clean(rawCgroupPath)
+			if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s", rawCgroupPath))
+				return
+			}
+			joined := filepath.Join(defaultCgroupPath, cleaned)
 			absCgroupPath, err := filepath.Abs(joined)
-			if err != nil || !strings.HasPrefix(absCgroupPath, defaultCgroupPath) {
+			if err != nil {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s", rawCgroupPath))
+				return
+			}
+			rel, err := filepath.Rel(defaultCgroupPath, absCgroupPath)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s", rawCgroupPath))
 				return
 			}
@@ -102,22 +116,28 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 				writeError(w, http.StatusBadRequest, errors.New("bpf_object must not be empty"))
 				return
 			}
+			if filepath.IsAbs(trimmedObj) {
+				writeError(w, http.StatusBadRequest, errors.New("bpf_object must be a relative path"))
+				return
+			}
+			cleaned := filepath.Clean(trimmedObj)
+			if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
+				writeError(w, http.StatusBadRequest, errors.New("bpf_object contains an invalid path"))
+				return
+			}
 			baseDirAbs, err := filepath.Abs(safeBPFDir)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to resolve bpf directory: %w", err))
 				return
 			}
-			joinedPath := filepath.Join(baseDirAbs, trimmedObj)
+			joinedPath := filepath.Join(baseDirAbs, cleaned)
 			absPath, err := filepath.Abs(joinedPath)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid bpf_object %s: %w", trimmedObj, err))
 				return
 			}
-			baseWithSep := baseDirAbs
-			if !strings.HasSuffix(baseWithSep, string(os.PathSeparator)) {
-				baseWithSep += string(os.PathSeparator)
-			}
-			if absPath != baseDirAbs && !strings.HasPrefix(absPath, baseWithSep) {
+			rel, err := filepath.Rel(baseDirAbs, absPath)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 				writeError(w, http.StatusBadRequest, fmt.Errorf("bpf_object must be within %s", baseDirAbs))
 				return
 			}
