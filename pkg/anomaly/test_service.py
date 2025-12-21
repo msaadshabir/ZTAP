@@ -5,7 +5,6 @@ from datetime import datetime
 sys.path.insert(0, '.')
 
 import service
-from service import app, extract_features
 
 
 class TestAnomalyDetectionService(unittest.TestCase):
@@ -13,7 +12,7 @@ class TestAnomalyDetectionService(unittest.TestCase):
     
     def setUp(self):
         """Set up test client"""
-        self.app = app
+        self.app = service.app
         self.client = self.app.test_client()
         self.app.testing = True
         
@@ -42,7 +41,7 @@ class TestAnomalyDetectionService(unittest.TestCase):
             'timestamp': datetime.now().isoformat()
         }
         
-        features = extract_features(flow)
+        features = service.extract_features(flow)
         
         # Should return 6 features
         self.assertEqual(len(features), 6)
@@ -71,7 +70,7 @@ class TestAnomalyDetectionService(unittest.TestCase):
             'timestamp': datetime.now().isoformat()
         }
         
-        features = extract_features(flow)
+        features = service.extract_features(flow)
         
         # Protocol mapping: UDP = 2
         self.assertEqual(features[3], 2)
@@ -81,7 +80,7 @@ class TestAnomalyDetectionService(unittest.TestCase):
         """Test feature extraction with missing fields"""
         flow = {}  # Empty flow
         
-        features = extract_features(flow)
+        features = service.extract_features(flow)
         
         # Should still return 6 features with defaults
         self.assertEqual(len(features), 6)

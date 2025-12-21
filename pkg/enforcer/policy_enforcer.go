@@ -109,7 +109,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 
 			if update.Version <= currentVersion {
 				log.Printf("Skipping policy %s v%d (already enforced v%d)",
-					update.PolicyName, update.Version, currentVersion)
+					sanitizeForLog(update.PolicyName), update.Version, currentVersion)
 				continue
 			}
 
@@ -117,7 +117,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 			startTime := time.Now()
 			if err := pe.applyPolicy(update); err != nil {
 				log.Printf("Failed to enforce policy %s v%d: %v",
-					update.PolicyName, update.Version, err)
+					sanitizeForLog(update.PolicyName), update.Version, err)
 				cluster.RecordPolicyEnforcementError(update.PolicyName, "local-node")
 
 				// Log failure to audit log
@@ -154,7 +154,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 			}
 
 			log.Printf("Successfully enforced policy %s v%d from %s",
-				update.PolicyName, update.Version, update.Source)
+				sanitizeForLog(update.PolicyName), update.Version, sanitizeForLog(update.Source))
 		}
 	}
 }
@@ -168,7 +168,7 @@ func (pe *PolicyEnforcer) applyPolicy(update cluster.PolicyUpdate) error {
 	}
 
 	if len(policies) == 0 {
-		log.Printf("Warning: policy %s contains no NetworkPolicy objects", update.PolicyName)
+		log.Printf("Warning: policy %s contains no NetworkPolicy objects", sanitizeForLog(update.PolicyName))
 		return nil
 	}
 
