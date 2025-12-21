@@ -7,7 +7,6 @@ Uses Isolation Forest for detecting anomalous network flows
 from flask import Flask, request, jsonify
 from sklearn.ensemble import IsolationForest
 import numpy as np
-import json
 from datetime import datetime
 
 app = Flask(__name__)
@@ -240,4 +239,3 @@ if __name__ == '__main__':
     print("  POST /detect        - Detect anomalous flows (with fallback)")
     print("  GET  /health        - Health check")
     app.run(host='0.0.0.0', port=5000, debug=False)
-    app.run(host='0.0.0.0', port=5000, debug=True)
