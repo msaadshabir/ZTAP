@@ -177,6 +177,9 @@ func (e *eBPFEnforcer) addPolicyToMap(p policy.NetworkPolicy) error {
 
 // addEgressRule adds an egress rule to the eBPF map
 func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule) error {
+	// Sanitize policyName before logging to prevent log forging via embedded newlines.
+	safePolicyName := strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", "")
+
 	// Handle IP-based rules
 	if egress.To.IPBlock.CIDR != "" {
 		ip, ipnet, err := net.ParseCIDR(egress.To.IPBlock.CIDR)
@@ -204,14 +207,14 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			}
 
 			log.Printf("Added eBPF egress rule: %s -> %s:%d (ALLOW)",
-				sanitizeForLog(policyName), ipnet.String(), port.Port)
+				policyName, ipnet.String(), port.Port)
 		}
 	}
 
 	// Handle label-based rules (requires resolution)
 	if len(egress.To.PodSelector.MatchLabels) > 0 {
 		log.Printf("Warning: Label-based egress rules require IP resolution for policy '%s'",
-			sanitizeForLog(policyName))
+			policyName)
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
@@ -246,15 +249,19 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 				return fmt.Errorf("failed to update policy map: %w", err)
 			}
 
+			safePolicyName := strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", "")
+			safeIPNet := strings.ReplaceAll(strings.ReplaceAll(ipnet.String(), "\n", ""), "\r", "")
+
 			log.Printf("Added eBPF ingress rule: %s <- %s:%d (ALLOW)",
-				sanitizeForLog(policyName), ipnet.String(), port.Port)
+				policyName, ipnet.String(), port.Port)
 		}
 	}
 
 	// Handle label-based rules (requires resolution)
 	if len(ingress.From.PodSelector.MatchLabels) > 0 {
+		sanitizedPolicyName := strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", "")
 		log.Printf("Warning: Label-based ingress rules require IP resolution for policy '%s'",
-			sanitizeForLog(policyName))
+			policyName)
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
 
@@ -278,7 +285,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach egress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF egress filter attached to cgroup: %s", sanitizeForLog(cgroupPath))
+		log.Printf("eBPF egress filter attached to cgroup: %s", cgroupPath)
 	}
 
 	// Attach ingress filter to cgroup
@@ -292,7 +299,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach ingress filter to cgroup: %w", err)
 		}
 		e.links = append(e.links, l)
-		log.Printf("eBPF ingress filter attached to cgroup: %s", sanitizeForLog(cgroupPath))
+		log.Printf("eBPF ingress filter attached to cgroup: %s", cgroupPath)
 	}
 
 	return nil
@@ -382,6 +389,12 @@ func protocolToNum(protocol string) uint8 {
 	default:
 		return 0
 	}
+}
+
+func sanitizeLogString(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
 }
 
 // EnforceWithEBPFReal uses actual eBPF enforcement (requires root)
