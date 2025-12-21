@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"ztap/pkg/policy"
 )
 
@@ -97,19 +98,27 @@ func EnforceWithPF(policies []policy.NetworkPolicy) {
 		}
 	}
 
-	// Write to anchor file (requires sudo in real use)
 	anchorFile := "/etc/pf.anchors/ztap"
-	cmd := exec.Command("sudo", "sh", "-c", fmt.Sprintf("mkdir -p /etc/pf.anchors && echo '%s' > %s", anchorContent, anchorFile))
-	err := cmd.Run()
-	if err != nil {
-		log.Printf("Warning: pf rules require sudo. Demo mode only.")
+	if err := os.MkdirAll(filepath.Dir(anchorFile), 0o755); err != nil {
+		log.Printf("Warning: failed to create pf anchors directory: %v", err)
+		return
+	}
+	if err := os.WriteFile(anchorFile, []byte(anchorContent), 0o644); err != nil {
+		log.Printf("Warning: failed to write pf anchor file: %v", err)
+		return
 	}
 
 	// Ensure anchor is loaded in pf.conf
 	pfConf := "/etc/pf.conf"
 	pfContent := "anchor \"ztap\"\nload anchor \"ztap\" from \"/etc/pf.anchors/ztap\"\n"
-	cmd2 := exec.Command("sudo", "sh", "-c", fmt.Sprintf("grep -q 'anchor \"ztap\"' %s || echo '%s' >> %s", pfConf, pfContent, pfConf))
-	_ = cmd2.Run() // Ignore errors (file may be read-only)
+	if existing, err := os.ReadFile(pfConf); err == nil {
+		if !strings.Contains(string(existing), "anchor \"ztap\"") {
+			if f, openErr := os.OpenFile(pfConf, os.O_APPEND|os.O_WRONLY, 0); openErr == nil {
+				_, _ = f.WriteString("\n" + pfContent)
+				_ = f.Close()
+			}
+		}
+	}
 
 	fmt.Println("Note: Full enforcement requires sudo. See docs for production setup.")
 }
