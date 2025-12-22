@@ -116,6 +116,15 @@ ztap status --aws --region us-east-1
 
 ## Quick Start
 
+### 0. First Run: Admin Bootstrap
+
+On first run, if no user database exists yet, ZTAP creates an `admin` user.
+
+- If `ZTAP_BOOTSTRAP_ADMIN_PASSWORD` is set, that value is used as the initial password.
+- Otherwise, ZTAP generates a random bootstrap password and writes it to `~/.ztap/bootstrap_admin_password.txt` (permissions `0600`).
+
+Delete the bootstrap password file after you log in and rotate the password.
+
 ### 1. Enforce a Policy
 
 ```bash
@@ -171,6 +180,15 @@ ztap metrics --port 9090
 curl http://localhost:9090/metrics
 ```
 
+Notes:
+
+- By default, `ztap metrics` binds to `127.0.0.1:<port>`.
+- To change the bind address (e.g., for containers), set `ZTAP_METRICS_LISTEN`, for example:
+
+```bash
+export ZTAP_METRICS_LISTEN="0.0.0.0:9090"
+```
+
 ### 5. Start API Server
 
 ZTAP includes a minimal REST API server.
@@ -182,6 +200,8 @@ ztap api serve
 # Health check
 curl -s http://127.0.0.1:8080/healthz
 ```
+
+If API auth is enabled, `/metrics` on this server requires a valid bearer token with `view_metrics` permission.
 
 Configuration:
 

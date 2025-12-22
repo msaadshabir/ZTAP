@@ -181,7 +181,7 @@ func LogEnforcement(policyName, action, sourceIP, destIP, protocol string, port 
 
 	// Ensure directory exists
 	logDir := filepath.Dir(logFile)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0700); err != nil {
 		return err
 	}
 
@@ -196,7 +196,7 @@ func LogEnforcement(policyName, action, sourceIP, destIP, protocol string, port 
 		Labels:     labels,
 	}
 
-	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}

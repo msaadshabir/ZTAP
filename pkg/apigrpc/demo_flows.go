@@ -7,7 +7,11 @@ import (
 )
 
 func demoRawFlows() []flow.RawFlowEvent {
-	now := uint64(time.Now().UnixNano())
+	nowNs := time.Now().UnixNano()
+	if nowNs < 0 {
+		nowNs = 0
+	}
+	now := uint64(nowNs) // #nosec G115 -- nowNs is clamped to >=0 above
 	return []flow.RawFlowEvent{
 		{
 			TimestampNs: now,

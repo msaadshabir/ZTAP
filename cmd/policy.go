@@ -128,7 +128,7 @@ var policyListCmd = &cobra.Command{
 			fmt.Fprintf(w, "%s\t%d\t%s\t%s ago\n",
 				policy.Name, policy.Version, policy.Source, lastUpdated)
 		}
-		w.Flush()
+		_ = w.Flush()
 		fmt.Printf("\nTotal: %d polic%s\n", len(policies), pluralize(len(policies), "y", "ies"))
 	},
 }

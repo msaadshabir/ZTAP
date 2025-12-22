@@ -73,8 +73,8 @@ func main() {
 	// Register all nodes in the cluster (simulate nodes discovering each other)
 	node2Info := &cluster.Node{ID: "node-2", Address: "127.0.0.1:9091", State: cluster.StateHealthy}
 	node3Info := &cluster.Node{ID: "node-3", Address: "127.0.0.1:9092", State: cluster.StateHealthy}
-	node1Election.RegisterNode(node2Info)
-	node1Election.RegisterNode(node3Info)
+	_ = node1Election.RegisterNode(node2Info)
+	_ = node1Election.RegisterNode(node3Info)
 
 	// Wait for leader election
 	time.Sleep(2 * time.Second)
@@ -211,10 +211,10 @@ spec:
 
 	fmt.Println("\nShutting down...")
 	cancel()
-	node1Election.Stop()
-	node2Election.Stop()
-	node3Election.Stop()
-	node1PolicySync.Stop()
-	node2PolicySync.Stop()
-	node3PolicySync.Stop()
+	_ = node1Election.Stop()
+	_ = node2Election.Stop()
+	_ = node3Election.Stop()
+	_ = node1PolicySync.Stop()
+	_ = node2PolicySync.Stop()
+	_ = node3PolicySync.Stop()
 }

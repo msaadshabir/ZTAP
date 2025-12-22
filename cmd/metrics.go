@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"ztap/pkg/metrics"
 
@@ -14,9 +16,13 @@ var metricsCmd = &cobra.Command{
 	Long:  `Start HTTP server exposing ZTAP metrics in Prometheus format`,
 	Run: func(cmd *cobra.Command, args []string) {
 		port, _ := cmd.Flags().GetInt("port")
+		listen := strings.TrimSpace(os.Getenv("ZTAP_METRICS_LISTEN"))
+		if listen == "" {
+			listen = fmt.Sprintf("127.0.0.1:%d", port)
+		}
 
-		fmt.Printf("Starting ZTAP metrics server on port %d\n", port)
-		fmt.Println("Access metrics at: http://localhost:" + fmt.Sprint(port) + "/metrics")
+		fmt.Printf("Starting ZTAP metrics server on %s\n", listen)
+		fmt.Println("Access metrics at: http://" + listen + "/metrics")
 		fmt.Println("Press Ctrl+C to stop")
 
 		if err := metrics.StartServer(port); err != nil {

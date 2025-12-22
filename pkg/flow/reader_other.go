@@ -116,7 +116,11 @@ func (r *SimulatedReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent
 				continue
 			}
 			event := r.events[idx%len(r.events)]
-			event.TimestampNs = uint64(uptimeNsFunc())
+			ns := uptimeNsFunc()
+			if ns < 0 {
+				ns = 0
+			}
+			event.TimestampNs = uint64(ns) // #nosec G115 -- ns is clamped to >=0 above
 			select {
 			case eventCh <- event:
 			default:

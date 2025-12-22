@@ -88,7 +88,14 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	httpServer := &http.Server{Addr: s.cfg.Listen, Handler: s.mux}
+	httpServer := &http.Server{
+		Addr:              s.cfg.Listen,
+		Handler:           s.mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -120,7 +127,8 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("/v1/flows/stream", s.requireAuth(auth.PermViewStatus, s.handleFlowsStream))
 
-	s.mux.Handle("/metrics", promhttp.Handler())
+	metricsHandler := promhttp.Handler()
+	s.mux.HandleFunc("/metrics", s.requireAuth(auth.PermViewMetrics, metricsHandler.ServeHTTP))
 }
 
 type errorResponse struct {

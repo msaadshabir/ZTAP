@@ -444,7 +444,7 @@ func cidrRange(n *net.IPNet) (*big.Int, *big.Int) {
 		return nil, nil
 	}
 	bits := len(ip) * 8
-	max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), uint(bits)), big.NewInt(1))
+	max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), uint(bits)), big.NewInt(1)) // #nosec G115 -- bits derived from IP length and is non-negative
 	invMask := new(big.Int).Xor(maskInt, max)
 	end := new(big.Int).Or(start, invMask)
 	return start, end

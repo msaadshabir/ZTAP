@@ -3,7 +3,10 @@ package metrics
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -119,8 +122,23 @@ func (c *Collector) RecordFlow(action, protocol, direction string) {
 
 // StartServer starts the Prometheus metrics HTTP server
 func StartServer(port int) error {
-	http.Handle("/metrics", promhttp.Handler())
-	addr := fmt.Sprintf(":%d", port)
-	fmt.Printf("Starting metrics server on http://localhost%s/metrics\n", addr)
-	return http.ListenAndServe(addr, nil)
+	listen := strings.TrimSpace(os.Getenv("ZTAP_METRICS_LISTEN"))
+	if listen == "" {
+		listen = fmt.Sprintf("127.0.0.1:%d", port)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+
+	srv := &http.Server{
+		Addr:              listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	fmt.Printf("Starting metrics server on http://%s/metrics\n", listen)
+	return srv.ListenAndServe()
 }

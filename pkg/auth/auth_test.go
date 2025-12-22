@@ -211,6 +211,7 @@ func TestDisableEnable(t *testing.T) {
 
 func TestDefaultAdmin(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("ZTAP_BOOTSTRAP_ADMIN_PASSWORD", "ztap-admin-change-me")
 	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
 
 	manager.mu.RLock()

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -123,16 +124,60 @@ func NewAuthManager(dbPath string) (*AuthManager, error) {
 
 // createDefaultAdmin creates a default admin user
 func (am *AuthManager) createDefaultAdmin() error {
-	defaultPassword := "ztap-admin-change-me"
+	password := strings.TrimSpace(os.Getenv("ZTAP_BOOTSTRAP_ADMIN_PASSWORD"))
+	fromEnv := password != ""
+	if !fromEnv {
+		p, err := generateBootstrapPassword()
+		if err != nil {
+			return fmt.Errorf("generating bootstrap password: %w", err)
+		}
+		password = p
+	}
 
-	log.Printf("WARNING: Creating default admin user with password: %s", defaultPassword)
-	log.Println("WARNING: Please change the password immediately using 'ztap user change-password'")
-
-	if err := am.CreateUser("admin", defaultPassword, RoleAdmin); err != nil {
+	if err := am.CreateUser("admin", password, RoleAdmin); err != nil {
 		return err
 	}
 
-	return am.saveUsers()
+	if err := am.saveUsers(); err != nil {
+		return err
+	}
+
+	if fromEnv {
+		log.Println("WARNING: Created default admin user 'admin'. Change the password immediately using 'ztap user change-password'.")
+		return nil
+	}
+
+	path, err := am.writeBootstrapPasswordFile(password)
+	if err != nil {
+		return err
+	}
+	log.Printf("WARNING: Created default admin user 'admin'. Bootstrap password written to %s (delete after use).", path)
+	return nil
+}
+
+func generateBootstrapPassword() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func (am *AuthManager) writeBootstrapPasswordFile(password string) (string, error) {
+	dir := filepath.Dir(am.dbPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("creating auth directory: %w", err)
+	}
+	path := filepath.Join(dir, "bootstrap_admin_password.txt")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return "", fmt.Errorf("creating bootstrap password file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(password + "\n"); err != nil {
+		return "", fmt.Errorf("writing bootstrap password file: %w", err)
+	}
+	return path, nil
 }
 
 // HashPassword creates a hash of the password

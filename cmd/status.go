@@ -70,7 +70,7 @@ var statusCmd = &cobra.Command{
 					fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
 						r.ID, r.Name, r.Type, r.PrivateIP, r.PublicIP, labels)
 				}
-				w.Flush()
+				_ = w.Flush()
 				fmt.Printf("\nTotal: %d resource(s)\n", len(resources))
 			}
 		} else {

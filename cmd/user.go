@@ -113,7 +113,7 @@ var listUsersCmd = &cobra.Command{
 				lastLogin,
 			)
 		}
-		w.Flush()
+		_ = w.Flush()
 	},
 }
 
@@ -286,7 +286,8 @@ var logoutCmd = &cobra.Command{
 		}
 
 		// Remove token file
-		os.Remove(tokenFile)
+		// Remove token file (best-effort)
+		_ = os.Remove(tokenFile)
 		fmt.Println("Logged out successfully")
 	},
 }

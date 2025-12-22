@@ -137,6 +137,10 @@ func (c *AWSClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, sgID
 func (c *AWSClient) authorizeEgress(ctx context.Context, sgID, cidr, protocol string, port int) error {
 	// Convert protocol to lowercase (AWS uses lowercase)
 	proto := strings.ToLower(protocol)
+	if port < 0 || port > 65535 {
+		return fmt.Errorf("invalid port %d", port)
+	}
+	p := int32(port) // #nosec G115 -- port is validated to be within uint16 range
 
 	// Note: AWS Security Groups are stateful, so egress rules automatically allow responses
 	input := &ec2.AuthorizeSecurityGroupEgressInput{
@@ -144,8 +148,8 @@ func (c *AWSClient) authorizeEgress(ctx context.Context, sgID, cidr, protocol st
 		IpPermissions: []types.IpPermission{
 			{
 				IpProtocol: aws.String(proto),
-				FromPort:   aws.Int32(int32(port)),
-				ToPort:     aws.Int32(int32(port)),
+				FromPort:   aws.Int32(p),
+				ToPort:     aws.Int32(p),
 				IpRanges: []types.IpRange{
 					{
 						CidrIp:      aws.String(cidr),

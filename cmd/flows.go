@@ -178,7 +178,7 @@ func printFlowHeader() {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "TIMESTAMP\tDIRECTION\tPROTOCOL\tSOURCE\tDESTINATION\tACTION")
 	fmt.Fprintln(w, "---------\t---------\t--------\t------\t-----------\t------")
-	w.Flush()
+	_ = w.Flush()
 }
 
 func printFlowRow(event flow.FlowEvent) {
@@ -196,7 +196,7 @@ func printFlowRow(event flow.FlowEvent) {
 	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s%s%s\n",
 		timestamp, event.Direction, event.Protocol, src, dst,
 		actionColor, strings.ToUpper(event.Action), reset)
-	w.Flush()
+	_ = w.Flush()
 }
 
 func printFlowJSON(event flow.FlowEvent) {
@@ -277,7 +277,7 @@ func generateDemoFlows(limit int) []flow.FlowEvent {
 func generateRawDemoFlows() []flow.RawFlowEvent {
 	return []flow.RawFlowEvent{
 		{
-			TimestampNs: uint64(time.Now().UnixNano()),
+			TimestampNs: unixNanoUint64(),
 			SrcIP:       0x0A000101, // 10.0.1.1
 			DestIP:      0x0A000201, // 10.0.2.1
 			SrcPort:     45678,
@@ -287,7 +287,7 @@ func generateRawDemoFlows() []flow.RawFlowEvent {
 			Action:      1, // allowed
 		},
 		{
-			TimestampNs: uint64(time.Now().UnixNano()),
+			TimestampNs: unixNanoUint64(),
 			SrcIP:       0xC0A86464, // 192.168.100.100
 			DestIP:      0x0A000101, // 10.0.1.1
 			SrcPort:     52341,
@@ -297,7 +297,7 @@ func generateRawDemoFlows() []flow.RawFlowEvent {
 			Action:      1,
 		},
 		{
-			TimestampNs: uint64(time.Now().UnixNano()),
+			TimestampNs: unixNanoUint64(),
 			SrcIP:       0x0A000101,
 			DestIP:      0x08080808, // 8.8.8.8
 			SrcPort:     54321,
@@ -307,4 +307,12 @@ func generateRawDemoFlows() []flow.RawFlowEvent {
 			Action:      0, // blocked
 		},
 	}
+}
+
+func unixNanoUint64() uint64 {
+	ns := time.Now().UnixNano()
+	if ns < 0 {
+		return 0
+	}
+	return uint64(ns)
 }

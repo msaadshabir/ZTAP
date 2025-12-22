@@ -90,7 +90,7 @@ func (e *EtcdElection) Start(ctx context.Context) error {
 		concurrency.WithContext(e.ctx),
 	)
 	if err != nil {
-		e.client.Close()
+		_ = e.client.Close()
 		e.mu.Lock()
 		e.running = false
 		e.mu.Unlock()

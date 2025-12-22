@@ -54,8 +54,14 @@ type RawFlowEvent struct {
 
 // ToFlowEvent converts a raw eBPF event to a FlowEvent.
 func (r *RawFlowEvent) ToFlowEvent(bootTime time.Time) FlowEvent {
+	// time.Duration is int64 nanoseconds; clamp to avoid overflow.
+	ns := r.TimestampNs
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if ns > uint64(maxInt64) {
+		ns = uint64(maxInt64)
+	}
 	return FlowEvent{
-		Timestamp:  bootTime.Add(time.Duration(r.TimestampNs)),
+		Timestamp:  bootTime.Add(time.Duration(int64(ns))), // #nosec G115 -- ns is clamped to max int64 above
 		SourceIP:   uint32ToIP(r.SrcIP),
 		DestIP:     uint32ToIP(r.DestIP),
 		SourcePort: r.SrcPort,

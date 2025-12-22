@@ -99,11 +99,11 @@ func EnforceWithPF(policies []policy.NetworkPolicy) {
 	}
 
 	anchorFile := "/etc/pf.anchors/ztap"
-	if err := os.MkdirAll(filepath.Dir(anchorFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(anchorFile), 0o750); err != nil {
 		log.Printf("Warning: failed to create pf anchors directory: %v", err)
 		return
 	}
-	if err := os.WriteFile(anchorFile, []byte(anchorContent), 0o644); err != nil {
+	if err := os.WriteFile(anchorFile, []byte(anchorContent), 0o600); err != nil {
 		log.Printf("Warning: failed to write pf anchor file: %v", err)
 		return
 	}

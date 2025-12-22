@@ -75,7 +75,7 @@ type indexEntry struct {
 // NewAuditLogger creates a new audit logger instance.
 // The log file is append-only and uses hash chaining to detect tampering.
 func NewAuditLogger(logPath string) (*AuditLogger, error) {
-	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
 		return nil, fmt.Errorf("failed to create audit log directory: %w", err)
 	}
 

@@ -8,9 +8,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"ztap/pkg/discovery"
+
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v2"
-	"ztap/pkg/discovery"
 )
 
 const (
@@ -138,7 +139,7 @@ var listServicesCmd = &cobra.Command{
 				service.UpdatedAt.Format("2006-01-02 15:04:05"))
 		}
 
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

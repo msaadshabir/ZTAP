@@ -67,7 +67,7 @@ var clusterStatusCmd = &cobra.Command{
 				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s ago\n",
 					node.ID, node.Address, node.Role, node.State, joined)
 			}
-			w.Flush()
+			_ = w.Flush()
 			fmt.Printf("\nTotal: %d node(s)\n", len(nodes))
 		}
 	},
@@ -152,7 +152,7 @@ var clusterListCmd = &cobra.Command{
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s ago\t%s ago\n",
 				node.ID, node.Address, node.Role, node.State, joined, lastSeen)
 		}
-		w.Flush()
+		_ = w.Flush()
 	},
 }
 
