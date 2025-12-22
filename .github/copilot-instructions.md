@@ -14,7 +14,7 @@ CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer 
 ```
 
 - **Policy Engine**: Parses Kubernetes-style YAML (`apiVersion: ztap/v1`), validates CIDR/ports/protocols, resolves labels via `ServiceDiscovery` interface
-- **API Server**: Minimal REST server (`ztap api serve`) exposing auth/status/enforcement/flows/metrics endpoints
+- **API Server**: Minimal REST server (`ztap api serve`) and minimal gRPC server (`ztap grpc serve`) exposing auth/status/enforcement/flows (metrics remains HTTP)
 - **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) and macOS pf (`enforcer.go`)
 - **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map)
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
@@ -62,8 +62,10 @@ type FlowMonitor interface {
 ## API Server Notes
 
 - Command: `ztap api serve` (implemented in `cmd/api.go` and `pkg/apihttp/`)
+- Command: `ztap grpc serve` (implemented in `cmd/grpc.go` and `pkg/apigrpc/`)
 - Auth: bearer tokens via `Authorization: Bearer <token>`; sessions are currently in-memory (non-persistent across restarts)
 - Flow streaming: `GET /v1/flows/stream` uses SSE; on Linux it will read the pinned eBPF map when available, otherwise it falls back to simulated events
+- Flow streaming (gRPC): `ztap.api.v1.FlowsService/Stream` is server-streaming; send `authorization: Bearer <token>` via gRPC metadata
 - Metrics: `GET /metrics` is served via promhttp; avoid registering Prometheus collectors in constructors (global registry)
 
 ## Testing Patterns
@@ -154,6 +156,9 @@ docker-compose up -d     # Prometheus + Grafana stack
 
 # REST API server
 ztap api serve
+
+# gRPC API server
+ztap grpc serve
 ```
 
 ## Output Rules

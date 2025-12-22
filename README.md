@@ -98,6 +98,7 @@ ztap status
 - **Kubernetes-Style YAML** – Familiar syntax
 - **Label-Based Discovery** – DNS + caching
 - **REST API Server** – Minimal v1 endpoints via `ztap api serve`
+- **gRPC API Server** – Minimal v1 RPCs via `ztap grpc serve`
 - **79% Test Coverage** – Production-ready
 - **Multi-Platform** – Linux (eBPF) + macOS (pf)
 
@@ -213,6 +214,7 @@ ztap [command]
 
 Commands:
   api         Run REST API server (serve)
+  grpc        Run gRPC API server (serve)
   enforce     Enforce zero-trust network policies
   status      Show on-premises and cloud resource status
   cluster     Manage cluster coordination (status, join, leave, list)
@@ -231,6 +233,9 @@ Commands:
 ```bash
 # Start REST API server (reads config.yaml or file set via ZTAP_CONFIG)
 ztap api serve
+
+# Start gRPC API server (default 127.0.0.1:9092)
+ztap grpc serve
 
 # Health
 curl -s http://127.0.0.1:8080/healthz
@@ -251,6 +256,15 @@ Core endpoints:
 - `GET /v1/enforcement/status`, `POST /v1/enforcement/start`, `POST /v1/enforcement/stop` (Linux only)
 - `GET /v1/flows/stream` (SSE)
 - `GET /metrics`
+
+gRPC services (v1):
+
+- `ztap.api.v1.AuthService` (`Login`, `WhoAmI`)
+- `ztap.api.v1.StatusService` (`GetStatus`)
+- `ztap.api.v1.EnforcementService` (`GetStatus`, `Start`, `Stop`)
+- `ztap.api.v1.FlowsService` (`Stream` server-streaming)
+
+Auth: send `authorization: Bearer <token>` as gRPC metadata.
 
 </details>
 

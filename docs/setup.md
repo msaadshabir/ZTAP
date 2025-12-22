@@ -185,13 +185,33 @@ curl -s http://127.0.0.1:8080/healthz
 
 Configuration:
 
-```yaml
+````yaml
 # config.yaml (or file set via ZTAP_CONFIG)
 api:
   listen: 127.0.0.1:8080
   auth:
     enabled: true
+
+### 6. Start gRPC API Server
+
+ZTAP also includes a minimal gRPC API server.
+
+```bash
+# Starts gRPC server (defaults come from config.yaml.example)
+ztap grpc serve
+````
+
+Configuration:
+
+```yaml
+# config.yaml (or file set via ZTAP_CONFIG)
+grpc:
+  listen: 127.0.0.1:9092
+  auth:
+    enabled: true
 ```
+
+````
 
 ## Running Observability Stack
 
@@ -204,7 +224,7 @@ docker-compose up -d
 # Access Grafana at http://localhost:3000
 # Username: admin
 # Password: ztap
-```
+````
 
 ### Import Dashboard
 

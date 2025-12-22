@@ -1,0 +1,147 @@
+package apigrpc
+
+import (
+	"context"
+	"net"
+	"testing"
+	"time"
+
+	"ztap/pkg/audit"
+	"ztap/pkg/auth"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/structpb"
+)
+
+func TestGRPCAuthLoginAndWhoAmI(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	am, err := auth.NewAuthManager(tmp + "/users.json")
+	if err != nil {
+		t.Fatalf("NewAuthManager: %v", err)
+	}
+	if err := am.CreateUser("alice", "pw", auth.RoleAdmin); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	al, err := audit.NewAuditLogger(tmp + "/audit.log")
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+
+	srv, err := NewServer(ServerOptions{Config: Config{Listen: "bufnet", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	lis := bufconn.Listen(1024 * 1024)
+	gs := grpc.NewServer(grpc.UnaryInterceptor(srv.unaryAuthInterceptor), grpc.StreamInterceptor(srv.streamAuthInterceptor))
+	srv.grpc = gs
+	srv.registerServices()
+
+	go func() {
+		_ = gs.Serve(lis)
+	}()
+	t.Cleanup(func() { gs.Stop() })
+
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(dialCtx, "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return lis.Dial()
+	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+	defer conn.Close()
+
+	loginReq, _ := structpb.NewStruct(map[string]any{"username": "alice", "password": "pw"})
+	var loginResp structpb.Struct
+	if err := conn.Invoke(context.Background(), "/ztap.api.v1.AuthService/Login", loginReq, &loginResp); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	tok := loginResp.Fields["token"].GetStringValue()
+	if tok == "" {
+		t.Fatalf("expected token")
+	}
+
+	mdCtx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tok))
+	var whoResp structpb.Struct
+	if err := conn.Invoke(mdCtx, "/ztap.api.v1.AuthService/WhoAmI", &emptypb.Empty{}, &whoResp); err != nil {
+		t.Fatalf("WhoAmI: %v", err)
+	}
+	if whoResp.Fields["username"].GetStringValue() != "alice" {
+		t.Fatalf("unexpected username: %s", whoResp.Fields["username"].GetStringValue())
+	}
+}
+
+func TestGRPCFlowsStream(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	am, err := auth.NewAuthManager(tmp + "/users.json")
+	if err != nil {
+		t.Fatalf("NewAuthManager: %v", err)
+	}
+	if err := am.CreateUser("bob", "pw", auth.RoleAdmin); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	al, err := audit.NewAuditLogger(tmp + "/audit.log")
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+
+	srv, err := NewServer(ServerOptions{Config: Config{Listen: "bufnet", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	lis := bufconn.Listen(1024 * 1024)
+	gs := grpc.NewServer(grpc.UnaryInterceptor(srv.unaryAuthInterceptor), grpc.StreamInterceptor(srv.streamAuthInterceptor))
+	srv.grpc = gs
+	srv.registerServices()
+
+	go func() {
+		_ = gs.Serve(lis)
+	}()
+	t.Cleanup(func() { gs.Stop() })
+
+	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return lis.Dial()
+	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+	defer conn.Close()
+
+	loginReq, _ := structpb.NewStruct(map[string]any{"username": "bob", "password": "pw"})
+	var loginResp structpb.Struct
+	if err := conn.Invoke(context.Background(), "/ztap.api.v1.AuthService/Login", loginReq, &loginResp); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	tok := loginResp.Fields["token"].GetStringValue()
+
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tok))
+	stream, err := conn.NewStream(ctx, &flowsServiceDesc.Streams[0], "/ztap.api.v1.FlowsService/Stream")
+	if err != nil {
+		t.Fatalf("NewStream: %v", err)
+	}
+	if err := stream.SendMsg(&emptypb.Empty{}); err != nil {
+		t.Fatalf("SendMsg: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("CloseSend: %v", err)
+	}
+
+	var ev structpb.Struct
+	if err := stream.RecvMsg(&ev); err != nil {
+		t.Fatalf("RecvMsg: %v", err)
+	}
+	if ev.Fields["source_ip"].GetStringValue() == "" {
+		t.Fatalf("expected source_ip")
+	}
+}

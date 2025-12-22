@@ -30,10 +30,12 @@ Technical documentation for ZTAP.
 
 ## API Server
 
-ZTAP includes a minimal REST API server.
+ZTAP includes a minimal REST API server and a minimal gRPC API server.
 
 - Start: `ztap api serve`
+- Start (gRPC): `ztap grpc serve`
 - Configure: set `api.listen` and `api.auth.enabled` in `config.yaml` (see `config.yaml.example`)
+- Configure (gRPC): set `grpc.listen` and `grpc.auth.enabled` in `config.yaml`
 
 Core endpoints:
 
@@ -45,5 +47,14 @@ Core endpoints:
 - `POST /v1/enforcement/stop` (Linux only)
 - `GET /v1/flows/stream` (SSE stream)
 - `GET /metrics`
+
+gRPC services (v1):
+
+- `ztap.api.v1.AuthService` (`Login`, `WhoAmI`)
+- `ztap.api.v1.StatusService` (`GetStatus`)
+- `ztap.api.v1.EnforcementService` (`GetStatus`, `Start`, `Stop`)
+- `ztap.api.v1.FlowsService` (`Stream` server-streaming)
+
+Auth: send `authorization: Bearer <token>` as gRPC metadata.
 
 See the [main README](../README.md) for project overview and quick start.
