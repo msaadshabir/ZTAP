@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -91,6 +92,9 @@ func parseInt32(s string) (int32, error) {
 	v, err := strconv.ParseInt(s, 10, 32)
 	if err != nil {
 		return 0, err
+	}
+	if v < math.MinInt32 || v > math.MaxInt32 {
+		return 0, fmt.Errorf("value %d overflows int32", v)
 	}
 	return int32(v), nil
 }
