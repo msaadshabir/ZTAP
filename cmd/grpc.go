@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"ztap/pkg/alert"
 	"ztap/pkg/apigrpc"
 
 	"github.com/spf13/cobra"
@@ -27,6 +28,19 @@ var grpcServeCmd = &cobra.Command{
 			return err
 		}
 
+		alertCfg, err := loadAlertConfig()
+		if err != nil {
+			return err
+		}
+
+		var alertManager *alert.Manager
+		if alertCfg.Enabled {
+			alertManager, err = alert.NewManagerFromConfig(alertCfg)
+			if err != nil {
+				return err
+			}
+		}
+
 		listen, _ := cmd.Flags().GetString("listen")
 		if strings.TrimSpace(listen) != "" {
 			cfg.Listen = listen
@@ -34,7 +48,7 @@ var grpcServeCmd = &cobra.Command{
 		authEnabled, _ := cmd.Flags().GetBool("auth")
 		cfg.AuthEnabled = authEnabled
 
-		srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg})
+		srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, Alerts: alertManager})
 		if err != nil {
 			return err
 		}

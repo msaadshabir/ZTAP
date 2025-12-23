@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"ztap/pkg/alert"
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
 	"ztap/pkg/enforcer"
@@ -33,6 +34,7 @@ type Server struct {
 	audit      *audit.AuditLogger
 	startTime  time.Time
 	flowReader func() flow.FlowReader
+	alerts     *alert.Manager
 }
 
 type ServerOptions struct {
@@ -40,6 +42,7 @@ type ServerOptions struct {
 
 	AuthManager *auth.AuthManager
 	AuditLogger *audit.AuditLogger
+	Alerts      *alert.Manager
 
 	FlowReaderFactory func() flow.FlowReader
 }
@@ -73,6 +76,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		audit:      opts.AuditLogger,
 		startTime:  time.Now(),
 		flowReader: opts.FlowReaderFactory,
+		alerts:     opts.Alerts,
 	}
 
 	s.routes()
@@ -98,6 +102,12 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 
 	errCh := make(chan error, 1)
+
+	if s.alerts != nil {
+		s.alerts.Start(ctx)
+		defer s.alerts.Close()
+	}
+
 	go func() {
 		errCh <- httpServer.ListenAndServe()
 	}()
@@ -146,6 +156,13 @@ func writeError(w http.ResponseWriter, status int, err error) {
 		err = errors.New("unknown error")
 	}
 	writeJSON(w, status, errorResponse{Error: err.Error()})
+}
+
+func (s *Server) emitAlert(a alert.Alert) {
+	if s.alerts == nil {
+		return
+	}
+	_ = s.alerts.Emit(a)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

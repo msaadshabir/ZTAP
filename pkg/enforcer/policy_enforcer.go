@@ -2,12 +2,14 @@ package enforcer
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"ztap/pkg/alert"
 	"ztap/pkg/audit"
 	"ztap/pkg/cluster"
 	"ztap/pkg/policy"
@@ -23,6 +25,7 @@ type PolicyEnforcer struct {
 	stopCh          chan struct{}
 	cgroupPath      string             // For eBPF enforcement
 	auditLogger     *audit.AuditLogger // Audit logging for policy operations
+	alerts          *alert.Manager
 }
 
 // PolicyEnforcerConfig holds configuration for the policy enforcer.
@@ -30,6 +33,7 @@ type PolicyEnforcerConfig struct {
 	PolicySync cluster.PolicySync      // Policy synchronization backend
 	Discovery  policy.ServiceDiscovery // Service discovery for label resolution
 	CgroupPath string                  // Cgroup path for eBPF attachment (Linux only)
+	Alerts     *alert.Manager
 }
 
 // NewPolicyEnforcer creates a new policy enforcer that watches for policy updates.
@@ -49,6 +53,7 @@ func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
 		stopCh:          make(chan struct{}),
 		cgroupPath:      config.CgroupPath,
 		auditLogger:     auditLogger,
+		alerts:          config.Alerts,
 	}
 }
 
@@ -61,6 +66,10 @@ func (pe *PolicyEnforcer) Start(ctx context.Context) error {
 	}
 	pe.running = true
 	pe.mu.Unlock()
+
+	if pe.alerts != nil {
+		pe.alerts.Start(ctx)
+	}
 
 	log.Println("Policy enforcer started, watching for policy updates...")
 
@@ -83,6 +92,10 @@ func (pe *PolicyEnforcer) Stop() error {
 	pe.running = false
 	close(pe.stopCh)
 	pe.mu.Unlock()
+
+	if pe.alerts != nil {
+		pe.alerts.Close()
+	}
 
 	log.Println("Policy enforcer stopped")
 	return nil
@@ -119,6 +132,17 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 				log.Printf("Failed to enforce policy %s v%d: %v",
 					sanitizeForLog(update.PolicyName), update.Version, err)
 				cluster.RecordPolicyEnforcementError(update.PolicyName, "local-node")
+				pe.emitAlert(alert.Alert{
+					Source:   "policy-enforcer",
+					Severity: alert.SeverityError,
+					Title:    fmt.Sprintf("policy %s enforcement failed", sanitizeForLog(update.PolicyName)),
+					Message:  err.Error(),
+					DedupKey: fmt.Sprintf("%s:%d:enforce:error", update.PolicyName, update.Version),
+					Details: map[string]any{
+						"version": update.Version,
+						"source":  update.Source,
+					},
+				})
 
 				// Log failure to audit log
 				if pe.auditLogger != nil {
@@ -141,6 +165,18 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 			duration := time.Since(startTime).Seconds()
 			cluster.RecordPolicyEnforcementDuration(update.PolicyName, duration)
 			cluster.RecordPolicyEnforced(update.PolicyName, "local-node")
+			pe.emitAlert(alert.Alert{
+				Source:   "policy-enforcer",
+				Severity: alert.SeverityInfo,
+				Title:    fmt.Sprintf("policy %s enforced", sanitizeForLog(update.PolicyName)),
+				Message:  fmt.Sprintf("version %d from %s", update.Version, sanitizeForLog(update.Source)),
+				DedupKey: fmt.Sprintf("%s:%d:enforce:success", update.PolicyName, update.Version),
+				Details: map[string]any{
+					"version":     update.Version,
+					"source":      update.Source,
+					"duration_ms": duration * 1000,
+				},
+			})
 
 			// Log success to audit log
 			if pe.auditLogger != nil {
@@ -223,4 +259,11 @@ func (pe *PolicyEnforcer) GetEnforcedVersion(policyName string) int64 {
 	pe.mu.RLock()
 	defer pe.mu.RUnlock()
 	return pe.enforcedVersion[policyName]
+}
+
+func (pe *PolicyEnforcer) emitAlert(a alert.Alert) {
+	if pe.alerts == nil {
+		return
+	}
+	_ = pe.alerts.Emit(a)
 }

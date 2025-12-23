@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"ztap/pkg/alert"
 	"ztap/pkg/apihttp"
 	"ztap/pkg/metrics"
 
@@ -28,6 +29,19 @@ var apiServeCmd = &cobra.Command{
 			return err
 		}
 
+		alertCfg, err := loadAlertConfig()
+		if err != nil {
+			return err
+		}
+
+		var alertManager *alert.Manager
+		if alertCfg.Enabled {
+			alertManager, err = alert.NewManagerFromConfig(alertCfg)
+			if err != nil {
+				return err
+			}
+		}
+
 		listen, _ := cmd.Flags().GetString("listen")
 		if strings.TrimSpace(listen) != "" {
 			cfg.Listen = listen
@@ -38,7 +52,7 @@ var apiServeCmd = &cobra.Command{
 		// Initialize metrics so /metrics includes ZTAP counters.
 		metrics.GetCollector()
 
-		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg})
+		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, Alerts: alertManager})
 		if err != nil {
 			return err
 		}

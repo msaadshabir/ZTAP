@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"ztap/pkg/alert"
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
 	"ztap/pkg/enforcer"
@@ -36,6 +37,7 @@ type ServerOptions struct {
 
 	AuthManager *auth.AuthManager
 	AuditLogger *audit.AuditLogger
+	Alerts      *alert.Manager
 
 	FlowReaderFactory func() flow.FlowReader
 }
@@ -46,6 +48,7 @@ type Server struct {
 	auth      *auth.AuthManager
 	audit     *audit.AuditLogger
 	startTime time.Time
+	alerts    *alert.Manager
 
 	flowReader func() flow.FlowReader
 }
@@ -77,6 +80,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		auth:       opts.AuthManager,
 		audit:      opts.AuditLogger,
 		startTime:  time.Now(),
+		alerts:     opts.Alerts,
 		flowReader: opts.FlowReaderFactory,
 	}
 
@@ -101,6 +105,11 @@ func (s *Server) Serve(ctx context.Context) error {
 	defer ln.Close()
 
 	errCh := make(chan error, 1)
+
+	if s.alerts != nil {
+		s.alerts.Start(ctx)
+		defer s.alerts.Close()
+	}
 	go func() {
 		errCh <- s.grpc.Serve(ln)
 	}()
@@ -138,6 +147,13 @@ func defaultAuditLogger() (*audit.AuditLogger, error) {
 	}
 	logPath := filepath.Join(homeDir, ".ztap", "audit.log")
 	return audit.NewAuditLogger(logPath)
+}
+
+func (s *Server) emitAlert(a alert.Alert) {
+	if s.alerts == nil {
+		return
+	}
+	_ = s.alerts.Emit(a)
 }
 
 func (s *Server) unaryAuthInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
@@ -442,10 +458,26 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy is not supported by eBPF enforcer yet: %w", err).Error())
 		}
 		if err := enforcer.EnforceWithEBPFIfAvailable(policies, resolvedCgroupPath); err != nil {
+			e.srv.emitAlert(alert.Alert{
+				Source:   "api-grpc",
+				Severity: alert.SeverityError,
+				Title:    "policy enforcement failed",
+				Message:  err.Error(),
+				DedupKey: fmt.Sprintf("%s:%s:error", policyName, platform),
+				Details:  map[string]any{"platform": platform, "count": len(policies)},
+			})
 			return nil, status.Error(codes.Internal, fmt.Errorf("failed to enforce via eBPF: %w", err).Error())
 		}
 
 		_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": "linux", "count": len(policies)})
+		e.srv.emitAlert(alert.Alert{
+			Source:   "api-grpc",
+			Severity: alert.SeverityInfo,
+			Title:    "policy enforced",
+			Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
+			DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+			Details:  map[string]any{"platform": platform, "count": len(policies)},
+		})
 		resp, err := structpb.NewStruct(map[string]any{"enforced": true, "platform": platform})
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
@@ -455,6 +487,14 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 
 	enforcer.EnforceWithPF(policies)
 	_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
+	e.srv.emitAlert(alert.Alert{
+		Source:   "api-grpc",
+		Severity: alert.SeverityInfo,
+		Title:    "policy enforced",
+		Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
+		DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+		Details:  map[string]any{"platform": platform, "count": len(policies)},
+	})
 	resp, err := structpb.NewStruct(map[string]any{"enforced": true, "platform": platform})
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())

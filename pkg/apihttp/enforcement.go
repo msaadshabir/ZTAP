@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"ztap/pkg/alert"
 	"ztap/pkg/audit"
 	"ztap/pkg/enforcer"
 	"ztap/pkg/policy"
@@ -155,19 +156,45 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		platform := "linux"
 		if err := enforcer.EnforceWithEBPFIfAvailable(policies, cgroupPath); err != nil {
+			s.emitAlert(alert.Alert{
+				Source:   "api-http",
+				Severity: alert.SeverityError,
+				Title:    "policy enforcement failed",
+				Message:  err.Error(),
+				DedupKey: fmt.Sprintf("%s:%s:error", policyName, platform),
+				Details:  map[string]any{"platform": platform, "count": len(policies)},
+			})
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to enforce via eBPF: %w", err))
 			return
 		}
 
-		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": "linux", "count": len(policies)})
-		writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: "linux"})
+		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": platform, "count": len(policies)})
+		s.emitAlert(alert.Alert{
+			Source:   "api-http",
+			Severity: alert.SeverityInfo,
+			Title:    "policy enforced",
+			Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
+			DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+			Details:  map[string]any{"platform": platform, "count": len(policies)},
+		})
+		writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: platform})
 		return
 	}
 
+	platform := runtime.GOOS
 	enforcer.EnforceWithPF(policies)
-	_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
-	writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: runtime.GOOS})
+	_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": platform, "count": len(policies)})
+	s.emitAlert(alert.Alert{
+		Source:   "api-http",
+		Severity: alert.SeverityInfo,
+		Title:    "policy enforced",
+		Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
+		DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+		Details:  map[string]any{"platform": platform, "count": len(policies)},
+	})
+	writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: platform})
 }
 
 func (s *Server) handleEnforcementStop(w http.ResponseWriter, r *http.Request) {

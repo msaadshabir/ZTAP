@@ -18,6 +18,19 @@ logging:
   file: ~/.ztap/enforcement.log
   format: json # json or text
 
+# Alerting settings
+alerting:
+  enabled: false
+  queue_size: 128
+  workers: 2
+  timeout: 5s
+  dedupe_ttl: 5m
+  slack:
+    webhook_url: ""
+  pagerduty:
+    routing_key: ""
+    source: ztap
+
 # Metrics settings
 metrics:
   enabled: true
