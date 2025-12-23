@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"ztap/pkg/cloud"
@@ -87,8 +88,7 @@ func applyAzureEnv(cfg azureConfig) azureConfig {
 }
 
 func parseInt32(s string) (int32, error) {
-	var v int
-	_, err := fmt.Sscanf(s, "%d", &v)
+	v, err := strconv.ParseInt(s, 10, 32)
 	if err != nil {
 		return 0, err
 	}
