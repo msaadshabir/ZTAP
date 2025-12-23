@@ -98,7 +98,21 @@ Detect(flow FlowRecord) (*AnomalyScore, error)
 Train(flows []FlowRecord) error
 ```
 
-### 5. Metrics Collector (`pkg/metrics`)
+### 5. Alerting (`pkg/alert`)
+
+**Responsibility**: Deliver alert notifications to external systems
+
+**Features**:
+
+- Async dispatch with a bounded queue
+- Webhook sinks: Slack incoming webhooks, PagerDuty Events API v2
+- Optional in-memory dedupe (TTL) via `dedup_key`
+
+**Common sources**:
+
+- Policy enforcement success/failure (CLI/API/cluster enforcement)
+
+### 6. Metrics Collector (`pkg/metrics`)
 
 **Responsibility**: Export Prometheus metrics
 
@@ -140,6 +154,9 @@ User
  │
  ├─> Anomaly Detector (optional)
  │    └─> Python ML Service
+│
+├─> Alerting (optional)
+│    └─> Slack / PagerDuty webhooks
  │
  └─> Metrics Collector
       └─> Prometheus (:9090/metrics)

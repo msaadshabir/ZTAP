@@ -88,6 +88,7 @@ ztap status
 ### Observability
 
 - **Flow Monitoring** – Real-time on Linux with eBPF enforcement active; simulated on macOS
+- **Alerting (Webhooks)** – Slack and PagerDuty notifications
 - **Prometheus Metrics** – Pre-built exporters
 - **Grafana Dashboards** – Auto-provisioned
 - **ML Anomaly Detection** – Isolation Forest

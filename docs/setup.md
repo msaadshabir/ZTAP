@@ -219,7 +219,7 @@ ZTAP also includes a minimal gRPC API server.
 ```bash
 # Starts gRPC server (defaults come from config.yaml.example)
 ztap grpc serve
-````
+```
 
 Configuration:
 
@@ -231,7 +231,44 @@ grpc:
     enabled: true
 ```
 
-````
+## Alerting (Slack, PagerDuty)
+
+ZTAP can emit alerts (webhooks) on policy enforcement results from:
+
+- `ztap api serve` (REST)
+- `ztap grpc serve` (gRPC)
+- cluster policy enforcement (PolicyEnforcer)
+
+Configuration (in `config.yaml` or file set via `ZTAP_CONFIG`):
+
+```yaml
+alerting:
+  enabled: true
+  # async dispatch settings
+  queue_size: 128
+  workers: 2
+  timeout: 5s
+  dedupe_ttl: 5m
+  slack:
+    webhook_url: "https://hooks.slack.com/services/..."
+  pagerduty:
+    routing_key: "YOUR_ROUTING_KEY"
+    source: ztap
+```
+
+Environment variable overrides (recommended for secrets):
+
+```bash
+export ZTAP_ALERT_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+export ZTAP_ALERT_PAGERDUTY_ROUTING_KEY="YOUR_ROUTING_KEY"
+export ZTAP_ALERT_PAGERDUTY_SOURCE="ztap"
+```
+
+Send a test alert:
+
+```bash
+ztap alert test
+```
 
 ## Running Observability Stack
 

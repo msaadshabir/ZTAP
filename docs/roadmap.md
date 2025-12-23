@@ -24,10 +24,10 @@
 - Policy conflict detection (structural + overlap)
 - REST API server (basic v1 endpoints via `ztap api serve`)
 - gRPC interface (basic v1 RPCs via `ztap grpc serve`)
+- Alerting with webhook integrations (Slack, PagerDuty)
 
 ## Planned
 
-- Alerting with webhook integrations (Slack, PagerDuty)
 - Policy versioning and rollback
 - Azure NSG synchronization
 - GCP Firewall Rules integration

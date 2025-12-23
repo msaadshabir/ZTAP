@@ -9,6 +9,7 @@ ZTAP (Zero Trust Access Platform) is a Go 1.24+ CLI for zero-trust microsegmenta
 ```
 CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer (pkg/enforcer)
                                                            -> Flow Monitor (pkg/flow)
+                                                           -> Alerting (pkg/alert)
                                                            -> Cloud Sync (pkg/cloud)
                                                            -> Cluster Sync (pkg/cluster)
 ```
@@ -17,6 +18,7 @@ CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer 
 - **API Server**: Minimal REST server (`ztap api serve`) and minimal gRPC server (`ztap grpc serve`) exposing auth/status/enforcement/flows (metrics remains HTTP)
 - **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) and macOS pf (`enforcer.go`)
 - **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map)
+- **Alerting**: `pkg/alert/` provides webhook sinks (Slack, PagerDuty) and async dispatch with optional TTL dedupe (configured via `alerting.*`)
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
 - **Discovery**: Label-to-IP resolution - `InMemoryDiscovery` (dev), DNS/Consul/K8s backends (stubs)
 
@@ -67,6 +69,13 @@ type FlowMonitor interface {
 - Flow streaming: `GET /v1/flows/stream` uses SSE; on Linux it will read the pinned eBPF map when available, otherwise it falls back to simulated events
 - Flow streaming (gRPC): `ztap.api.v1.FlowsService/Stream` is server-streaming; send `authorization: Bearer <token>` via gRPC metadata
 - Metrics: `GET /metrics` is served via promhttp; avoid registering Prometheus collectors in constructors (global registry)
+
+## Alerting Notes
+
+- CLI: `ztap alert test` sends a test alert using configured sinks
+- Config: `alerting.enabled`, `alerting.slack.webhook_url`, `alerting.pagerduty.routing_key`, `alerting.pagerduty.source`, plus queue/timeout/dedupe settings (see `config.yaml.example`)
+- Env overrides (recommended for secrets): `ZTAP_ALERT_SLACK_WEBHOOK_URL`, `ZTAP_ALERT_PAGERDUTY_ROUTING_KEY`, `ZTAP_ALERT_PAGERDUTY_SOURCE`, `ZTAP_ALERT_ENABLED`
+- Secrets: treat webhook URLs and routing keys as secrets; never log them
 
 ## Testing Patterns
 

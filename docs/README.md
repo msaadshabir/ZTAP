@@ -37,6 +37,13 @@ ZTAP includes a minimal REST API server and a minimal gRPC API server.
 - Configure: set `api.listen` and `api.auth.enabled` in `config.yaml` (see `config.yaml.example`)
 - Configure (gRPC): set `grpc.listen` and `grpc.auth.enabled` in `config.yaml`
 
+## Alerting
+
+ZTAP supports webhook alerting via Slack and PagerDuty.
+
+- Configure: set `alerting.enabled` and `alerting.slack.webhook_url` / `alerting.pagerduty.routing_key` in `config.yaml` (see `config.yaml.example`)
+- Test: `ztap alert test`
+
 Core endpoints:
 
 - `POST /v1/auth/login` (body: `{ "username": "...", "password": "..." }`)
