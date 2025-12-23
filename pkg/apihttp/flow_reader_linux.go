@@ -27,7 +27,9 @@ func (r *mapOwningReader) Start(ctx context.Context, eventCh chan<- flow.RawFlow
 func (r *mapOwningReader) Stop() error {
 	err := r.inner.Stop()
 	if r.m != nil {
-		r.m.Close()
+		if closeErr := r.m.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
 	}
 	return err
 }
@@ -45,7 +47,9 @@ func createFlowReader() flow.FlowReader {
 
 	reader, err := flow.CreateFlowReader(m)
 	if err != nil {
-		m.Close()
+		if closeErr := m.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: closing pinned flow map failed: %v\n", closeErr)
+		}
 		fmt.Fprintf(os.Stderr, "note: using simulated flows (failed to create linux flow reader: %v)\n", err)
 		return flow.NewSimulatedReader(demoRawFlows(), 500*time.Millisecond)
 	}

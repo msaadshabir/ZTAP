@@ -199,6 +199,9 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 		destIP := ipToUint32(ip.To4())
 
 		for _, port := range egress.Ports {
+			if port.Port < 0 || port.Port > 65535 {
+				return fmt.Errorf("invalid port %d: must be 0-65535", port.Port)
+			}
 			key := policyKey{
 				IP:        destIP,
 				Port:      uint16(port.Port),
@@ -249,6 +252,9 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 		srcIP := ipToUint32(ip.To4())
 
 		for _, port := range ingress.Ports {
+			if port.Port < 0 || port.Port > 65535 {
+				return fmt.Errorf("invalid port %d: must be 0-65535", port.Port)
+			}
 			key := policyKey{
 				IP:        srcIP,
 				Port:      uint16(port.Port),
@@ -338,16 +344,24 @@ func (e *eBPFEnforcer) Close() error {
 	// Close maps and programs
 	if e.objs != nil {
 		if e.objs.PolicyMap != nil {
-			e.objs.PolicyMap.Close()
+			if err := e.objs.PolicyMap.Close(); err != nil {
+				log.Printf("Warning: Failed to close policy map: %v", err)
+			}
 		}
 		if e.objs.FlowEvents != nil {
-			e.objs.FlowEvents.Close()
+			if err := e.objs.FlowEvents.Close(); err != nil {
+				log.Printf("Warning: Failed to close flow_events map: %v", err)
+			}
 		}
 		if e.objs.FilterEgress != nil {
-			e.objs.FilterEgress.Close()
+			if err := e.objs.FilterEgress.Close(); err != nil {
+				log.Printf("Warning: Failed to close egress program: %v", err)
+			}
 		}
 		if e.objs.FilterIngress != nil {
-			e.objs.FilterIngress.Close()
+			if err := e.objs.FilterIngress.Close(); err != nil {
+				log.Printf("Warning: Failed to close ingress program: %v", err)
+			}
 		}
 	}
 
@@ -370,7 +384,7 @@ func (e *eBPFEnforcer) PinFlowEventsMap(path string) error {
 		return fmt.Errorf("pin path is empty")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating pin directory: %w", err)
 	}
 	_ = os.Remove(path)
