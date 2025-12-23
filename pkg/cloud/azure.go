@@ -141,17 +141,19 @@ func (c *AzureClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, re
 		return fmt.Errorf("too many rules (%d) for available priority range", len(desired))
 	}
 
-	for idx, spec := range desired {
-		priority := c.priorityBase + int32(idx)
+	priority := c.priorityBase
+	for _, spec := range desired {
+		rulePriority := priority
 		ruleName := c.rulePrefix + spec.name
 
 		spec.rule.Name = &ruleName
-		spec.rule.Properties.Priority = &priority
+		spec.rule.Properties.Priority = &rulePriority
 
 		if err := c.rules.Upsert(ctx, resourceGroup, nsgName, ruleName, spec.rule); err != nil {
 			return fmt.Errorf("upserting rule %s: %w", ruleName, err)
 		}
 		delete(managedExisting, ruleName)
+		priority++
 	}
 
 	for stale := range managedExisting {
