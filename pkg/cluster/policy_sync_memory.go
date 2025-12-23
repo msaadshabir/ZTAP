@@ -16,9 +16,10 @@ import (
 type InMemoryPolicySync struct {
 	mu          sync.RWMutex
 	policies    map[string]*PolicyState // policyName -> PolicyState
-	subscribers []chan PolicyUpdate     // Channels for policy update notifications
-	election    LeaderElection          // Cluster coordination backend
-	nodeID      string                  // This node's identifier
+	revisions   map[string][]PolicyRevision
+	subscribers []chan PolicyUpdate // Channels for policy update notifications
+	election    LeaderElection      // Cluster coordination backend
+	nodeID      string              // This node's identifier
 	running     bool
 	stopCh      chan struct{}
 }
@@ -37,6 +38,7 @@ type PolicyState struct {
 func NewInMemoryPolicySync(election LeaderElection, nodeID string) *InMemoryPolicySync {
 	return &InMemoryPolicySync{
 		policies:    make(map[string]*PolicyState),
+		revisions:   make(map[string][]PolicyRevision),
 		subscribers: make([]chan PolicyUpdate, 0),
 		election:    election,
 		nodeID:      nodeID,
@@ -89,53 +91,67 @@ func (ps *InMemoryPolicySync) Stop() error {
 // SyncPolicy broadcasts a policy update to all nodes in the cluster.
 // Only the leader can initiate policy updates; followers will return an error.
 func (ps *InMemoryPolicySync) SyncPolicy(ctx context.Context, policyName string, policyYAML []byte) error {
+	_, err := ps.applyPolicy(ctx, policyName, policyYAML, nil, "")
+	return err
+}
+
+func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string, policyYAML []byte, rollbackFrom *int64, reason string) (*PolicyRevision, error) {
 	startTime := time.Now()
 
 	if policyName == "" {
 		recordPolicySyncError("empty_name", policyName)
-		return fmt.Errorf("policy name cannot be empty")
+		return nil, fmt.Errorf("policy name cannot be empty")
 	}
 	if len(policyYAML) == 0 {
 		recordPolicySyncError("empty_yaml", policyName)
-		return fmt.Errorf("policy YAML cannot be empty")
+		return nil, fmt.Errorf("policy YAML cannot be empty")
 	}
 
 	if _, err := ps.parseAndValidate(policyName, policyYAML); err != nil {
 		recordPolicySyncError("invalid_policy", policyName)
-		return err
+		return nil, err
 	}
 
-	// Verify this node is the leader
 	if !ps.election.IsLeader() {
 		leader := ps.election.GetLeader()
 		if leader == nil {
 			recordPolicySyncError("no_leader", policyName)
-			return fmt.Errorf("no leader elected; cannot sync policy")
+			return nil, fmt.Errorf("no leader elected; cannot sync policy")
 		}
 		recordPolicySyncError("not_leader", policyName)
-		return fmt.Errorf("only leader can sync policies; current leader is %s", leader.ID)
+		return nil, fmt.Errorf("only leader can sync policies; current leader is %s", leader.ID)
 	}
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	// Get current version and increment
-	var newVersion int64 = 1
+	newVersion := int64(1)
 	if existingPolicy, exists := ps.policies[policyName]; exists {
 		newVersion = existingPolicy.Version + 1
 	}
 
-	// Store policy state
+	timestamp := time.Now()
 	policyState := &PolicyState{
 		Name:      policyName,
 		YAML:      policyYAML,
 		Version:   newVersion,
 		Source:    ps.nodeID,
-		Timestamp: time.Now(),
+		Timestamp: timestamp,
 	}
 	ps.policies[policyName] = policyState
 
-	// Create update notification
+	rollbackPtr := copyRollbackVersion(rollbackFrom)
+	revision := PolicyRevision{
+		PolicyName:          policyName,
+		Version:             newVersion,
+		YAML:                append([]byte(nil), policyYAML...),
+		Source:              ps.nodeID,
+		Timestamp:           timestamp,
+		Reason:              reason,
+		RollbackFromVersion: rollbackPtr,
+	}
+	ps.revisions[policyName] = append(ps.revisions[policyName], revision)
+
 	update := PolicyUpdate{
 		PolicyName: policyName,
 		YAML:       policyYAML,
@@ -144,10 +160,8 @@ func (ps *InMemoryPolicySync) SyncPolicy(ctx context.Context, policyName string,
 		Timestamp:  policyState.Timestamp,
 	}
 
-	// Broadcast to all subscribers
 	ps.broadcastUpdate(update)
 
-	// Record metrics
 	duration := time.Since(startTime).Seconds()
 	policySyncDuration.WithLabelValues(policyName).Observe(duration)
 	recordPolicySynced(policyName, newVersion)
@@ -158,7 +172,7 @@ func (ps *InMemoryPolicySync) SyncPolicy(ctx context.Context, policyName string,
 	safeNodeID = strings.ReplaceAll(safeNodeID, "\r", "")
 	log.Printf("Policy %s synced to cluster (version %d) by leader %s", safePolicyName, newVersion, safeNodeID)
 
-	return nil
+	return &revision, nil
 }
 
 // GetPolicyVersion returns the current version of a policy across the cluster.
@@ -336,6 +350,14 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 		Timestamp: update.Timestamp,
 	}
 	ps.policies[update.PolicyName] = policyState
+	revision := PolicyRevision{
+		PolicyName: update.PolicyName,
+		Version:    update.Version,
+		YAML:       append([]byte(nil), update.YAML...),
+		Source:     update.Source,
+		Timestamp:  update.Timestamp,
+	}
+	ps.revisions[update.PolicyName] = append(ps.revisions[update.PolicyName], revision)
 
 	// Broadcast to local subscribers
 	ps.broadcastUpdate(update)
@@ -348,6 +370,77 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 		safePolicyName, update.Version, safeSource)
 
 	return nil
+}
+
+// ListPolicyRevisions returns policy revisions in descending version order.
+func (ps *InMemoryPolicySync) ListPolicyRevisions(policyName string, limit int) ([]PolicyRevision, error) {
+	if policyName == "" {
+		return nil, fmt.Errorf("policy name cannot be empty")
+	}
+
+	ps.mu.RLock()
+	revs := ps.revisions[policyName]
+	ps.mu.RUnlock()
+
+	if len(revs) == 0 {
+		return []PolicyRevision{}, nil
+	}
+
+	if limit > 0 && limit < len(revs) {
+		revs = revs[len(revs)-limit:]
+	}
+
+	result := make([]PolicyRevision, 0, len(revs))
+	for i := len(revs) - 1; i >= 0; i-- {
+		result = append(result, copyPolicyRevision(revs[i]))
+	}
+
+	return result, nil
+}
+
+// GetPolicyRevision fetches a specific revision by version.
+func (ps *InMemoryPolicySync) GetPolicyRevision(policyName string, version int64) (*PolicyRevision, error) {
+	if policyName == "" {
+		return nil, fmt.Errorf("policy name cannot be empty")
+	}
+	if version <= 0 {
+		return nil, fmt.Errorf("version must be positive")
+	}
+
+	ps.mu.RLock()
+	revs := ps.revisions[policyName]
+	ps.mu.RUnlock()
+
+	for _, rev := range revs {
+		if rev.Version == version {
+			copy := copyPolicyRevision(rev)
+			return &copy, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// RollbackPolicy creates a new revision using the YAML from a previous version.
+func (ps *InMemoryPolicySync) RollbackPolicy(ctx context.Context, policyName string, targetVersion int64, reason string) (*PolicyRevision, error) {
+	if policyName == "" {
+		return nil, fmt.Errorf("policy name cannot be empty")
+	}
+	if targetVersion <= 0 {
+		return nil, fmt.Errorf("target version must be positive")
+	}
+
+	revision, err := ps.GetPolicyRevision(policyName, targetVersion)
+	if err != nil {
+		return nil, err
+	}
+	if revision == nil {
+		return nil, fmt.Errorf("policy %s version %d not found", policyName, targetVersion)
+	}
+
+	rollbackFrom := revision.Version
+
+	return ps.applyPolicy(ctx, policyName, revision.YAML, &rollbackFrom, reason)
 }
 
 func (ps *InMemoryPolicySync) parseAndValidate(policyName string, policyYAML []byte) ([]policy.NetworkPolicy, error) {
@@ -404,4 +497,19 @@ func (ps *InMemoryPolicySync) currentPolicies() ([]policy.NamedPolicy, error) {
 	}
 
 	return policies, nil
+}
+
+func copyPolicyRevision(revision PolicyRevision) PolicyRevision {
+	copy := revision
+	copy.YAML = append([]byte(nil), revision.YAML...)
+	copy.RollbackFromVersion = copyRollbackVersion(revision.RollbackFromVersion)
+	return copy
+}
+
+func copyRollbackVersion(version *int64) *int64 {
+	if version == nil {
+		return nil
+	}
+	copied := *version
+	return &copied
 }

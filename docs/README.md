@@ -13,12 +13,12 @@ Technical documentation for ZTAP.
 
 ## Operations
 
-| Document                    | Description                              |
-| --------------------------- | ---------------------------------------- |
-| [Deployment](deployment.md) | Docker and containerized deployment      |
-| [Cluster](cluster.md)       | Distributed coordination and policy sync |
-| [etcd Setup](etcd.md)       | etcd backend for production clusters     |
-| [Audit Logging](audit.md)   | Tamper-proof audit system                |
+| Document                    | Description                                                 |
+| --------------------------- | ----------------------------------------------------------- |
+| [Deployment](deployment.md) | Docker and containerized deployment                         |
+| [Cluster](cluster.md)       | Distributed coordination and policy sync (history/rollback) |
+| [etcd Setup](etcd.md)       | etcd backend for production clusters                        |
+| [Audit Logging](audit.md)   | Tamper-proof audit system                                   |
 
 ## Reference
 

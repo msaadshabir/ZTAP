@@ -111,6 +111,25 @@ ztap policy watch
 ztap policy show web-to-db
 ```
 
+### Policy Revision History
+
+```bash
+ztap policy history web-to-db
+
+# Limit output (0 shows all)
+ztap policy history web-to-db --limit 25
+```
+
+### Rollback
+
+Rollback restores the YAML from an older version by creating a new latest revision.
+This is required because the enforcer ignores non-increasing version updates.
+
+```bash
+# Roll back to version 3 by creating a new latest version
+ztap policy rollback web-to-db --to 3 --reason "revert bad deploy"
+```
+
 ## Programmatic Usage
 
 ```go

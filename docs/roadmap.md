@@ -18,7 +18,8 @@
 - Leader election with in-memory and etcd backends
 - Distributed policy synchronization
 - Automatic enforcement on all nodes
-- Policy version tracking
+- Policy version tracking (revision history)
+- Policy rollback (creates a new latest revision)
 - Ingress policy support (bidirectional enforcement)
 - Real-time flow event monitoring (`ztap flows` with `--follow` streaming)
 - Policy conflict detection (structural + overlap)
@@ -28,7 +29,6 @@
 
 ## Planned
 
-- Policy versioning and rollback
 - Azure NSG synchronization
 - GCP Firewall Rules integration
 - Kubernetes Operator with NetworkPolicy CRD

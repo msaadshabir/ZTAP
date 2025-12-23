@@ -101,14 +101,13 @@ var policyListCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Type assertion to access ListPolicies method
-		inMemorySync, ok := policySync.(*cluster.InMemoryPolicySync)
+		listable, ok := policySync.(interface{ ListPolicies() []*cluster.PolicyState })
 		if !ok {
 			fmt.Println("Error: Current policy sync backend doesn't support listing")
 			os.Exit(1)
 		}
 
-		policies := inMemorySync.ListPolicies()
+		policies := listable.ListPolicies()
 
 		fmt.Println("Cluster Policies")
 		fmt.Println("================")
@@ -172,14 +171,15 @@ var policyShowCmd = &cobra.Command{
 
 		policyName := args[0]
 
-		// Type assertion to access GetPolicy method
-		inMemorySync, ok := policySync.(*cluster.InMemoryPolicySync)
+		getter, ok := policySync.(interface {
+			GetPolicy(string) (*cluster.PolicyState, error)
+		})
 		if !ok {
 			fmt.Println("Error: Current policy sync backend doesn't support policy retrieval")
 			os.Exit(1)
 		}
 
-		policy, err := inMemorySync.GetPolicy(policyName)
+		policy, err := getter.GetPolicy(policyName)
 		if err != nil {
 			log.Fatalf("Failed to get policy: %v", err)
 		}
@@ -199,6 +199,101 @@ var policyShowCmd = &cobra.Command{
 	},
 }
 
+var policyHistoryCmd = &cobra.Command{
+	Use:   "history <policy-name>",
+	Short: "Show policy revision history",
+	Long:  `Display stored policy revisions in descending version order.`,
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		if policySync == nil {
+			fmt.Println("Policy sync not initialized. Cluster must be running.")
+			os.Exit(1)
+		}
+
+		store, ok := policySync.(cluster.PolicyRevisionStore)
+		if !ok {
+			fmt.Println("Error: Current policy sync backend doesn't support revision history")
+			os.Exit(1)
+		}
+
+		policyName := args[0]
+		limit, _ := cmd.Flags().GetInt("limit")
+
+		revisions, err := store.ListPolicyRevisions(policyName, limit)
+		if err != nil {
+			log.Fatalf("Failed to list policy revisions: %v", err)
+		}
+
+		if len(revisions) == 0 {
+			fmt.Printf("No revisions found for policy '%s'\n", policyName)
+			return
+		}
+
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "Version\tSource\tRollback From\tReason\tAge")
+		fmt.Fprintln(w, "-------\t------\t-------------\t------\t---")
+
+		for _, rev := range revisions {
+			rollbackFrom := "-"
+			if rev.RollbackFromVersion != nil {
+				rollbackFrom = fmt.Sprintf("%d", *rev.RollbackFromVersion)
+			}
+			reason := rev.Reason
+			if reason == "" {
+				reason = "-"
+			}
+			age := time.Since(rev.Timestamp).Round(time.Second)
+			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s ago\n",
+				rev.Version,
+				rev.Source,
+				rollbackFrom,
+				reason,
+				age,
+			)
+		}
+
+		_ = w.Flush()
+	},
+}
+
+var policyRollbackCmd = &cobra.Command{
+	Use:   "rollback <policy-name>",
+	Short: "Rollback a policy to a previous version",
+	Long:  `Create a new revision using the YAML from a previous version and broadcast it as the latest policy revision.`,
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		if policySync == nil {
+			fmt.Println("Policy sync not initialized. Cluster must be running.")
+			os.Exit(1)
+		}
+
+		store, ok := policySync.(cluster.PolicyRevisionStore)
+		if !ok {
+			fmt.Println("Error: Current policy sync backend doesn't support rollback")
+			os.Exit(1)
+		}
+
+		policyName := args[0]
+		targetVersion, _ := cmd.Flags().GetInt64("to")
+		if targetVersion <= 0 {
+			fmt.Println("Error: --to must be provided and greater than zero")
+			os.Exit(1)
+		}
+		reason, _ := cmd.Flags().GetString("reason")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		rev, err := store.RollbackPolicy(ctx, policyName, targetVersion, reason)
+		if err != nil {
+			log.Fatalf("Rollback failed: %v", err)
+		}
+
+		rolledBackFrom := targetVersion
+		fmt.Printf("Rollback created policy %s version %d (from version %d)\n", rev.PolicyName, rev.Version, rolledBackFrom)
+	},
+}
+
 // pluralize is a simple helper for singular/plural forms
 func pluralize(count int, singular, plural string) string {
 	if count == 1 {
@@ -210,12 +305,17 @@ func pluralize(count int, singular, plural string) string {
 func init() {
 	// Add flags
 	policySyncCmd.Flags().StringP("name", "n", "", "Policy name (defaults to filename)")
+	policyHistoryCmd.Flags().Int("limit", 10, "Number of revisions to display (0 for all)")
+	policyRollbackCmd.Flags().Int64("to", 0, "Target version to rollback to")
+	policyRollbackCmd.Flags().String("reason", "", "Optional reason for rollback")
 
 	// Add subcommands
 	policyCmd.AddCommand(policySyncCmd)
 	policyCmd.AddCommand(policyListCmd)
 	policyCmd.AddCommand(policyWatchCmd)
 	policyCmd.AddCommand(policyShowCmd)
+	policyCmd.AddCommand(policyHistoryCmd)
+	policyCmd.AddCommand(policyRollbackCmd)
 
 	// Register with root command
 	rootCmd.AddCommand(policyCmd)

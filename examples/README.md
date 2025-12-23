@@ -26,6 +26,13 @@ Distributed policy synchronization across a 3-node cluster.
 go run ./examples/policy_sync
 ```
 
+Once a policy is synced, you can view revisions or roll back:
+
+```bash
+ztap policy history web-to-db
+ztap policy rollback web-to-db --to 1 --reason "back to known-good"
+```
+
 See [Cluster Documentation](../docs/cluster.md) for details.
 
 ## Policy Examples

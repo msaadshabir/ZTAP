@@ -215,5 +215,5 @@ ZTAP supports multi-node deployments with distributed coordination:
 ### High Availability
 
 - Leader election: In-memory (dev) or etcd (production)
-- Policy sync: Automatic distribution to all nodes
+- Policy sync: Automatic distribution to all nodes with versioned revisions and rollback
 - Nodes: Stateless with persistent etcd backend

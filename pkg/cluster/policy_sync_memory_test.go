@@ -588,3 +588,78 @@ func TestConcurrentPolicySync(t *testing.T) {
 		t.Errorf("expected %d policies, got %d", numGoroutines, len(policies))
 	}
 }
+
+func TestListPolicyRevisionsDescendingWithLimit(t *testing.T) {
+	election := newMockElection("node-1", true)
+	ps := NewInMemoryPolicySync(election, "node-1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := ps.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = ps.Stop() }()
+
+	policyName := "hist-policy"
+	_ = ps.SyncPolicy(ctx, policyName, makePolicyYAML(policyName, "10.10.0.0/24", 80))
+	_ = ps.SyncPolicy(ctx, policyName, makePolicyYAML(policyName, "10.10.1.0/24", 80))
+	_ = ps.SyncPolicy(ctx, policyName, makePolicyYAML(policyName, "10.10.2.0/24", 80))
+
+	revisions, err := ps.ListPolicyRevisions(policyName, 2)
+	if err != nil {
+		t.Fatalf("ListPolicyRevisions() failed: %v", err)
+	}
+	if len(revisions) != 2 {
+		t.Fatalf("expected 2 revisions, got %d", len(revisions))
+	}
+	if revisions[0].Version != 3 || revisions[1].Version != 2 {
+		t.Fatalf("expected versions [3 2], got [%d %d]", revisions[0].Version, revisions[1].Version)
+	}
+}
+
+func TestRollbackPolicyCreatesNewVersion(t *testing.T) {
+	election := newMockElection("node-1", true)
+	ps := NewInMemoryPolicySync(election, "node-1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := ps.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = ps.Stop() }()
+
+	policyName := "rollback-policy"
+	first := makePolicyYAML(policyName, "10.11.0.0/24", 80)
+	second := makePolicyYAML(policyName, "10.12.0.0/24", 80)
+
+	if err := ps.SyncPolicy(ctx, policyName, first); err != nil {
+		t.Fatalf("first SyncPolicy() failed: %v", err)
+	}
+	if err := ps.SyncPolicy(ctx, policyName, second); err != nil {
+		t.Fatalf("second SyncPolicy() failed: %v", err)
+	}
+
+	revision, err := ps.RollbackPolicy(ctx, policyName, 1, "revert change")
+	if err != nil {
+		t.Fatalf("RollbackPolicy() failed: %v", err)
+	}
+	if revision == nil {
+		t.Fatal("expected revision from rollback")
+	}
+	if revision.Version != 3 {
+		t.Fatalf("expected new version 3, got %d", revision.Version)
+	}
+	if revision.RollbackFromVersion == nil || *revision.RollbackFromVersion != 1 {
+		t.Fatalf("expected rollback pointer to 1, got %v", revision.RollbackFromVersion)
+	}
+	if string(revision.YAML) != string(first) {
+		t.Fatalf("rollback YAML mismatch")
+	}
+
+	currentVersion, _ := ps.GetPolicyVersion(policyName)
+	if currentVersion != 3 {
+		t.Fatalf("expected current version 3, got %d", currentVersion)
+	}
+}

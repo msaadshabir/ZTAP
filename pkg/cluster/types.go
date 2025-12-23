@@ -117,3 +117,21 @@ type PolicyUpdate struct {
 	Source     string    // Node ID that initiated the update
 	Timestamp  time.Time // When the update occurred
 }
+
+// PolicyRevision is an immutable record of a policy version.
+type PolicyRevision struct {
+	PolicyName          string    // Policy name
+	Version             int64     // Monotonically increasing version
+	YAML                []byte    // Full policy YAML
+	Source              string    // Node that authored this version
+	Timestamp           time.Time // Creation timestamp
+	Reason              string    // Optional human note for the change
+	RollbackFromVersion *int64    // Set when this revision was created by a rollback
+}
+
+// PolicyRevisionStore exposes policy history and rollback operations.
+type PolicyRevisionStore interface {
+	ListPolicyRevisions(policyName string, limit int) ([]PolicyRevision, error)
+	GetPolicyRevision(policyName string, version int64) (*PolicyRevision, error)
+	RollbackPolicy(ctx context.Context, policyName string, targetVersion int64, reason string) (*PolicyRevision, error)
+}

@@ -73,7 +73,7 @@ ztap status
 - **Leader Election** – Automatic cluster coordination
 - **Policy Synchronization** – Real-time policy distribution with auto-enforcement
 - **Multi-Node Support** – High-availability deployments
-- **Version Tracking** – Conflict-free policy updates
+- **Version Tracking & Rollback** – Revision history with rollback to prior versions
 - **Prometheus Metrics** – 7 metrics for sync and enforcement monitoring
 
 ### Cloud Integration
@@ -219,7 +219,7 @@ Commands:
   enforce     Enforce zero-trust network policies
   status      Show on-premises and cloud resource status
   cluster     Manage cluster coordination (status, join, leave, list)
-  policy      Distributed policy management (sync, list, watch, show)
+  policy      Distributed policy management (sync, list, watch, show, history, rollback)
   flows       Real-time flow event monitoring (--follow, --action, --protocol)
   logs        View enforcement logs (with --follow and --policy filters)
   metrics     Start Prometheus metrics server
@@ -319,6 +319,8 @@ ztap policy sync examples/web-to-db.yaml    # Sync policy to all nodes
 ztap policy list                             # List all policies
 ztap policy watch                            # Watch real-time updates
 ztap policy show web-to-db                   # Show policy details
+ztap policy history web-to-db                # Show revision history
+ztap policy rollback web-to-db --to 3        # Roll back by creating a new latest version
 ```
 
 </details>
