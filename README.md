@@ -79,6 +79,7 @@ ztap status
 ### Cloud Integration
 
 - **AWS Security Groups** – Auto-sync policies
+- **Azure NSGs** – Reconcile policies into NSG security rules
 - **EC2 Auto-Discovery** – Tag-based labeling
 - **Hybrid View** – Unified on-prem + cloud status
 
@@ -216,6 +217,7 @@ ztap [command]
 Commands:
   api         Run REST API server (serve)
   grpc        Run gRPC API server (serve)
+  azure       Azure NSG synchronization (nsg-sync)
   enforce     Enforce zero-trust network policies
   status      Show on-premises and cloud resource status
   cluster     Manage cluster coordination (status, join, leave, list)

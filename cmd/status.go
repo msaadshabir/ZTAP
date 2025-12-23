@@ -20,6 +20,7 @@ var statusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		region, _ := cmd.Flags().GetString("region")
 		showAWS, _ := cmd.Flags().GetBool("aws")
+		showAzure, _ := cmd.Flags().GetBool("azure")
 
 		fmt.Println("ZTAP Status Report")
 		fmt.Println("==================")
@@ -73,8 +74,14 @@ var statusCmd = &cobra.Command{
 				_ = w.Flush()
 				fmt.Printf("\nTotal: %d resource(s)\n", len(resources))
 			}
-		} else {
-			fmt.Println("Cloud Resources: (use --aws to discover AWS resources)")
+		}
+
+		if showAzure {
+			fmt.Println("Azure discovery is not implemented yet. Use 'ztap azure nsg-sync' to manage NSGs.")
+		}
+
+		if !showAWS && !showAzure {
+			fmt.Println("Cloud Resources: (use --aws or --azure)")
 		}
 	},
 }
@@ -82,5 +89,6 @@ var statusCmd = &cobra.Command{
 func init() {
 	statusCmd.Flags().BoolP("aws", "a", false, "Discover AWS resources")
 	statusCmd.Flags().StringP("region", "r", "us-east-1", "AWS region")
+	statusCmd.Flags().Bool("azure", false, "Show Azure integration guidance")
 	rootCmd.AddCommand(statusCmd)
 }

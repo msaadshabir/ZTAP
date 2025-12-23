@@ -75,11 +75,19 @@ EnforceWithPF(policies []NetworkPolicy)
 - Convert policies to Security Group rules
 - Handle stateful firewall differences
 
+**Azure Integration**:
+
+- Reconcile policies into NSG security rules (managed rule prefix + delete stale managed rules)
+- Uses Azure Identity default credentials (DefaultAzureCredential chain)
+
 **Key Functions**:
 
 ```go
 DiscoverResources() ([]Resource, error)
 SyncPolicy(policy NetworkPolicy, sgID string) error
+
+// Azure
+SyncPolicy(policy NetworkPolicy, resourceGroup, nsgName string) error
 ```
 
 ### 4. Anomaly Detector (`pkg/anomaly`)

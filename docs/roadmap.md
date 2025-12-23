@@ -9,6 +9,7 @@
 - Role-based access control (admin, operator, viewer)
 - Session management with configurable lifetimes
 - AWS Security Group synchronization
+- Azure NSG synchronization
 - EC2 discovery and tagging
 - Prometheus metrics and Grafana dashboards
 - Structured logging with filtering
@@ -29,7 +30,6 @@
 
 ## Planned
 
-- Azure NSG synchronization
 - GCP Firewall Rules integration
 - Kubernetes Operator with NetworkPolicy CRD
 - Pod IP auto-discovery from K8s API

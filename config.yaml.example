@@ -50,6 +50,15 @@ aws:
   profile: default # AWS CLI profile to use
   # security_group_id: sg-12345  # Optional: specific SG to manage
 
+# Azure Cloud Integration
+azure:
+  enabled: false
+  subscription_id: ""
+  resource_group: ""
+  nsg: ""
+  rule_prefix: ztap-
+  priority_base: 2000
+
 # Anomaly Detection
 anomaly:
   enabled: false

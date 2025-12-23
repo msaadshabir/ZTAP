@@ -65,3 +65,10 @@ gRPC services (v1):
 Auth: send `authorization: Bearer <token>` as gRPC metadata.
 
 See the [main README](../README.md) for project overview and quick start.
+
+## Azure NSG Sync
+
+ZTAP can reconcile NetworkPolicy objects into Azure NSG security rules:
+
+- Command: `ztap azure nsg-sync <policy-file> --subscription-id ... --resource-group ... --nsg ...`
+- Config: see `azure.*` in `config.yaml.example`

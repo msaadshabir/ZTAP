@@ -12,6 +12,7 @@
 ### Optional Components
 
 - **AWS Account**: For cloud integration and Security Group sync
+- **Azure Subscription**: For cloud integration and NSG sync
 - **Docker**: For full stack deployment (Prometheus + Grafana + Anomaly Detector)
 - **Python 3.11+**: For anomaly detection service development
 
@@ -113,6 +114,43 @@ export AWS_REGION="us-east-1"
 # Test AWS connectivity
 ztap status --aws --region us-east-1
 ```
+
+### 5. Azure NSG Synchronization (Optional)
+
+ZTAP can reconcile ZTAP NetworkPolicy objects into Azure NSG security rules.
+
+Auth uses Azure Identity default credentials (the standard DefaultAzureCredential chain). Typical options:
+
+```bash
+# Use Azure CLI auth
+az login
+
+# Then sync rules into an NSG
+ztap azure nsg-sync examples/web-to-db.yaml \
+  --subscription-id <sub-id> \
+  --resource-group <rg> \
+  --nsg <nsg-name>
+```
+
+You can also configure defaults in config.yaml (or via ZTAP_CONFIG):
+
+```yaml
+azure:
+  enabled: false
+  subscription_id: "..."
+  resource_group: "..."
+  nsg: "..."
+  rule_prefix: ztap-
+  priority_base: 2000
+```
+
+Environment variable overrides:
+
+- ZTAP_AZURE_SUBSCRIPTION_ID
+- ZTAP_AZURE_RESOURCE_GROUP
+- ZTAP_AZURE_NSG
+- ZTAP_AZURE_RULE_PREFIX
+- ZTAP_AZURE_PRIORITY_BASE
 
 ## Quick Start
 
