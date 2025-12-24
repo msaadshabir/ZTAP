@@ -637,6 +637,10 @@ func (m *mockDiscovery) Watch(ctx context.Context, labels map[string]string) (<-
 	return nil, nil
 }
 
+func (m *mockDiscovery) Stop() error {
+	return nil
+}
+
 func TestCheckConflicts(t *testing.T) {
 	existing := []NetworkPolicy{
 		{

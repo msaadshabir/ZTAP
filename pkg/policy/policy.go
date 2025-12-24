@@ -15,6 +15,7 @@ import (
 // ServiceDiscovery interface for label resolution
 type ServiceDiscovery interface {
 	ResolveLabels(labels map[string]string) ([]string, error)
+	Stop() error
 }
 
 // PortSpec defines a protocol and port combination for network rules.
