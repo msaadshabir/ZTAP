@@ -76,8 +76,16 @@ var agentCmd = &cobra.Command{
 		<-sigCh
 
 		fmt.Println("Shutting down agent...")
-		pe.Stop()
-		policySync.Stop()
+		cancel()
+		if err := disc.Stop(); err != nil {
+			log.Printf("Warning: failed to stop discovery: %v", err)
+		}
+		if err := pe.Stop(); err != nil {
+			log.Printf("Warning: failed to stop policy enforcer: %v", err)
+		}
+		if err := policySync.Stop(); err != nil {
+			log.Printf("Warning: failed to stop policy sync: %v", err)
+		}
 	},
 }
 

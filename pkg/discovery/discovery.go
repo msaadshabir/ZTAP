@@ -16,6 +16,7 @@ type ServiceDiscovery interface {
 	RegisterService(name string, ip string, labels map[string]string) error
 	DeregisterService(name string) error
 	Watch(ctx context.Context, labels map[string]string) (<-chan []string, error)
+	Stop() error
 }
 
 // Service represents a discovered service
@@ -157,6 +158,19 @@ func (d *InMemoryDiscovery) ListServices() []*Service {
 	return services
 }
 
+// Stop shuts down watchers.
+func (d *InMemoryDiscovery) Stop() error {
+	d.mu.Lock()
+	watchers := append([]chan []string(nil), d.watchers...)
+	d.watchers = nil
+	d.mu.Unlock()
+
+	for _, ch := range watchers {
+		close(ch)
+	}
+	return nil
+}
+
 // matchLabels checks if service labels match the selector
 func matchLabels(serviceLabels, selector map[string]string) bool {
 	for key, value := range selector {
@@ -213,6 +227,11 @@ func (d *DNSDiscovery) Watch(ctx context.Context, labels map[string]string) (<-c
 	return nil, fmt.Errorf("DNS discovery does not support watching")
 }
 
+// Stop is a no-op for DNS discovery.
+func (d *DNSDiscovery) Stop() error {
+	return nil
+}
+
 // ConsulDiscovery integrates with HashiCorp Consul
 type ConsulDiscovery struct {
 	address string
@@ -245,6 +264,11 @@ func (c *ConsulDiscovery) DeregisterService(name string) error {
 // Watch watches Consul for service changes
 func (c *ConsulDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
 	return nil, fmt.Errorf("Consul discovery not yet implemented")
+}
+
+// Stop is a no-op for the Consul discovery stub.
+func (c *ConsulDiscovery) Stop() error {
+	return nil
 }
 
 // CacheDiscovery wraps another discovery with caching
@@ -321,4 +345,12 @@ func (c *CacheDiscovery) ClearCache() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cache = make(map[string]cacheEntry)
+}
+
+// Stop propagates shutdown to the backend if supported.
+func (c *CacheDiscovery) Stop() error {
+	if stopper, ok := c.backend.(interface{ Stop() error }); ok {
+		return stopper.Stop()
+	}
+	return nil
 }

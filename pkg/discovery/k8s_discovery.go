@@ -17,6 +17,7 @@ type K8sDiscovery struct {
 	factory   informers.SharedInformerFactory
 	podLister listers.PodLister
 	podSynced cache.InformerSynced
+	stopOnce  sync.Once
 	mu        sync.RWMutex
 }
 
@@ -37,6 +38,14 @@ func (d *K8sDiscovery) Start(ctx context.Context) error {
 	if !cache.WaitForCacheSync(ctx.Done(), d.podSynced) {
 		return fmt.Errorf("failed to sync kubernetes cache")
 	}
+	return nil
+}
+
+// Stop shuts down the informer factory.
+func (d *K8sDiscovery) Stop() error {
+	d.stopOnce.Do(func() {
+		d.factory.Shutdown()
+	})
 	return nil
 }
 
