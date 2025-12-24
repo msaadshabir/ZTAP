@@ -53,6 +53,7 @@ const (
 // policyKey represents the key for eBPF policy map
 // Must match struct policy_key in bpf/filter.c
 type policyKey struct {
+	CgroupID  uint64
 	IP        uint32 // dest_ip for egress, src_ip for ingress
 	Port      uint16 // dest_port for egress, dest_port for ingress
 	Protocol  uint8

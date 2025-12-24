@@ -91,6 +91,8 @@ ZTAP includes comprehensive test coverage across all critical components with un
 go test ./... -v
 ```
 
+This includes the Kubernetes operator/agent packages (WIP). Dedicated unit tests for the operator reconcile loop are not yet included.
+
 ### Specific Package
 
 ```bash

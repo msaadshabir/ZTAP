@@ -127,6 +127,7 @@ FilterProg *ebpf.Program `ebpf:"filter_egress_permissive"`
 
 ```c
 struct policy_key {
+    __u64 cgroup_id;  // Source cgroup id (0 = global fallback)
     __u32 dest_ip;    // Destination IP address (network byte order)
     __u16 dest_port;  // Destination port
     __u8  protocol;   // Protocol (6=TCP, 17=UDP, 1=ICMP)
@@ -138,6 +139,11 @@ struct policy_value {
     __u8 _pad[3];     // Padding for alignment
 };
 ```
+
+Lookup behavior:
+
+- The dataplane looks up policies using the current process cgroup id.
+- If there is no match for the current cgroup id, it falls back to `cgroup_id = 0` to preserve existing “global” enforcement.
 
 ### Flow Events Ring Buffer
 
@@ -167,7 +173,7 @@ On Linux, `ztap enforce` pins the `flow_events` ring buffer map at:
 
 ### Attachment Points
 
-eBPF programs attach to cgroups using `BPF_CGROUP_INET_EGRESS`:
+eBPF programs attach to cgroups using `BPF_CGROUP_INET_EGRESS` (and ingress where supported):
 
 - **Scope**: Applies to all processes in the cgroup
 - **Direction**: Egress (outbound) traffic only

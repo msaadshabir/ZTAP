@@ -20,7 +20,7 @@ CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer 
 - **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map)
 - **Alerting**: `pkg/alert/` provides webhook sinks (Slack, PagerDuty) and async dispatch with optional TTL dedupe (configured via `alerting.*`)
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
-- **Discovery**: Label-to-IP resolution - `InMemoryDiscovery` (dev), DNS/Consul/K8s backends (stubs)
+- **Discovery**: Label-to-IP resolution - `InMemoryDiscovery` (dev), DNS/Consul backends (stubs), Kubernetes backend (WIP)
 
 ## Key Interfaces
 

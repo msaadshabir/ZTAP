@@ -220,6 +220,7 @@ Commands:
   grpc        Run gRPC API server (serve)
   azure       Azure NSG synchronization (nsg-sync)
   gcp         GCP firewall rule synchronization (firewall-sync)
+  agent       Run node agent (Kubernetes / in-cluster)
   enforce     Enforce zero-trust network policies
   status      Show on-premises and cloud resource status
   cluster     Manage cluster coordination (status, join, leave, list)

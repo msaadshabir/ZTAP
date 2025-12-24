@@ -170,6 +170,13 @@ Platform-specific enforcement:
 - **Linux**: eBPF kernel-level enforcement
 - **macOS**: pf packet filter
 
+## Kubernetes Policy Distribution (WIP)
+
+In Kubernetes deployments, ZTAP can use a Kubernetes-backed PolicySync implementation instead of the in-memory/etcd cluster sync.
+
+- Operator publishes validated policies into a ConfigMap “policy store”.
+- Agents watch the store via `pkg/cluster/policy_sync_k8s.go` and enforce updates using the same `PolicyEnforcer` pipeline.
+
 ## Metrics
 
 Policy sync and enforcement metrics:

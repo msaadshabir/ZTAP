@@ -23,6 +23,7 @@ static void *(*bpf_map_lookup_elem)(void *map, void *key) = (void *)1;
 static long (*bpf_map_update_elem)(void *map, void *key, void *value, unsigned long flags) = (void *)2;
 static long (*bpf_skb_load_bytes)(const void *skb, __u32 offset, void *to, __u32 len) = (void *)26;
 static __u64 (*bpf_ktime_get_ns)(void) = (void *)5;
+static __u64 (*bpf_get_current_cgroup_id)(void) = (void *)80;
 static void *(*bpf_ringbuf_reserve)(void *ringbuf, __u64 size, __u64 flags) = (void *)131;
 static void (*bpf_ringbuf_submit)(void *data, __u64 flags) = (void *)132;
 static void (*bpf_ringbuf_discard)(void *data, __u64 flags) = (void *)133;
@@ -96,6 +97,7 @@ struct __sk_buff
 // Direction: 0 = egress (outbound), 1 = ingress (inbound)
 struct policy_key
 {
+    __u64 cgroup_id;
     __u32 ip;   // dest_ip for egress, src_ip for ingress
     __u16 port; // dest_port for egress, dest_port for ingress (the port being accessed)
     __u8 protocol;
@@ -239,6 +241,7 @@ int filter_egress(struct __sk_buff *skb)
 
     // Lookup policy in map (egress uses destination IP/port)
     struct policy_key key = {
+        .cgroup_id = bpf_get_current_cgroup_id(),
         .ip = dest_ip,
         .port = dest_port,
         .protocol = protocol,
@@ -246,6 +249,12 @@ int filter_egress(struct __sk_buff *skb)
     };
 
     struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
+    if (!value)
+    {
+        // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
+        key.cgroup_id = 0;
+        value = bpf_map_lookup_elem(&policy_map, &key);
+    }
     if (value)
     {
         // Found matching policy
@@ -286,6 +295,7 @@ int filter_ingress(struct __sk_buff *skb)
     // Lookup policy in map (ingress uses source IP and destination port)
     // The policy specifies: allow traffic FROM source_ip TO our port
     struct policy_key key = {
+        .cgroup_id = bpf_get_current_cgroup_id(),
         .ip = src_ip,
         .port = dest_port,
         .protocol = protocol,
@@ -293,6 +303,12 @@ int filter_ingress(struct __sk_buff *skb)
     };
 
     struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
+    if (!value)
+    {
+        // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
+        key.cgroup_id = 0;
+        value = bpf_map_lookup_elem(&policy_map, &key);
+    }
     if (value)
     {
         // Found matching policy
@@ -329,6 +345,7 @@ int filter_egress_permissive(struct __sk_buff *skb)
     }
 
     struct policy_key key = {
+        .cgroup_id = bpf_get_current_cgroup_id(),
         .ip = dest_ip,
         .port = dest_port,
         .protocol = protocol,
@@ -336,6 +353,11 @@ int filter_egress_permissive(struct __sk_buff *skb)
     };
 
     struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
+    if (!value)
+    {
+        key.cgroup_id = 0;
+        value = bpf_map_lookup_elem(&policy_map, &key);
+    }
     if (value && value->action == 0)
     {
         // Explicitly blocked
@@ -360,6 +382,7 @@ int filter_ingress_permissive(struct __sk_buff *skb)
     }
 
     struct policy_key key = {
+        .cgroup_id = bpf_get_current_cgroup_id(),
         .ip = src_ip,
         .port = dest_port,
         .protocol = protocol,
@@ -367,6 +390,11 @@ int filter_ingress_permissive(struct __sk_buff *skb)
     };
 
     struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
+    if (!value)
+    {
+        key.cgroup_id = 0;
+        value = bpf_map_lookup_elem(&policy_map, &key);
+    }
     if (value && value->action == 0)
     {
         // Explicitly blocked

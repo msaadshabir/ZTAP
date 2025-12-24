@@ -46,7 +46,7 @@ ResolveLabels(labels map[string]string) ([]string, error)
 
 - **Linux**: eBPF
   - Attach to cgroup hooks (egress and ingress)
-  - Per-pod traffic control
+  - Per-cgroup policy keys (falls back to global keys while per-pod scoping is WIP)
   - Kernel-level enforcement with BTF support
   - Safe packet parsing using bpf_skb_load_bytes
   - Bidirectional filtering (cgroup_skb/egress and cgroup_skb/ingress)
@@ -142,9 +142,28 @@ StartServer(port int) error
 ## Data Flow
 
 ```
+
+### 7. Kubernetes Operator + Node Agent (WIP)
+
+**Responsibility**: Kubernetes-native policy authoring and distribution using a CRD and per-node agents
+
+**Components**:
+
+- **Operator** (`cmd/ztap-operator`)
+  - Watches `ZtapNetworkPolicy` (group `ztap.io/v1alpha1`)
+  - Converts to internal `ztap/v1` policy YAML and validates via `pkg/policy`
+  - Publishes validated policies into a ConfigMap “policy store”
+- **Node Agent** (`ztap agent`)
+  - Watches the ConfigMap policy store via a Kubernetes-backed PolicySync (`pkg/cluster/policy_sync_k8s.go`)
+  - Enforces policies via the existing `PolicyEnforcer`
+  - Resolves `matchLabels` to pod IPs using Kubernetes discovery (`pkg/discovery/k8s_discovery.go`)
 User
  │
  ├─> CLI Command (enforce/status/logs)
+ │
+ ├─> Kubernetes (WIP)
+ │    ├─> Operator (CRD -> validated policy ConfigMaps)
+ │    └─> Node Agent (watches ConfigMaps -> PolicyEnforcer)
  │
  ├─> API Server (HTTP)
  │

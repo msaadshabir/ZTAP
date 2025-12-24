@@ -15,6 +15,7 @@
 - **Azure Subscription**: For cloud integration and NSG sync
 - **Docker**: For full stack deployment (Prometheus + Grafana + Anomaly Detector)
 - **Python 3.11+**: For anomaly detection service development
+- **Kubernetes Cluster**: For the Kubernetes operator + node agent workflow (Linux nodes)
 
 ## Installation
 
@@ -30,6 +31,9 @@ go mod download
 
 # Build binary
 go build -o ztap
+
+# Build operator binary (WIP)
+go build -o ztap-operator ./cmd/ztap-operator
 
 # Install (optional)
 sudo mv ztap /usr/local/bin/
@@ -53,6 +57,16 @@ docker-compose up -d
 ```
 
 See [Deployment Guide](deployment.md) for detailed Docker deployment.
+
+## Kubernetes (Operator + Agent) (WIP)
+
+ZTAP includes a Kubernetes operator and an in-cluster node agent path that publishes policies from a CRD and enforces them on nodes.
+
+- Entry points:
+  - Operator binary: `ztap-operator`
+  - Agent command: `ztap agent`
+
+Current limitation: Linux eBPF enforcement supports per-cgroup policy keys but currently falls back to a global key (`cgroup_id=0`) until the agent maps pods to cgroups.
 
 ## Configuration
 
