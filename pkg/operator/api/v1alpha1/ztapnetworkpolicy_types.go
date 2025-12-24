@@ -17,7 +17,7 @@ type PodSelectorSpec struct {
 	MatchLabels map[string]string `json:"matchLabels"`
 }
 
-// IPBlockSpec defines CIDR-based selection.
+// IPBlockSpec defines CIDR-based IP selection.
 type IPBlockSpec struct {
 	CIDR string `json:"cidr"`
 }
@@ -91,8 +91,12 @@ func (in *ZtapNetworkPolicy) DeepCopyInto(out *ZtapNetworkPolicy) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec = in.Spec
-	out.Status = in.Status
+	if specCopy := in.Spec.DeepCopy(); specCopy != nil {
+		out.Spec = *specCopy
+	}
+	if statusCopy := in.Status.DeepCopy(); statusCopy != nil {
+		out.Status = *statusCopy
+	}
 }
 
 // DeepCopy creates a new DeepCopy of the receiver.
@@ -142,4 +146,107 @@ func (in *ZtapNetworkPolicyList) DeepCopyObject() runtime.Object {
 		return c
 	}
 	return nil
+}
+
+// DeepCopy creates a deep copy of the spec.
+func (in *ZtapNetworkPolicySpec) DeepCopy() *ZtapNetworkPolicySpec {
+	if in == nil {
+		return nil
+	}
+	out := new(ZtapNetworkPolicySpec)
+	*out = *in
+
+	if in.PodSelector.MatchLabels != nil {
+		out.PodSelector.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
+		for k, v := range in.PodSelector.MatchLabels {
+			out.PodSelector.MatchLabels[k] = v
+		}
+	}
+
+	if in.Egress != nil {
+		out.Egress = make([]EgressRule, len(in.Egress))
+		for i := range in.Egress {
+			out.Egress[i] = in.Egress[i].DeepCopy()
+		}
+	}
+	if in.Ingress != nil {
+		out.Ingress = make([]IngressRule, len(in.Ingress))
+		for i := range in.Ingress {
+			out.Ingress[i] = in.Ingress[i].DeepCopy()
+		}
+	}
+
+	return out
+}
+
+// DeepCopy creates a deep copy of the status.
+func (in *ZtapNetworkPolicyStatus) DeepCopy() *ZtapNetworkPolicyStatus {
+	if in == nil {
+		return nil
+	}
+	out := new(ZtapNetworkPolicyStatus)
+	*out = *in
+	if in.Conditions != nil {
+		out.Conditions = make([]metav1.Condition, len(in.Conditions))
+		for i := range in.Conditions {
+			in.Conditions[i].DeepCopyInto(&out.Conditions[i])
+		}
+	}
+	return out
+}
+
+func (in *EgressRule) DeepCopy() EgressRule {
+	out := EgressRule{
+		Ports: make([]PortSpec, len(in.Ports)),
+		To:    in.To.DeepCopy(),
+	}
+	copy(out.Ports, in.Ports)
+	return out
+}
+
+func (in *IngressRule) DeepCopy() IngressRule {
+	out := IngressRule{
+		Ports: make([]PortSpec, len(in.Ports)),
+		From:  in.From.DeepCopy(),
+	}
+	copy(out.Ports, in.Ports)
+	return out
+}
+
+func (in *EgressTarget) DeepCopy() EgressTarget {
+	out := EgressTarget{}
+	if in.PodSelector != nil {
+		ps := PodSelectorSpec{}
+		if in.PodSelector.MatchLabels != nil {
+			ps.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
+			for k, v := range in.PodSelector.MatchLabels {
+				ps.MatchLabels[k] = v
+			}
+		}
+		out.PodSelector = &ps
+	}
+	if in.IPBlock != nil {
+		ip := *in.IPBlock
+		out.IPBlock = &ip
+	}
+	return out
+}
+
+func (in *IngressSource) DeepCopy() IngressSource {
+	out := IngressSource{}
+	if in.PodSelector != nil {
+		ps := PodSelectorSpec{}
+		if in.PodSelector.MatchLabels != nil {
+			ps.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
+			for k, v := range in.PodSelector.MatchLabels {
+				ps.MatchLabels[k] = v
+			}
+		}
+		out.PodSelector = &ps
+	}
+	if in.IPBlock != nil {
+		ip := *in.IPBlock
+		out.IPBlock = &ip
+	}
+	return out
 }

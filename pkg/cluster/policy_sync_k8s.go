@@ -3,7 +3,6 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -11,7 +10,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+var k8sPolicySyncLogger = ctrl.Log.WithName("K8sPolicySync")
 
 // K8sPolicySync implements PolicySync by watching policy ConfigMaps created by the operator.
 type K8sPolicySync struct {
@@ -102,7 +104,7 @@ func (s *K8sPolicySync) watchLoop(ctx context.Context) {
 		LabelSelector: "app=ztap,component=policy-store",
 	})
 	if err != nil {
-		log.Printf("Error watching ConfigMaps: %v", err)
+		k8sPolicySyncLogger.Error(err, "error watching ConfigMaps")
 		return
 	}
 	defer watcher.Stop()
@@ -139,7 +141,10 @@ func (s *K8sPolicySync) handleUpdate(cm *corev1.ConfigMap) {
 
 	var version int64
 	if versionStr != "" {
-		fmt.Sscanf(versionStr, "%d", &version)
+		if _, err := fmt.Sscanf(versionStr, "%d", &version); err != nil {
+			k8sPolicySyncLogger.Info("invalid policy version annotation", "version", versionStr, "error", err)
+			version = 0
+		}
 	}
 
 	update := PolicyUpdate{
@@ -156,6 +161,7 @@ func (s *K8sPolicySync) handleUpdate(cm *corev1.ConfigMap) {
 		select {
 		case ch <- update:
 		default:
+			k8sPolicySyncLogger.Info("dropping policy update", "policyName", policyName, "reason", "subscriber channel full")
 		}
 	}
 }
