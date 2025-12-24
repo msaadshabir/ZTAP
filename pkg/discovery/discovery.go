@@ -161,11 +161,13 @@ func (d *InMemoryDiscovery) ListServices() []*Service {
 // Stop shuts down watchers.
 func (d *InMemoryDiscovery) Stop() error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
-	for _, ch := range d.watchers {
+	watchers := append([]chan []string(nil), d.watchers...)
+	d.watchers = nil
+	d.mu.Unlock()
+
+	for _, ch := range watchers {
 		close(ch)
 	}
-	d.watchers = nil
 	return nil
 }
 
