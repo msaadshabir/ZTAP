@@ -6,6 +6,7 @@
 - Linux enforcement via eBPF
 - macOS enforcement via pf
 - DNS and label-based service discovery
+- Pod IP auto-discovery from K8s API
 - Role-based access control (admin, operator, viewer)
 - Session management with configurable lifetimes
 - AWS Security Group synchronization
@@ -28,11 +29,10 @@
 - gRPC interface (basic v1 RPCs via `ztap grpc serve`)
 - Alerting with webhook integrations (Slack, PagerDuty)
 - GCP VPC Firewall Rules synchronization
+- Kubernetes Operator with NetworkPolicy CRD
 
 ## Planned
 
-- Kubernetes Operator with NetworkPolicy CRD
-- Pod IP auto-discovery from K8s API
 - Windows support via Windows Filtering Platform
 - iptables fallback for older Linux kernels
 - Pre-compiled eBPF binaries

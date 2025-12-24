@@ -6,9 +6,11 @@
 
 # Service discovery
 discovery:
-  backend: inmemory # inmemory or dns (cache can wrap the selected backend)
+  backend: inmemory # inmemory, dns, or k8s (cache can wrap the selected backend)
   dns:
     domain: example.com
+  k8s:
+    namespace: "" # Optional: restrict to a specific namespace. If empty, uses ZTAP_NAMESPACE or "default".
   cache:
     ttl: "" # Optional cache TTL applied to the selected backend (e.g., 30s). Leave empty to disable caching.
 

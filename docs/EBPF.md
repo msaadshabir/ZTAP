@@ -206,8 +206,11 @@ Notes:
 
 - `ztap enforce` keeps running while enforcement is active. Press Ctrl+C to detach and exit.
 - The eBPF enforcer currently supports only IPv4 `ipBlock` rules with `/32` CIDRs, and TCP/UDP only.
-  Policies that use `podSelector` targets or non-/32 CIDRs will be rejected to avoid unsafe partial enforcement.
-  This limitation applies to kernel enforcement; cloud sync backends can still translate selectors (for example, `ztap gcp firewall-sync`).
+  Policies that use non-/32 CIDRs will be rejected to avoid unsafe partial enforcement.
+  Policies that use `podSelector` targets can be enforced on Linux by first resolving selectors into `/32` `ipBlock` rules:
+  - In-cluster: run `ztap agent` (Kubernetes discovery is used automatically)
+  - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s` configured (kubeconfig-based)
+    Cloud sync backends can also translate selectors (for example, `ztap gcp firewall-sync`).
 
 ### Manual Testing (Advanced)
 

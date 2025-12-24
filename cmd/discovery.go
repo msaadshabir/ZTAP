@@ -12,14 +12,17 @@ import (
 
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v2"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
 	defaultDiscoveryBackend = "inmemory"
 	dnsDiscoveryBackend     = "dns"
+	k8sDiscoveryBackend     = "k8s"
 )
 
-var supportedDiscoveryBackends = defaultDiscoveryBackend + ", " + dnsDiscoveryBackend
+var supportedDiscoveryBackends = defaultDiscoveryBackend + ", " + dnsDiscoveryBackend + ", " + k8sDiscoveryBackend
 
 var discoveryCmd = &cobra.Command{
 	Use:   "discovery",
@@ -197,6 +200,10 @@ func loadDiscoveryFromConfig() (discovery.ServiceDiscovery, error) {
 			DNS     struct {
 				Domain string `yaml:"domain"`
 			} `yaml:"dns"`
+			K8s struct {
+				Namespace  string `yaml:"namespace"`
+				Kubeconfig string `yaml:"kubeconfig"`
+			} `yaml:"k8s"`
 			Cache struct {
 				TTL string `yaml:"ttl"`
 			} `yaml:"cache"`
@@ -222,6 +229,35 @@ func loadDiscoveryFromConfig() (discovery.ServiceDiscovery, error) {
 			return nil, fmt.Errorf("discovery.dns.domain is required for dns backend")
 		}
 		backend = discovery.NewDNSDiscovery(domain)
+	case k8sDiscoveryBackend:
+		kubeconfig := cfg.Discovery.K8s.Kubeconfig
+		if kubeconfig == "" {
+			kubeconfig = os.Getenv("KUBECONFIG")
+		}
+		if kubeconfig == "" {
+			home, _ := os.UserHomeDir()
+			kubeconfig = home + "/.kube/config"
+		}
+
+		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build kubeconfig: %w", err)
+		}
+
+		clientset, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
+		}
+
+		namespace := cfg.Discovery.K8s.Namespace
+		if namespace == "" {
+			namespace = os.Getenv("ZTAP_NAMESPACE")
+		}
+		if namespace == "" {
+			namespace = "default"
+		}
+
+		backend = discovery.NewK8sDiscovery(clientset, namespace)
 	default:
 		return nil, fmt.Errorf("unsupported discovery backend: %s (supported: %s)", backendName, supportedDiscoveryBackends)
 	}

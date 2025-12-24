@@ -49,9 +49,10 @@ var agentCmd = &cobra.Command{
 
 		// Initialize policy enforcer
 		pe := enforcer.NewPolicyEnforcer(enforcer.PolicyEnforcerConfig{
-			PolicySync: policySync,
-			Discovery:  disc,
-			CgroupPath: cgroupPath,
+			PolicySync:    policySync,
+			Discovery:     disc,
+			CgroupPath:    cgroupPath,
+			ResolveLabels: true, // Enable auto-discovery in agent mode
 		})
 
 		ctx, cancel := context.WithCancel(context.Background())

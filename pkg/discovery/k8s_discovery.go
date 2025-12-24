@@ -3,8 +3,10 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -19,6 +21,13 @@ type K8sDiscovery struct {
 	podSynced cache.InformerSynced
 	stopOnce  sync.Once
 	mu        sync.RWMutex
+	watchers  []*k8sWatcher
+}
+
+type k8sWatcher struct {
+	selector labels.Selector
+	ch       chan []string
+	lastIPs  []string
 }
 
 // NewK8sDiscovery creates a new Kubernetes-based discovery service.
@@ -26,11 +35,30 @@ func NewK8sDiscovery(client kubernetes.Interface, namespace string) *K8sDiscover
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 0, informers.WithNamespace(namespace))
 	podInformer := factory.Core().V1().Pods()
 
-	return &K8sDiscovery{
+	d := &K8sDiscovery{
 		factory:   factory,
 		podLister: podInformer.Lister(),
 		podSynced: podInformer.Informer().HasSynced,
+		watchers:  make([]*k8sWatcher, 0),
 	}
+
+	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			d.notifyWatchers()
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldPod := oldObj.(*corev1.Pod)
+			newPod := newObj.(*corev1.Pod)
+			if oldPod.Status.PodIP != newPod.Status.PodIP || !labels.Equals(oldPod.Labels, newPod.Labels) {
+				d.notifyWatchers()
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			d.notifyWatchers()
+		},
+	})
+
+	return d
 }
 
 func (d *K8sDiscovery) Start(ctx context.Context) error {
@@ -67,6 +95,7 @@ func (d *K8sDiscovery) ResolveLabels(selector map[string]string) ([]string, erro
 		return nil, fmt.Errorf("no pods found matching labels: %v", selector)
 	}
 
+	sort.Strings(ips)
 	return ips, nil
 }
 
@@ -79,7 +108,78 @@ func (d *K8sDiscovery) DeregisterService(name string) error {
 }
 
 func (d *K8sDiscovery) Watch(ctx context.Context, selector map[string]string) (<-chan []string, error) {
-	// For now, we don't implement a streaming watch here,
-	// but the agent can poll or we can add a real watch later.
-	return nil, fmt.Errorf("Watch not yet implemented in K8sDiscovery")
+	set := labels.Set(selector)
+	sel := set.AsSelector()
+	ch := make(chan []string, 10)
+
+	watcher := &k8sWatcher{
+		selector: sel,
+		ch:       ch,
+	}
+
+	d.mu.Lock()
+	d.watchers = append(d.watchers, watcher)
+	d.mu.Unlock()
+
+	// Send initial state
+	ips, _ := d.ResolveLabels(selector)
+	watcher.lastIPs = ips
+	ch <- ips
+
+	go func() {
+		<-ctx.Done()
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		for i, w := range d.watchers {
+			if w == watcher {
+				d.watchers = append(d.watchers[:i], d.watchers[i+1:]...)
+				break
+			}
+		}
+		close(ch)
+	}()
+
+	return ch, nil
+}
+
+func (d *K8sDiscovery) notifyWatchers() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, w := range d.watchers {
+		pods, err := d.podLister.List(w.selector)
+		if err != nil {
+			continue
+		}
+
+		ips := make([]string, 0)
+		for _, pod := range pods {
+			if pod.Status.PodIP != "" {
+				ips = append(ips, pod.Status.PodIP)
+			}
+		}
+		sort.Strings(ips)
+
+		// Only send if changed
+		if !equalStrings(ips, w.lastIPs) {
+			w.lastIPs = ips
+			select {
+			case w.ch <- ips:
+			default:
+				// Skip if channel is full
+			}
+		}
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

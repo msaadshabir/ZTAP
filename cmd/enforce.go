@@ -20,9 +20,26 @@ var enforceCmd = &cobra.Command{
 		cgroupPath, _ := cmd.Flags().GetString("cgroup")
 		bpfObject, _ := cmd.Flags().GetString("bpf-object")
 		debugEBPF, _ := cmd.Flags().GetBool("debug-ebpf")
+		resolveLabels, _ := cmd.Flags().GetBool("resolve-labels")
+
 		policies, err := policy.LoadFromFile(policyFile)
 		if err != nil {
 			log.Fatalf("Failed to load policy: %v", err)
+		}
+
+		// Resolve labels if requested
+		if resolveLabels {
+			disc, err := getDiscoveryBackend()
+			if err != nil {
+				log.Fatalf("Failed to load discovery backend for label resolution: %v", err)
+			}
+			resolver := policy.NewPolicyResolver(disc)
+			resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+			if err != nil {
+				log.Fatalf("Failed to resolve pod selectors: %v", err)
+			}
+			policies = resolved
+			fmt.Printf("Resolved label selectors to %d concrete rule(s)\n", len(policies))
 		}
 
 		policyName := filepath.Base(policyFile)
@@ -94,5 +111,6 @@ func init() {
 	enforceCmd.Flags().String("cgroup", "", "Cgroup v2 path for eBPF attachment (Linux only)")
 	enforceCmd.Flags().String("bpf-object", "", "Path to compiled eBPF object file (overrides search paths; Linux only)")
 	enforceCmd.Flags().Bool("debug-ebpf", false, "Enable debug logging for eBPF object loading (Linux only)")
+	enforceCmd.Flags().Bool("resolve-labels", false, "Resolve pod selectors to IP blocks using configured discovery backend")
 	rootCmd.AddCommand(enforceCmd)
 }

@@ -38,7 +38,8 @@ See [Cluster Documentation](../docs/cluster.md) for details.
 ## Policy Examples
 
 Note: on Linux, the eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
-Policies that use `podSelector` targets or non-/32 CIDRs will be rejected by the eBPF enforcer. See `docs/ebpf.md`.
+Policies that use non-/32 CIDRs will be rejected by the eBPF enforcer. See `docs/ebpf.md`.
+Policies that use `podSelector` targets can be enforced by resolving selectors into `/32` `ipBlock` rules first (in-cluster via `ztap agent`, or locally via `ztap enforce --resolve-labels` with `discovery.backend: k8s`).
 Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels).
 
 ### web-to-db.yaml
@@ -85,7 +86,8 @@ ztap enforce -f ingress-only.yaml
 
 ### Label-Based Rules
 
-Note: `podSelector` targets are not supported by the Linux eBPF enforcer yet.
+Note: the Linux eBPF enforcer requires concrete `/32` IPv4 `ipBlock` rules.
+`podSelector.matchLabels` targets can be translated to `/32` rules via Kubernetes discovery (recommended: `ztap agent`), or via `ztap enforce --resolve-labels` when `discovery.backend: k8s` is configured.
 For GCP firewall sync, `podSelector.matchLabels` is resolved against GCE instance labels within the specified VPC network.
 
 ```yaml

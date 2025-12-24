@@ -66,6 +66,11 @@ ZTAP includes a Kubernetes operator and an in-cluster node agent path that publi
   - Operator binary: `ztap-operator`
   - Agent command: `ztap agent`
 
+Pod IP auto-discovery:
+
+- The agent resolves `podSelector.matchLabels` targets to live Pod IPs via the Kubernetes API and translates them into `/32` `ipBlock` rules for enforcement.
+- For local development (out-of-cluster), you can resolve selectors before enforcing with `ztap enforce --resolve-labels` when `discovery.backend: k8s` is configured (kubeconfig-based).
+
 Current limitation: Linux eBPF enforcement supports per-cgroup policy keys but currently falls back to a global key (`cgroup_id=0`) until the agent maps pods to cgroups.
 
 ## Configuration

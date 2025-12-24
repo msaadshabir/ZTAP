@@ -157,6 +157,7 @@ StartServer(port int) error
   - Watches the ConfigMap policy store via a Kubernetes-backed PolicySync (`pkg/cluster/policy_sync_k8s.go`)
   - Enforces policies via the existing `PolicyEnforcer`
   - Resolves `matchLabels` to pod IPs using Kubernetes discovery (`pkg/discovery/k8s_discovery.go`)
+  - Translates `podSelector.matchLabels` targets into concrete `/32` `ipBlock` rules and re-applies enforcement when the resolved Pod IP set changes
 User
  │
  ├─> CLI Command (enforce/status/logs)

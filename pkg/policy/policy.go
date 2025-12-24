@@ -2,6 +2,7 @@ package policy
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"math/big"
@@ -15,6 +16,9 @@ import (
 // ServiceDiscovery interface for label resolution
 type ServiceDiscovery interface {
 	ResolveLabels(labels map[string]string) ([]string, error)
+	RegisterService(name string, ip string, labels map[string]string) error
+	DeregisterService(name string) error
+	Watch(ctx context.Context, labels map[string]string) (<-chan []string, error)
 	Stop() error
 }
 
@@ -552,4 +556,78 @@ func (r *PolicyResolver) ResolveLabels(labels map[string]string) ([]string, erro
 // Kept for backward compatibility
 func ResolveLabels(labels map[string]string) ([]string, error) {
 	return nil, fmt.Errorf("label resolution requires service discovery backend")
+}
+
+// ResolvePodSelectorsToIPBlocks translates all podSelector targets in the given policies
+// into concrete /32 ipBlock targets using the resolver's discovery backend.
+func (r *PolicyResolver) ResolvePodSelectorsToIPBlocks(policies []NetworkPolicy) ([]NetworkPolicy, error) {
+	if r.discovery == nil {
+		return nil, fmt.Errorf("no service discovery backend configured")
+	}
+
+	resolvedPolicies := make([]NetworkPolicy, 0, len(policies))
+
+	for _, p := range policies {
+		rp := p // Shallow copy
+		rp.Spec.Egress = nil
+		rp.Spec.Ingress = nil
+
+		// Resolve Egress
+		for _, egress := range p.Spec.Egress {
+			if len(egress.To.PodSelector.MatchLabels) > 0 {
+				ips, err := r.discovery.ResolveLabels(egress.To.PodSelector.MatchLabels)
+				if err != nil {
+					return nil, fmt.Errorf("policy %s: failed to resolve egress podSelector %v: %w",
+						p.Metadata.Name, egress.To.PodSelector.MatchLabels, err)
+				}
+
+				for _, ip := range ips {
+					// Ensure it's a valid IPv4
+					parsedIP := net.ParseIP(ip)
+					if parsedIP == nil || parsedIP.To4() == nil {
+						return nil, fmt.Errorf("policy %s: resolved IP %s is not a valid IPv4 address",
+							p.Metadata.Name, ip)
+					}
+
+					newEgress := egress
+					newEgress.To.PodSelector = PodSelectorSpec{}
+					newEgress.To.IPBlock = IPBlockSpec{CIDR: ip + "/32"}
+					rp.Spec.Egress = append(rp.Spec.Egress, newEgress)
+				}
+			} else {
+				rp.Spec.Egress = append(rp.Spec.Egress, egress)
+			}
+		}
+
+		// Resolve Ingress
+		for _, ingress := range p.Spec.Ingress {
+			if len(ingress.From.PodSelector.MatchLabels) > 0 {
+				ips, err := r.discovery.ResolveLabels(ingress.From.PodSelector.MatchLabels)
+				if err != nil {
+					return nil, fmt.Errorf("policy %s: failed to resolve ingress podSelector %v: %w",
+						p.Metadata.Name, ingress.From.PodSelector.MatchLabels, err)
+				}
+
+				for _, ip := range ips {
+					// Ensure it's a valid IPv4
+					parsedIP := net.ParseIP(ip)
+					if parsedIP == nil || parsedIP.To4() == nil {
+						return nil, fmt.Errorf("policy %s: resolved IP %s is not a valid IPv4 address",
+							p.Metadata.Name, ip)
+					}
+
+					newIngress := ingress
+					newIngress.From.PodSelector = PodSelectorSpec{}
+					newIngress.From.IPBlock = IPBlockSpec{CIDR: ip + "/32"}
+					rp.Spec.Ingress = append(rp.Spec.Ingress, newIngress)
+				}
+			} else {
+				rp.Spec.Ingress = append(rp.Spec.Ingress, ingress)
+			}
+		}
+
+		resolvedPolicies = append(resolvedPolicies, rp)
+	}
+
+	return resolvedPolicies, nil
 }

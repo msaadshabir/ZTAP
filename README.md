@@ -43,6 +43,9 @@ ztap enforce -f examples/web-to-db.yaml
 # Linux (eBPF)
 # Note: `ztap enforce` keeps running while enforcement is active.
 # The Linux eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+# Policies that use `podSelector.matchLabels` can be enforced by resolving selectors into `/32` rules first:
+# - In-cluster: run `ztap agent`
+# - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s`
 sudo ztap enforce -f policy.yaml
 
 # 4. Check status
@@ -99,7 +102,7 @@ ztap status
 ### Developer Experience
 
 - **Kubernetes-Style YAML** – Familiar syntax
-- **Label-Based Discovery** – DNS + caching
+- **Label-Based Discovery** – Kubernetes API, DNS, and caching
 - **REST API Server** – Minimal v1 endpoints via `ztap api serve`
 - **gRPC API Server** – Minimal v1 RPCs via `ztap grpc serve`
 - **79% Test Coverage** – Production-ready
