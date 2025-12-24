@@ -77,6 +77,9 @@ var agentCmd = &cobra.Command{
 
 		fmt.Println("Shutting down agent...")
 		cancel()
+		if err := disc.Stop(); err != nil {
+			log.Printf("Warning: failed to stop discovery: %v", err)
+		}
 		if err := pe.Stop(); err != nil {
 			log.Printf("Warning: failed to stop policy enforcer: %v", err)
 		}

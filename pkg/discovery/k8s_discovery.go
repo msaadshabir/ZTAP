@@ -40,6 +40,12 @@ func (d *K8sDiscovery) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop shuts down the informer factory.
+func (d *K8sDiscovery) Stop() error {
+	d.factory.Shutdown()
+	return nil
+}
+
 func (d *K8sDiscovery) ResolveLabels(selector map[string]string) ([]string, error) {
 	set := labels.Set(selector)
 	pods, err := d.podLister.List(set.AsSelector())
