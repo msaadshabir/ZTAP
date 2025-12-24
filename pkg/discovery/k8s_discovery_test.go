@@ -14,7 +14,10 @@ import (
 func TestK8sDiscovery(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	namespace := "default"
-	disc := NewK8sDiscovery(client, namespace)
+	disc, err := NewK8sDiscovery(client, namespace)
+	if err != nil {
+		t.Fatalf("Failed to create discovery: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -24,7 +27,7 @@ func TestK8sDiscovery(t *testing.T) {
 	}
 
 	// Test ResolveLabels with no pods
-	_, err := disc.ResolveLabels(map[string]string{"app": "web"})
+	_, err = disc.ResolveLabels(map[string]string{"app": "web"})
 	if err == nil {
 		t.Error("Expected error for no matching pods, got nil")
 	}

@@ -257,7 +257,10 @@ func loadDiscoveryFromConfig() (discovery.ServiceDiscovery, error) {
 			namespace = "default"
 		}
 
-		backend = discovery.NewK8sDiscovery(clientset, namespace)
+		backend, err = discovery.NewK8sDiscovery(clientset, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create kubernetes discovery: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported discovery backend: %s (supported: %s)", backendName, supportedDiscoveryBackends)
 	}

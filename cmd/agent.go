@@ -45,7 +45,10 @@ var agentCmd = &cobra.Command{
 		policySync := cluster.NewK8sPolicySync(clientset, namespace)
 
 		// Initialize K8s discovery
-		disc := discovery.NewK8sDiscovery(clientset, namespace)
+		disc, err := discovery.NewK8sDiscovery(clientset, namespace)
+		if err != nil {
+			log.Fatalf("Failed to create kubernetes discovery: %v", err)
+		}
 
 		// Initialize policy enforcer
 		pe := enforcer.NewPolicyEnforcer(enforcer.PolicyEnforcerConfig{

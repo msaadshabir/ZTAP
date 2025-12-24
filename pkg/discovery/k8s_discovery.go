@@ -31,7 +31,7 @@ type k8sWatcher struct {
 }
 
 // NewK8sDiscovery creates a new Kubernetes-based discovery service.
-func NewK8sDiscovery(client kubernetes.Interface, namespace string) *K8sDiscovery {
+func NewK8sDiscovery(client kubernetes.Interface, namespace string) (*K8sDiscovery, error) {
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 0, informers.WithNamespace(namespace))
 	podInformer := factory.Core().V1().Pods()
 
@@ -42,7 +42,7 @@ func NewK8sDiscovery(client kubernetes.Interface, namespace string) *K8sDiscover
 		watchers:  make([]*k8sWatcher, 0),
 	}
 
-	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			d.notifyWatchers()
 		},
@@ -57,8 +57,11 @@ func NewK8sDiscovery(client kubernetes.Interface, namespace string) *K8sDiscover
 			d.notifyWatchers()
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("adding pod informer event handler: %w", err)
+	}
 
-	return d
+	return d, nil
 }
 
 func (d *K8sDiscovery) Start(ctx context.Context) error {
