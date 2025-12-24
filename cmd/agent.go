@@ -77,10 +77,10 @@ var agentCmd = &cobra.Command{
 
 		fmt.Println("Shutting down agent...")
 		if err := pe.Stop(); err != nil {
-			log.Printf("Failed to stop policy enforcer: %v", err)
+			log.Printf("Warning: failed to stop policy enforcer: %v", err)
 		}
 		if err := policySync.Stop(); err != nil {
-			log.Printf("Failed to stop policy sync: %v", err)
+			log.Printf("Warning: failed to stop policy sync: %v", err)
 		}
 	},
 }
