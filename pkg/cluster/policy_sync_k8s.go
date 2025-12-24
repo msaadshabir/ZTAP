@@ -1,132 +1,161 @@
 package cluster
-package cluster
 
 import (
 	"context"
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}	}		}			// Skip if channel is full		default:		case ch <- update:		select {	for _, ch := range s.subscribers {	defer s.mu.RUnlock()	s.mu.RLock()	}		Source:     "kubernetes-operator",		Version:    version,		YAML:       []byte(policyYAML),		PolicyName: policyName,	update := PolicyUpdate{	fmt.Sscanf(versionStr, "%d", &version)	var version int64	versionStr := cm.Annotations["ztap.io/version"]	policyName := cm.Annotations["ztap.io/policyName"]	}		return	if !ok {	policyYAML, ok := cm.Data["policy.yaml"]func (s *K8sPolicySync) handleUpdate(cm *corev1.ConfigMap) {}	}		}			}				}					s.handleUpdate(cm)					}						continue					if !ok {					cm, ok := event.Object.(*corev1.ConfigMap)				if event.Type == watch.Added || event.Type == watch.Modified {			for event := range watcher.ResultChan() {			}				continue				log.Printf("Error watching ConfigMaps: %v", err)			if err != nil {			})				LabelSelector: "app=ztap,component=policy-store",			watcher, err := s.client.CoreV1().ConfigMaps(s.namespace).Watch(ctx, metav1.ListOptions{		default:			return		case <-ctx.Done():			return		case <-s.stopCh:		select {	for {func (s *K8sPolicySync) watchLoop(ctx context.Context) {}	return ch	s.subscribers = append(s.subscribers, ch)	ch := make(chan PolicyUpdate, 100)	defer s.mu.Unlock()	s.mu.Lock()func (s *K8sPolicySync) SubscribePolicies(ctx context.Context) <-chan PolicyUpdate {}	return fmt.Errorf("SyncPolicy not supported in K8sPolicySync; use the ZtapNetworkPolicy CRD instead")func (s *K8sPolicySync) SyncPolicy(ctx context.Context, policyName string, policyYAML []byte) error {}	return nil	s.subscribers = nil	}		close(ch)	for _, ch := range s.subscribers {	close(s.stopCh)	s.running = false	}		return nil	if !s.running {	defer s.mu.Unlock()	s.mu.Lock()func (s *K8sPolicySync) Stop() error {}	return nil	go s.watchLoop(ctx)	s.mu.Unlock()	s.running = true	}		return nil		s.mu.Unlock()	if s.running {	s.mu.Lock()func (s *K8sPolicySync) Start(ctx context.Context) error {}	}		stopCh:    make(chan struct{}),		namespace: namespace,		client:    client,	return &K8sPolicySync{func NewK8sPolicySync(client kubernetes.Interface, namespace string) *K8sPolicySync {// NewK8sPolicySync creates a new Kubernetes-backed policy synchronization backend.}	stopCh      chan struct{}	running     bool	mu          sync.RWMutex	subscribers []chan PolicyUpdate	namespace   string	client      kubernetes.Interfacetype K8sPolicySync struct {// K8sPolicySync implements PolicySync by watching ConfigMaps in Kubernetes.)
+)
+
+// K8sPolicySync implements PolicySync by watching policy ConfigMaps created by the operator.
+type K8sPolicySync struct {
+	client      kubernetes.Interface
+	namespace   string
+	subscribers []chan PolicyUpdate
+	mu          sync.RWMutex
+	stopCh      chan struct{}
+	running     bool
+}
+
+// NewK8sPolicySync creates a new Kubernetes-backed policy synchronization backend.
+func NewK8sPolicySync(client kubernetes.Interface, namespace string) *K8sPolicySync {
+	return &K8sPolicySync{
+		client:    client,
+		namespace: namespace,
+		stopCh:    make(chan struct{}),
+	}
+}
+
+// Start begins watching policy ConfigMaps for updates.
+func (s *K8sPolicySync) Start(ctx context.Context) error {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return nil
+	}
+	s.running = true
+	s.mu.Unlock()
+
+	go s.watchLoop(ctx)
+	return nil
+}
+
+// Stop stops watching for updates and closes subscriber channels.
+func (s *K8sPolicySync) Stop() error {
+	s.mu.Lock()
+	if !s.running {
+		s.mu.Unlock()
+		return nil
+	}
+	close(s.stopCh)
+	for _, ch := range s.subscribers {
+		close(ch)
+	}
+	s.subscribers = nil
+	s.running = false
+	s.mu.Unlock()
+	return nil
+}
+
+// SyncPolicy is not supported for Kubernetes-backed sync since policies flow from the operator.
+func (s *K8sPolicySync) SyncPolicy(ctx context.Context, policyName string, policyYAML []byte) error {
+	return fmt.Errorf("SyncPolicy not supported in K8sPolicySync; use the ZtapNetworkPolicy CRD instead")
+}
+
+// GetPolicyVersion is not currently tracked for the Kubernetes backend.
+func (s *K8sPolicySync) GetPolicyVersion(policyName string) (int64, error) {
+	return 0, nil
+}
+
+// SubscribePolicies returns a channel that receives policy updates.
+func (s *K8sPolicySync) SubscribePolicies(ctx context.Context) <-chan PolicyUpdate {
+	ch := make(chan PolicyUpdate, 100)
+
+	s.mu.Lock()
+	s.subscribers = append(s.subscribers, ch)
+	s.mu.Unlock()
+
+	go func() {
+		<-ctx.Done()
+		s.mu.Lock()
+		for i, sub := range s.subscribers {
+			if sub == ch {
+				s.subscribers = append(s.subscribers[:i], s.subscribers[i+1:]...)
+				break
+			}
+		}
+		close(ch)
+		s.mu.Unlock()
+	}()
+
+	return ch
+}
+
+func (s *K8sPolicySync) watchLoop(ctx context.Context) {
+	watcher, err := s.client.CoreV1().ConfigMaps(s.namespace).Watch(ctx, metav1.ListOptions{
+		LabelSelector: "app=ztap,component=policy-store",
+	})
+	if err != nil {
+		log.Printf("Error watching ConfigMaps: %v", err)
+		return
+	}
+	defer watcher.Stop()
+
+	for {
+		select {
+		case event, ok := <-watcher.ResultChan():
+			if !ok {
+				return
+			}
+			if event.Type != watch.Added && event.Type != watch.Modified {
+				continue
+			}
+			cm, ok := event.Object.(*corev1.ConfigMap)
+			if !ok {
+				continue
+			}
+			s.handleUpdate(cm)
+		case <-ctx.Done():
+			return
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+func (s *K8sPolicySync) handleUpdate(cm *corev1.ConfigMap) {
+	policyYAML, ok := cm.Data["policy.yaml"]
+	if !ok {
+		return
+	}
+	policyName := cm.Annotations["ztap.io/policyName"]
+	versionStr := cm.Annotations["ztap.io/version"]
+
+	var version int64
+	if versionStr != "" {
+		fmt.Sscanf(versionStr, "%d", &version)
+	}
+
+	update := PolicyUpdate{
+		PolicyName: policyName,
+		YAML:       []byte(policyYAML),
+		Version:    version,
+		Source:     "kubernetes-operator",
+		Timestamp:  time.Now(),
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, ch := range s.subscribers {
+		select {
+		case ch <- update:
+		default:
+		}
+	}
+}
