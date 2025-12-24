@@ -59,6 +59,14 @@ azure:
   rule_prefix: ztap-
   priority_base: 2000
 
+# GCP Cloud Integration
+gcp:
+  enabled: false
+  project_id: ""
+  network: ""
+  rule_prefix: ztap-
+  priority_base: 2000
+
 # Anomaly Detection
 anomaly:
   enabled: false

@@ -72,3 +72,15 @@ ZTAP can reconcile NetworkPolicy objects into Azure NSG security rules:
 
 - Command: `ztap azure nsg-sync <policy-file> --subscription-id ... --resource-group ... --nsg ...`
 - Config: see `azure.*` in `config.yaml.example`
+
+## GCP Firewall Sync
+
+ZTAP can reconcile NetworkPolicy objects into GCP VPC firewall rules (using Application Default Credentials).
+
+- Command: `ztap gcp firewall-sync <policy-file> --project-id ... --network ...`
+- Flags: `--dry-run`, `--watch`, `--watch-interval`
+- Config: see `gcp.*` in `config.yaml.example`
+
+Label-based rules:
+
+- `podSelector.matchLabels` targets are resolved against GCE instance labels within the specified VPC network.

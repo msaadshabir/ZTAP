@@ -38,7 +38,8 @@ See [Cluster Documentation](../docs/cluster.md) for details.
 ## Policy Examples
 
 Note: on Linux, the eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
-Policies that use `podSelector` targets or non-/32 CIDRs will be rejected. See `docs/ebpf.md`.
+Policies that use `podSelector` targets or non-/32 CIDRs will be rejected by the eBPF enforcer. See `docs/ebpf.md`.
+Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels).
 
 ### web-to-db.yaml
 
@@ -85,6 +86,7 @@ ztap enforce -f ingress-only.yaml
 ### Label-Based Rules
 
 Note: `podSelector` targets are not supported by the Linux eBPF enforcer yet.
+For GCP firewall sync, `podSelector.matchLabels` is resolved against GCE instance labels within the specified VPC network.
 
 ```yaml
 egress:

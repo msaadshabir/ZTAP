@@ -152,6 +152,68 @@ Environment variable overrides:
 - ZTAP_AZURE_RULE_PREFIX
 - ZTAP_AZURE_PRIORITY_BASE
 
+### 6. GCP Firewall Synchronization (Optional)
+
+ZTAP can reconcile ZTAP NetworkPolicy objects into GCP VPC firewall rules using Application Default Credentials (ADC).
+
+Common auth options:
+
+```bash
+gcloud auth application-default login
+# or use a service account key
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+```
+
+Required permissions (at minimum):
+
+- List instances in the project (for `podSelector.matchLabels` resolution)
+- List/create/update/delete VPC firewall rules in the target network
+
+Sync rules into a network:
+
+```bash
+ztap gcp firewall-sync examples/web-to-db.yaml \
+  --project-id <project> \
+  --network <vpc-network>
+```
+
+Optional flags:
+
+```bash
+# Print planned changes but do not apply them
+ztap gcp firewall-sync examples/web-to-db.yaml --dry-run \
+  --project-id <project> \
+  --network <vpc-network>
+
+# Reconcile again when the policy file changes
+ztap gcp firewall-sync examples/web-to-db.yaml --watch --watch-interval 2s \
+  --project-id <project> \
+  --network <vpc-network>
+```
+
+Label-based rules:
+
+- `podSelector.matchLabels` targets are resolved against GCE instance labels.
+- Matching instances are discovered within the specified VPC network, and their NIC IPs are translated into single-host CIDRs (`/32` for IPv4, `/128` for IPv6) for use in firewall rules.
+
+Config file (config.yaml or ZTAP_CONFIG):
+
+```yaml
+gcp:
+  enabled: false
+  project_id: "my-project"
+  network: "default"
+  rule_prefix: ztap-
+  priority_base: 2000
+```
+
+Environment variable overrides:
+
+- ZTAP_GCP_PROJECT_ID
+- ZTAP_GCP_NETWORK
+- ZTAP_GCP_RULE_PREFIX
+- ZTAP_GCP_PRIORITY_BASE
+
 ## Quick Start
 
 ### 0. First Run: Admin Bootstrap

@@ -27,10 +27,10 @@
 - REST API server (basic v1 endpoints via `ztap api serve`)
 - gRPC interface (basic v1 RPCs via `ztap grpc serve`)
 - Alerting with webhook integrations (Slack, PagerDuty)
+- GCP VPC Firewall Rules synchronization
 
 ## Planned
 
-- GCP Firewall Rules integration
 - Kubernetes Operator with NetworkPolicy CRD
 - Pod IP auto-discovery from K8s API
 - Windows support via Windows Filtering Platform

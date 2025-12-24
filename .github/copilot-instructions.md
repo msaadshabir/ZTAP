@@ -146,7 +146,9 @@ Current Linux eBPF enforcement constraints:
 
 - Only IPv4 `ipBlock` rules with `/32` CIDRs
 - TCP/UDP only (ICMP is rejected)
-- `podSelector` targets are not supported yet
+- `podSelector` targets are not supported by the Linux eBPF enforcer yet
+
+Note: this limitation is specific to kernel enforcement. Cloud sync backends can still translate selectors; for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels and syncs them into VPC firewall rules.
 
 ## Code Standards
 
