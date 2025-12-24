@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -197,21 +196,4 @@ func init() {
 
 	gcpCmd.AddCommand(gcpFirewallSyncCmd)
 	rootCmd.AddCommand(gcpCmd)
-}
-
-func parseInt32(s string) (int32, error) {
-	v, err := strconv.ParseInt(s, 10, 32)
-	if err != nil {
-		return 0, err
-	}
-	return int32(v), nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
 }

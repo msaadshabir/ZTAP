@@ -257,11 +257,17 @@ spec:
 		mockSync.sendUpdate(update)
 	}
 
-	time.Sleep(300 * time.Millisecond)
-
-	versions := enforcer.GetEnforcedVersions()
-	if len(versions) != 3 {
-		t.Errorf("expected 3 enforced policies, got %d", len(versions))
+	deadline := time.Now().Add(1 * time.Second)
+	for {
+		versions := enforcer.GetEnforcedVersions()
+		if len(versions) == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Errorf("expected 3 enforced policies, got %d", len(versions))
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

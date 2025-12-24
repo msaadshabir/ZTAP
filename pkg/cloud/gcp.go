@@ -41,7 +41,7 @@ type gcpFirewallsClient struct {
 func (c *gcpFirewallsClient) List(ctx context.Context, projectID, networkURL string) ([]*computepb.Firewall, error) {
 	it := c.client.List(ctx, &computepb.ListFirewallsRequest{
 		Project: projectID,
-		Filter:  fmt.Sprintf("network=\"%s\"", networkURL),
+		Filter:  proto.String(fmt.Sprintf("network=\"%s\"", networkURL)),
 	})
 
 	var rules []*computepb.Firewall
