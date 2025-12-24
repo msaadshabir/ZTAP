@@ -1,111 +1,252 @@
 package v1alpha1
-package v1alpha1
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}	SchemeBuilder.Register(&ZtapNetworkPolicy{}, &ZtapNetworkPolicyList{})func init() {}	Items           []ZtapNetworkPolicy `json:"items"`	metav1.ListMeta `json:"metadata,omitempty"`	metav1.TypeMeta `json:",inline"`type ZtapNetworkPolicyList struct {// ZtapNetworkPolicyList contains a list of ZtapNetworkPolicy// +kubebuilder:object:root=true}	Status ZtapNetworkPolicyStatus `json:"status,omitempty"`	Spec   ZtapNetworkPolicySpec   `json:"spec,omitempty"`	metav1.ObjectMeta `json:"metadata,omitempty"`	metav1.TypeMeta   `json:",inline"`type ZtapNetworkPolicy struct {// ZtapNetworkPolicy is the Schema for the ztapnetworkpolicies API// +kubebuilder:resource:shortName=ztnp// +kubebuilder:subresource:status// +kubebuilder:object:root=true}	LastPublishedVersion int64 `json:"lastPublishedVersion,omitempty"`	// LastPublishedVersion is the version of the policy published to the distribution store.	Conditions []metav1.Condition `json:"conditions,omitempty"`	// Conditions represent the latest available observations of an object's state.	ObservedGeneration int64 `json:"observedGeneration,omitempty"`	// ObservedGeneration is the last generation of the resource that was reconciled.type ZtapNetworkPolicyStatus struct {// ZtapNetworkPolicyStatus defines the observed state of ZtapNetworkPolicy}	Ingress []IngressRule `json:"ingress,omitempty"`	// +optional	// Ingress is a list of ingress rules to be applied to the selected pods.	Egress []EgressRule `json:"egress,omitempty"`	// +optional	// Egress is a list of egress rules to be applied to the selected pods.	PodSelector PodSelectorSpec `json:"podSelector"`	// PodSelector selects the pods to which this NetworkPolicy applies.type ZtapNetworkPolicySpec struct {// ZtapNetworkPolicySpec defines the desired state of ZtapNetworkPolicy}	Ports []PortSpec `json:"ports"`	// Ports is the list of ports for this rule.	From IngressSource `json:"from"`	// From is the list of sources for this rule.type IngressRule struct {// IngressRule defines an inbound traffic rule.}	IPBlock *IPBlockSpec `json:"ipBlock,omitempty"`	// +optional	// IPBlock selects IP ranges as sources.	PodSelector *PodSelectorSpec `json:"podSelector,omitempty"`	// +optional	// PodSelector selects pods as sources.type IngressSource struct {// IngressSource defines the source for ingress rules.}	Ports []PortSpec `json:"ports"`	// Ports is the list of ports for this rule.	To EgressTarget `json:"to"`	// To is the list of destinations for this rule.type EgressRule struct {// EgressRule defines an outbound traffic rule.}	IPBlock *IPBlockSpec `json:"ipBlock,omitempty"`	// +optional	// IPBlock selects IP ranges as destinations.	PodSelector *PodSelectorSpec `json:"podSelector,omitempty"`	// +optional	// PodSelector selects pods as destinations.type EgressTarget struct {// EgressTarget defines the destination for egress rules.}	CIDR string `json:"cidr"`	// CIDR is the network CIDR (e.g. 10.0.0.0/8).type IPBlockSpec struct {// IPBlockSpec defines CIDR-based IP selection.}	MatchLabels map[string]string `json:"matchLabels"`	// MatchLabels is a map of {key,value} pairs.type PodSelectorSpec struct {// PodSelectorSpec defines label-based pod selection.}	Port int `json:"port"`	// Port is the port number (1-65535).	Protocol string `json:"protocol"`	// Protocol is the network protocol (TCP, UDP, or ICMP).type PortSpec struct {// PortSpec defines a protocol and port combination for network rules.)	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"import (
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+)
+
+// ZtapNetworkPolicySpec defines the desired state of ZtapNetworkPolicy.
+type ZtapNetworkPolicySpec struct {
+	PodSelector PodSelectorSpec `json:"podSelector"`
+	Egress      []EgressRule    `json:"egress,omitempty"`
+	Ingress     []IngressRule   `json:"ingress,omitempty"`
+}
+
+// PodSelectorSpec defines label-based pod selection.
+type PodSelectorSpec struct {
+	MatchLabels map[string]string `json:"matchLabels"`
+}
+
+// IPBlockSpec defines CIDR-based IP selection.
+type IPBlockSpec struct {
+	CIDR string `json:"cidr"`
+}
+
+// PortSpec defines a protocol and port combination for network rules.
+type PortSpec struct {
+	Protocol string `json:"protocol"`
+	Port     int    `json:"port"`
+}
+
+// EgressTarget defines the destination for egress rules.
+type EgressTarget struct {
+	PodSelector *PodSelectorSpec `json:"podSelector,omitempty"`
+	IPBlock     *IPBlockSpec     `json:"ipBlock,omitempty"`
+}
+
+// IngressSource defines the source for ingress rules.
+type IngressSource struct {
+	PodSelector *PodSelectorSpec `json:"podSelector,omitempty"`
+	IPBlock     *IPBlockSpec     `json:"ipBlock,omitempty"`
+}
+
+// EgressRule defines an outbound traffic rule.
+type EgressRule struct {
+	To    EgressTarget `json:"to"`
+	Ports []PortSpec   `json:"ports"`
+}
+
+// IngressRule defines an inbound traffic rule.
+type IngressRule struct {
+	From  IngressSource `json:"from"`
+	Ports []PortSpec    `json:"ports"`
+}
+
+// ZtapNetworkPolicyStatus defines the observed state of ZtapNetworkPolicy.
+type ZtapNetworkPolicyStatus struct {
+	ObservedGeneration   int64              `json:"observedGeneration,omitempty"`
+	LastPublishedVersion int64              `json:"lastPublishedVersion,omitempty"`
+	Conditions           []metav1.Condition `json:"conditions,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=ztnp
+
+// ZtapNetworkPolicy is the Schema for the ztapnetworkpolicies API.
+type ZtapNetworkPolicy struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   ZtapNetworkPolicySpec   `json:"spec,omitempty"`
+	Status ZtapNetworkPolicyStatus `json:"status,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+
+// ZtapNetworkPolicyList contains a list of ZtapNetworkPolicy.
+type ZtapNetworkPolicyList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ZtapNetworkPolicy `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&ZtapNetworkPolicy{}, &ZtapNetworkPolicyList{})
+}
+
+// DeepCopyInto copies all properties of this object into another object of the
+// same type.
+func (in *ZtapNetworkPolicy) DeepCopyInto(out *ZtapNetworkPolicy) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	if specCopy := in.Spec.DeepCopy(); specCopy != nil {
+		out.Spec = *specCopy
+	}
+	if statusCopy := in.Status.DeepCopy(); statusCopy != nil {
+		out.Status = *statusCopy
+	}
+}
+
+// DeepCopy creates a new DeepCopy of the receiver.
+func (in *ZtapNetworkPolicy) DeepCopy() *ZtapNetworkPolicy {
+	if in == nil {
+		return nil
+	}
+	out := new(ZtapNetworkPolicy)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject copies the receiver into a new runtime.Object.
+func (in *ZtapNetworkPolicy) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// DeepCopyInto copies the receiver into out.
+func (in *ZtapNetworkPolicyList) DeepCopyInto(out *ZtapNetworkPolicyList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		out.Items = make([]ZtapNetworkPolicy, len(in.Items))
+		for i := range in.Items {
+			in.Items[i].DeepCopyInto(&out.Items[i])
+		}
+	}
+}
+
+// DeepCopy creates a new DeepCopy of the list.
+func (in *ZtapNetworkPolicyList) DeepCopy() *ZtapNetworkPolicyList {
+	if in == nil {
+		return nil
+	}
+	out := new(ZtapNetworkPolicyList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject copies the list into a new runtime.Object.
+func (in *ZtapNetworkPolicyList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// DeepCopy creates a deep copy of the spec.
+func (in *ZtapNetworkPolicySpec) DeepCopy() *ZtapNetworkPolicySpec {
+	if in == nil {
+		return nil
+	}
+	out := new(ZtapNetworkPolicySpec)
+	*out = *in
+
+	if in.PodSelector.MatchLabels != nil {
+		out.PodSelector.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
+		for k, v := range in.PodSelector.MatchLabels {
+			out.PodSelector.MatchLabels[k] = v
+		}
+	}
+
+	if in.Egress != nil {
+		out.Egress = make([]EgressRule, len(in.Egress))
+		for i := range in.Egress {
+			out.Egress[i] = in.Egress[i].DeepCopy()
+		}
+	}
+	if in.Ingress != nil {
+		out.Ingress = make([]IngressRule, len(in.Ingress))
+		for i := range in.Ingress {
+			out.Ingress[i] = in.Ingress[i].DeepCopy()
+		}
+	}
+
+	return out
+}
+
+// DeepCopy creates a deep copy of the status.
+func (in *ZtapNetworkPolicyStatus) DeepCopy() *ZtapNetworkPolicyStatus {
+	if in == nil {
+		return nil
+	}
+	out := new(ZtapNetworkPolicyStatus)
+	*out = *in
+	if in.Conditions != nil {
+		out.Conditions = make([]metav1.Condition, len(in.Conditions))
+		for i := range in.Conditions {
+			in.Conditions[i].DeepCopyInto(&out.Conditions[i])
+		}
+	}
+	return out
+}
+
+func (in *EgressRule) DeepCopy() EgressRule {
+	out := EgressRule{
+		Ports: make([]PortSpec, len(in.Ports)),
+		To:    in.To.DeepCopy(),
+	}
+	copy(out.Ports, in.Ports)
+	return out
+}
+
+func (in *IngressRule) DeepCopy() IngressRule {
+	out := IngressRule{
+		Ports: make([]PortSpec, len(in.Ports)),
+		From:  in.From.DeepCopy(),
+	}
+	copy(out.Ports, in.Ports)
+	return out
+}
+
+func (in *EgressTarget) DeepCopy() EgressTarget {
+	out := EgressTarget{}
+	if in.PodSelector != nil {
+		ps := PodSelectorSpec{}
+		if in.PodSelector.MatchLabels != nil {
+			ps.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
+			for k, v := range in.PodSelector.MatchLabels {
+				ps.MatchLabels[k] = v
+			}
+		}
+		out.PodSelector = &ps
+	}
+	if in.IPBlock != nil {
+		ip := *in.IPBlock
+		out.IPBlock = &ip
+	}
+	return out
+}
+
+func (in *IngressSource) DeepCopy() IngressSource {
+	out := IngressSource{}
+	if in.PodSelector != nil {
+		ps := PodSelectorSpec{}
+		if in.PodSelector.MatchLabels != nil {
+			ps.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
+			for k, v := range in.PodSelector.MatchLabels {
+				ps.MatchLabels[k] = v
+			}
+		}
+		out.PodSelector = &ps
+	}
+	if in.IPBlock != nil {
+		ip := *in.IPBlock
+		out.IPBlock = &ip
+	}
+	return out
+}

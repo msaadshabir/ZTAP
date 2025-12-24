@@ -247,42 +247,6 @@ func (c *ConsulDiscovery) Watch(ctx context.Context, labels map[string]string) (
 	return nil, fmt.Errorf("Consul discovery not yet implemented")
 }
 
-// K8sDiscovery integrates with Kubernetes API
-type K8sDiscovery struct {
-	namespace string
-	// In production, use k8s.io/client-go
-}
-
-// NewK8sDiscovery creates a Kubernetes-based discovery service
-func NewK8sDiscovery(namespace string) *K8sDiscovery {
-	return &K8sDiscovery{namespace: namespace}
-}
-
-// ResolveLabels queries Kubernetes for pods with matching labels
-func (k *K8sDiscovery) ResolveLabels(labels map[string]string) ([]string, error) {
-	// Placeholder: In production, use K8s client-go
-	// clientset, err := kubernetes.NewForConfig(config)
-	// pods, err := clientset.CoreV1().Pods(k.namespace).List(ctx, metav1.ListOptions{
-	//     LabelSelector: labels.FormatSelector(labels),
-	// })
-	return nil, fmt.Errorf("Kubernetes discovery not yet implemented")
-}
-
-// RegisterService not applicable for K8s (managed by K8s)
-func (k *K8sDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
-	return fmt.Errorf("Kubernetes discovery does not support manual registration")
-}
-
-// DeregisterService not applicable for K8s
-func (k *K8sDiscovery) DeregisterService(name string) error {
-	return fmt.Errorf("Kubernetes discovery does not support manual deregistration")
-}
-
-// Watch watches Kubernetes for pod changes
-func (k *K8sDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
-	return nil, fmt.Errorf("Kubernetes discovery not yet implemented")
-}
-
 // CacheDiscovery wraps another discovery with caching
 type CacheDiscovery struct {
 	backend ServiceDiscovery
