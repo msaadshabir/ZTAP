@@ -183,6 +183,34 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if enforcer.IsWindows() {
+		platform := "windows"
+		if err := enforcer.EnforceWithWFP(policies); err != nil {
+			s.emitAlert(alert.Alert{
+				Source:   "api-http",
+				Severity: alert.SeverityError,
+				Title:    "policy enforcement failed",
+				Message:  err.Error(),
+				DedupKey: fmt.Sprintf("%s:%s:error", policyName, platform),
+				Details:  map[string]any{"platform": platform, "count": len(policies)},
+			})
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to enforce via WFP: %w", err))
+			return
+		}
+
+		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": platform, "count": len(policies)})
+		s.emitAlert(alert.Alert{
+			Source:   "api-http",
+			Severity: alert.SeverityInfo,
+			Title:    "policy enforced",
+			Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
+			DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+			Details:  map[string]any{"platform": platform, "count": len(policies)},
+		})
+		writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: platform})
+		return
+	}
+
 	platform := runtime.GOOS
 	enforcer.EnforceWithPF(policies)
 	_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": platform, "count": len(policies)})
@@ -202,17 +230,25 @@ func (s *Server) handleEnforcementStop(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if !enforcer.IsLinux() {
-		writeError(w, http.StatusNotImplemented, errors.New("stop is only supported for eBPF enforcement on linux"))
+	if enforcer.IsLinux() {
+		if os.Geteuid() != 0 {
+			writeError(w, http.StatusForbidden, errors.New("eBPF enforcement requires root privileges"))
+			return
+		}
+		if err := enforcer.StopEBPFEnforcement(); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to stop eBPF enforcement: %w", err))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"stopped": true})
 		return
 	}
-	if os.Geteuid() != 0 {
-		writeError(w, http.StatusForbidden, errors.New("eBPF enforcement requires root privileges"))
+	if enforcer.IsWindows() {
+		if err := enforcer.StopWFPEnforcement(); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to stop WFP enforcement: %w", err))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"stopped": true})
 		return
 	}
-	if err := enforcer.StopEBPFEnforcement(); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to stop eBPF enforcement: %w", err))
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"stopped": true})
+	writeError(w, http.StatusNotImplemented, errors.New("stop is only supported for eBPF on linux or WFP on windows"))
 }

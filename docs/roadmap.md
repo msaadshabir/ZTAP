@@ -30,10 +30,10 @@
 - Alerting with webhook integrations (Slack, PagerDuty)
 - GCP VPC Firewall Rules synchronization
 - Kubernetes Operator with NetworkPolicy CRD
+- Windows support via Windows Filtering Platform (WFP)
 
 ## Planned
 
-- Windows support via Windows Filtering Platform
 - iptables fallback for older Linux kernels
 - Pre-compiled eBPF binaries
 - 2FA/MFA authentication

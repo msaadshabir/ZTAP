@@ -443,6 +443,8 @@ match the running kernel before executing it.
 | Windows  | No           | Firewall |
 | FreeBSD  | Limited      | Firewall |
 
+Note: ZTAP supports Windows enforcement via WFP (Windows Filtering Platform), which is separate from eBPF.
+
 ## References
 
 - [eBPF Documentation](https://ebpf.io/)

@@ -345,7 +345,12 @@ services:
 
 ### Windows
 
-Not officially supported for eBPF. Use WSL2 with Linux kernel.
+Windows hosts are supported via Windows Filtering Platform (WFP) when running `ztap` natively (Administrator required for enforcement).
+
+Notes:
+
+- Docker Compose stack is Linux-first; on Windows, prefer running the stack under WSL2.
+- Windows flow monitoring is currently WIP.
 
 ## Related Documentation
 

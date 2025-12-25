@@ -4,7 +4,7 @@
 
 ### System Requirements
 
-- **Operating System**: macOS 12+ or Linux (kernel ≥5.7 for eBPF)
+- **Operating System**: macOS 12+, Linux (kernel ≥5.7 for eBPF), or Windows (WFP)
 - **Go**: 1.24 or later
 - **Memory**: 2 GB RAM minimum
 - **Disk**: 200 MB for binary, policies, and logs
@@ -119,7 +119,15 @@ cd bpf && make && cd ..
 
 See [eBPF Setup Guide](ebpf.md) for detailed Linux configuration.
 
-### 4. AWS Integration (Optional)
+### 4. Windows-Specific Setup
+
+ZTAP uses Windows Filtering Platform (WFP) on Windows.
+
+- Run `ztap enforce` from an elevated terminal (Administrator).
+- The current Windows enforcement subset is intentionally small: IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+- Flow monitoring on Windows is still WIP.
+
+### 5. AWS Integration (Optional)
 
 ```bash
 # Configure AWS credentials
@@ -134,7 +142,7 @@ export AWS_REGION="us-east-1"
 ztap status --aws --region us-east-1
 ```
 
-### 5. Azure NSG Synchronization (Optional)
+### 6. Azure NSG Synchronization (Optional)
 
 ZTAP can reconcile ZTAP NetworkPolicy objects into Azure NSG security rules.
 
@@ -171,7 +179,7 @@ Environment variable overrides:
 - ZTAP_AZURE_RULE_PREFIX
 - ZTAP_AZURE_PRIORITY_BASE
 
-### 6. GCP Firewall Synchronization (Optional)
+### 7. GCP Firewall Synchronization (Optional)
 
 ZTAP can reconcile ZTAP NetworkPolicy objects into GCP VPC firewall rules using Application Default Credentials (ADC).
 

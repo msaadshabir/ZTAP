@@ -55,6 +55,10 @@ ResolveLabels(labels map[string]string) ([]string, error)
   - Updates `/etc/pf.conf`
   - Supports pass in/out rules for ingress/egress
   - Requires sudo for full functionality
+- **Windows**: Windows Filtering Platform (WFP)
+  - Applies filters via `fwpuclnt.dll` (user-mode WFP API)
+  - Uses a ZTAP provider/sublayer and a transactional apply/delete model
+  - Current enforcement subset matches Linux constraints: IPv4 `/32` + TCP/UDP
 
 **Key Functions**:
 
@@ -62,6 +66,8 @@ ResolveLabels(labels map[string]string) ([]string, error)
 EnforceWithEBPFIfAvailable(policies []NetworkPolicy, cgroupPath string) error
 StopEBPFEnforcement() error
 EnforceWithPF(policies []NetworkPolicy)
+EnforceWithWFP(policies []NetworkPolicy) error
+StopWFPEnforcement() error
 ```
 
 ### 3. Cloud Integrator (`pkg/cloud`)
@@ -175,7 +181,8 @@ User
  │
  ├─> OS Enforcer
  │    ├─> eBPF (Linux)
- │    └─> pf (macOS)
+ │    ├─> pf (macOS)
+ │    └─> WFP (Windows)
  │
  ├─> Cloud Integrator (optional)
  │    └─> AWS Security Groups
@@ -196,7 +203,7 @@ User
 
 | Threat              | Mitigation                         |
 | ------------------- | ---------------------------------- |
-| Policy Bypass       | Kernel-level enforcement (eBPF/pf) |
+| Policy Bypass       | OS-level enforcement (eBPF/pf/WFP) |
 | Label Spoofing      | Trusted inventory (AWS tags, DNS)  |
 | Enforcer Compromise | Minimal privileges, sandboxed      |
 
@@ -218,6 +225,7 @@ User
 - Target: <2% on 4-core system
 - eBPF: Near-zero overhead (kernel space)
 - pf: Minimal (optimized rule matching)
+- WFP: Low overhead (Windows kernel filtering path)
 
 ### Memory Usage
 

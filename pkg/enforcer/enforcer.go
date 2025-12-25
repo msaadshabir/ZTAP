@@ -15,6 +15,11 @@ func IsLinux() bool {
 	return runtime.GOOS == "linux"
 }
 
+// IsWindows returns true if running on Windows
+func IsWindows() bool {
+	return runtime.GOOS == "windows"
+}
+
 // EnforceWithEBPF (Linux) - placeholder for real eBPF logic
 func EnforceWithEBPF(policies []policy.NetworkPolicy) {
 	fmt.Printf("Applying %d eBPF-based policies on Linux\n", len(policies))

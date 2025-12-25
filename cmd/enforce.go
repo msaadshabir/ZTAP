@@ -97,6 +97,22 @@ var enforceCmd = &cobra.Command{
 			}
 			fmt.Println("Enforcement stopped.")
 			return
+		} else if enforcer.IsWindows() {
+			fmt.Println("Enforcing via WFP (Windows)...")
+			if err := enforcer.EnforceWithWFP(policies); err != nil {
+				log.Fatalf("Failed to enforce via WFP: %v", err)
+			}
+
+			fmt.Println("Enforcement active. Press Ctrl+C to stop.")
+			sigCh := make(chan os.Signal, 1)
+			notifyStopSignals(sigCh)
+			<-sigCh
+			stopStopSignals(sigCh)
+			if err := enforcer.StopWFPEnforcement(); err != nil {
+				log.Printf("Warning: failed to stop WFP enforcement cleanly: %v", err)
+			}
+			fmt.Println("Enforcement stopped.")
+			return
 		} else {
 			fmt.Println("Enforcing via pf (macOS)...")
 			enforcer.EnforceWithPF(policies)

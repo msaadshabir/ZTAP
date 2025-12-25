@@ -117,6 +117,18 @@ go tool cover -html=coverage.out
 go test ./... -race
 ```
 
+### Windows Notes (WFP)
+
+- Windows support uses Windows Filtering Platform (WFP) and requires an elevated terminal (Administrator) to actually apply/tear down filters.
+- Unit tests for policy translation run on any OS; WFP runtime behavior is best validated on Windows.
+- Windows WFP integration tests are not part of the default test suite yet.
+
+Compile-check WFP codepaths from non-Windows hosts:
+
+```bash
+GOOS=windows GOARCH=amd64 go test ./... -c
+```
+
 ## Test Results Summary
 
 ```

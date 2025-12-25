@@ -40,6 +40,11 @@ ztap discovery register db-1 10.0.2.1 --labels app=database,tier=backend
 # macOS (pf)
 ztap enforce -f examples/web-to-db.yaml
 
+# Windows (WFP)
+# Note: run in an elevated terminal (Administrator).
+# The Windows WFP enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+ztap enforce -f policy.yaml
+
 # Linux (eBPF)
 # Note: `ztap enforce` keeps running while enforcement is active.
 # The Linux eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
@@ -92,7 +97,7 @@ ztap status
 
 ### Observability
 
-- **Flow Monitoring** – Real-time on Linux with eBPF enforcement active; simulated on macOS
+- **Flow Monitoring** – Real-time on Linux with eBPF enforcement active; simulated on macOS; Windows flow reader is WIP
 - **Alerting (Webhooks)** – Slack and PagerDuty notifications
 - **Prometheus Metrics** – Pre-built exporters
 - **Grafana Dashboards** – Auto-provisioned
@@ -106,7 +111,7 @@ ztap status
 - **REST API Server** – Minimal v1 endpoints via `ztap api serve`
 - **gRPC API Server** – Minimal v1 RPCs via `ztap grpc serve`
 - **79% Test Coverage** – Production-ready
-- **Multi-Platform** – Linux (eBPF) + macOS (pf)
+- **Multi-Platform** – Linux (eBPF) + macOS (pf) + Windows (WFP)
 
 </td>
 </tr>
