@@ -30,7 +30,7 @@
 - Alerting with webhook integrations (Slack, PagerDuty)
 - GCP VPC Firewall Rules synchronization
 - Kubernetes Operator with NetworkPolicy CRD
-- Windows support via Windows Filtering Platform (WFP)
+- Windows enforcement via Windows Filtering Platform (WFP) (experimental; Windows flow monitoring is WIP)
 
 ## Planned
 

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-ZTAP (Zero Trust Access Platform) is a Go 1.24+ CLI for zero-trust microsegmentation. It enforces network policies at the kernel level using eBPF (Linux) or pf (macOS), with distributed coordination via etcd.
+ZTAP (Zero Trust Access Platform) is a Go 1.24+ CLI for zero-trust microsegmentation. It enforces network policies using eBPF (Linux), pf (macOS), or WFP (Windows), with distributed coordination via etcd.
 
 ## Architecture
 
@@ -16,8 +16,8 @@ CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer 
 
 - **Policy Engine**: Parses Kubernetes-style YAML (`apiVersion: ztap/v1`), validates CIDR/ports/protocols, resolves labels via `ServiceDiscovery` interface
 - **API Server**: Minimal REST server (`ztap api serve`) and minimal gRPC server (`ztap grpc serve`) exposing auth/status/enforcement/flows (metrics remains HTTP)
-- **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) and macOS pf (`enforcer.go`)
-- **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map)
+- **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`), macOS pf (`enforcer.go`), and Windows WFP (`wfp_windows.go`)
+- **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map); Windows flow reader is WIP
 - **Alerting**: `pkg/alert/` provides webhook sinks (Slack, PagerDuty) and async dispatch with optional TTL dedupe (configured via `alerting.*`)
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
 - **Discovery**: Label-to-IP resolution - `InMemoryDiscovery` (dev), DNS/Consul backends (stubs), Kubernetes backend (WIP)
@@ -57,9 +57,20 @@ type FlowMonitor interface {
 
 - Linux eBPF: `pkg/enforcer/ebpf_linux.go` with `//go:build linux` tag
 - macOS pf: Falls back to `EnforceWithPF()` in `pkg/enforcer/enforcer.go`
+- Windows WFP: `pkg/enforcer/wfp_windows.go` and `pkg/enforcer/wfp_engine_windows.go` with `//go:build windows` tags
 - eBPF requires: compiled `bpf/filter.o`, root/CAP_BPF, kernel 5.7+
 - Linux `ztap enforce` keeps running while enforcement is active; Ctrl+C detaches and exits
 - CLI flags for Linux enforcement: `--cgroup`, `--bpf-object`, `--debug-ebpf` (and env vars `ZTAP_BPF_OBJECT`, `ZTAP_DEBUG_EBPF`)
+
+Windows enforcement constraints (WFP):
+
+- IPv4 `ipBlock` rules with `/32` CIDRs
+- TCP/UDP only
+- Requires an elevated terminal (Administrator) to apply/tear down filters
+
+## Documentation constraints
+
+- `docs/windows-wfp.md` is internal-only; do not link it from other docs and do not reference it in user-facing documentation.
 
 ## API Server Notes
 
