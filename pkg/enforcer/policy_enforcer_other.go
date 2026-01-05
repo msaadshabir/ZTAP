@@ -10,3 +10,13 @@ func EnforceWithEBPFIfAvailable(policies []policy.NetworkPolicy, cgroupPath stri
 	EnforceWithEBPF(policies)
 	return nil
 }
+
+// StopLinuxEnforcement is a no-op on non-Linux platforms.
+func StopLinuxEnforcement() error {
+	return nil
+}
+
+// CanUseEBPF always returns false on non-Linux platforms.
+func CanUseEBPF() bool {
+	return false
+}

@@ -31,10 +31,10 @@
 - GCP VPC Firewall Rules synchronization
 - Kubernetes Operator with NetworkPolicy CRD
 - Windows enforcement via Windows Filtering Platform (WFP) (experimental; Windows flow monitoring is WIP)
+- iptables fallback for older Linux kernels
 
 ## Planned
 
-- iptables fallback for older Linux kernels
 - Pre-compiled eBPF binaries
 - 2FA/MFA authentication
 - Certificate-based authentication

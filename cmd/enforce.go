@@ -78,13 +78,12 @@ var enforceCmd = &cobra.Command{
 			if debugEBPF {
 				_ = os.Setenv("ZTAP_DEBUG_EBPF", "1")
 			}
-			if err := enforcer.ValidatePoliciesForEBPF(policies); err != nil {
-				log.Fatalf("Policy is not supported by eBPF enforcer yet: %v", err)
+			if err := enforcer.ValidatePoliciesForLinux(policies); err != nil {
+				log.Fatalf("Policy is not supported by enforcer yet: %v", err)
 			}
 
-			fmt.Println("Enforcing via eBPF (Linux)...")
 			if err := enforcer.EnforceWithEBPFIfAvailable(policies, cgroupPath); err != nil {
-				log.Fatalf("Failed to enforce via eBPF: %v", err)
+				log.Fatalf("Failed to enforce: %v", err)
 			}
 
 			fmt.Println("Enforcement active. Press Ctrl+C to stop.")
@@ -92,8 +91,8 @@ var enforceCmd = &cobra.Command{
 			notifyStopSignals(sigCh)
 			<-sigCh
 			stopStopSignals(sigCh)
-			if err := enforcer.StopEBPFEnforcement(); err != nil {
-				log.Printf("Warning: failed to stop eBPF enforcement cleanly: %v", err)
+			if err := enforcer.StopLinuxEnforcement(); err != nil {
+				log.Printf("Warning: failed to stop enforcement cleanly: %v", err)
 			}
 			fmt.Println("Enforcement stopped.")
 			return

@@ -49,7 +49,7 @@ The Docker Compose stack includes:
 ### ZTAP Core (`ztap`)
 
 - **Port**: 9090 (metrics)
-- **Capabilities**: Requires privileged mode for eBPF on Linux
+- **Capabilities**: Requires privileged mode for eBPF on Linux (or `NET_ADMIN` for iptables fallback)
 - **Volumes**: Policy examples, logs, and data
 - **Command**: Runs metrics server by default
 
@@ -144,6 +144,11 @@ For eBPF enforcement on Linux:
   - `CAP_SYS_ADMIN`
   - `CAP_BPF`
 - Access to `/sys/fs/cgroup` for cgroup attachment
+
+For iptables fallback (older kernels or non-BPF):
+
+- Capabilities: `CAP_NET_ADMIN`
+- Config: Can force via `ZTAP_FORCE_IPTABLES=1` if BPF is present but undesired.
 
 ## Usage Examples
 

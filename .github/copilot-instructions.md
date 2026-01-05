@@ -16,7 +16,7 @@ CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer 
 
 - **Policy Engine**: Parses Kubernetes-style YAML (`apiVersion: ztap/v1`), validates CIDR/ports/protocols, resolves labels via `ServiceDiscovery` interface
 - **API Server**: Minimal REST server (`ztap api serve`) and minimal gRPC server (`ztap grpc serve`) exposing auth/status/enforcement/flows (metrics remains HTTP)
-- **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`), macOS pf (`enforcer.go`), and Windows WFP (`wfp_windows.go`)
+- **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) with iptables fallback (`iptables_linux.go`), macOS pf (`enforcer.go`), and Windows WFP (`wfp_windows.go`)
 - **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map); Windows flow reader is WIP
 - **Alerting**: `pkg/alert/` provides webhook sinks (Slack, PagerDuty) and async dispatch with optional TTL dedupe (configured via `alerting.*`)
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
@@ -56,11 +56,13 @@ type FlowMonitor interface {
 ## Platform-Specific Code
 
 - Linux eBPF: `pkg/enforcer/ebpf_linux.go` with `//go:build linux` tag
+- Linux iptables (fallback): `pkg/enforcer/iptables_linux.go` with `//go:build linux` tag. Automatically used if kernel < 5.7, BPF unavailable, or matching `ZTAP_FORCE_IPTABLES=1`.
 - macOS pf: Falls back to `EnforceWithPF()` in `pkg/enforcer/enforcer.go`
 - Windows WFP: `pkg/enforcer/wfp_windows.go` and `pkg/enforcer/wfp_engine_windows.go` with `//go:build windows` tags
 - eBPF requires: compiled `bpf/filter.o`, root/CAP_BPF, kernel 5.7+
 - Linux `ztap enforce` keeps running while enforcement is active; Ctrl+C detaches and exits
 - CLI flags for Linux enforcement: `--cgroup`, `--bpf-object`, `--debug-ebpf` (and env vars `ZTAP_BPF_OBJECT`, `ZTAP_DEBUG_EBPF`)
+- iptables fallback uses: `iptables-restore` for atomicity, custom chains (`ZTAP-INGRESS`, `ZTAP-EGRESS`)
 
 Windows enforcement constraints (WFP):
 
@@ -96,6 +98,9 @@ go test ./...
 
 # eBPF integration (Linux + root only)
 sudo go test -tags integration ./pkg/enforcer -run TestEBPFIntegration -v
+
+# iptables integration (Linux + NetAdmin only)
+sudo ZTAP_FORCE_IPTABLES=1 go test -tags integration -v ./tests/integration_iptables.sh
 
 # Race detection
 go test ./... -race

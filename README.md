@@ -70,6 +70,7 @@ ztap status
 ### Security & Enforcement
 
 - **Kernel-Level Filtering** – Real eBPF on Linux
+- **Older Kernel Support** – iptables fallback for pre-5.7 kernels or non-BPF environments
 - **Bidirectional Enforcement** – Ingress and egress policies
 - **RBAC** – Admin, Operator, Viewer roles
 - **Session Management** – 24-hour TTL

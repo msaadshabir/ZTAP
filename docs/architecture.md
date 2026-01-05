@@ -44,12 +44,16 @@ ResolveLabels(labels map[string]string) ([]string, error)
 
 **Implementations**:
 
-- **Linux**: eBPF
+- **Linux**: eBPF (Primary)
   - Attach to cgroup hooks (egress and ingress)
   - Per-cgroup policy keys (falls back to global keys while per-pod scoping is WIP)
   - Kernel-level enforcement with BTF support
   - Safe packet parsing using bpf_skb_load_bytes
   - Bidirectional filtering (cgroup_skb/egress and cgroup_skb/ingress)
+- **Linux**: iptables (Fallback)
+  - Used automatically if kernel < 5.7 or BPF unavailable (or `ZTAP_FORCE_IPTABLES=1`)
+  - Manages `ZTAP-INGRESS` and `ZTAP-EGRESS` chains
+  - Uses `iptables-restore` for atomic updates
 - **macOS**: pf (Packet Filter)
   - Manages `/etc/pf.anchors/ztap`
   - Updates `/etc/pf.conf`
