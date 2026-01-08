@@ -70,3 +70,10 @@ func ValidatePoliciesForLinux(policies []policy.NetworkPolicy) error {
 
 	return nil
 }
+
+// ValidatePoliciesForEBPF is kept for compatibility with callers that expect
+// an eBPF-specific validation entrypoint. It mirrors the Linux validation
+// logic, which already enforces the eBPF constraints when applicable.
+func ValidatePoliciesForEBPF(policies []policy.NetworkPolicy) error {
+	return ValidatePoliciesForLinux(policies)
+}
