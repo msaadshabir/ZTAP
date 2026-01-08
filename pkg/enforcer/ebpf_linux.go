@@ -3,13 +3,14 @@
 
 package enforcer
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -target bpfeb -cc clang bpf ../../bpf/filter.c -- -I../../bpf
+
 import (
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -35,14 +36,6 @@ type eBPFEnforcer struct {
 }
 
 const DefaultFlowEventsPinPath = "/sys/fs/bpf/ztap/flow_events"
-
-// bpfObjects contains loaded eBPF programs and maps
-type bpfObjects struct {
-	PolicyMap     *ebpf.Map     `ebpf:"policy_map"`
-	FlowEvents    *ebpf.Map     `ebpf:"flow_events"`
-	FilterEgress  *ebpf.Program `ebpf:"filter_egress"`
-	FilterIngress *ebpf.Program `ebpf:"filter_ingress"`
-}
 
 // Direction constants matching BPF program
 const (
@@ -82,74 +75,28 @@ func NewEBPFEnforcer() (*eBPFEnforcer, error) {
 func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	e.policies = policies
 
-	// Try to load eBPF object file
-	// First check if compiled BPF program exists
-	// Determine repo root based on this source file location to handle tests run from package dirs
-	var repoRootCandidate string
-	if _, thisFile, _, ok := runtime.Caller(0); ok {
-		repoRootCandidate = filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
-	}
+	var objs bpfObjects
+	var err error
 
-	// Allow explicit override via environment variable
+	// Allow explicit override via environment variable (useful for development)
 	if p := os.Getenv("ZTAP_BPF_OBJECT"); p != "" {
 		safeP := strings.ReplaceAll(p, "\n", "")
 		safeP = strings.ReplaceAll(safeP, "\r", "")
-		log.Printf("ZTAP_BPF_OBJECT override set: %s", safeP)
-	}
-
-	bpfPaths := []string{
-		// Explicit override (if set)
-		os.Getenv("ZTAP_BPF_OBJECT"),
-		// Absolute path from repo root if detectable
-		filepath.Join(repoRootCandidate, "bpf", "filter.o"),
-		// Relative to current working directory (when CWD is repo root)
-		"bpf/filter.o",
-		// Relative to package directory (when CWD is pkg/enforcer)
-		filepath.Join("..", "..", "bpf", "filter.o"),
-		// System-wide locations
-		"/usr/local/share/ztap/bpf/filter.o",
-		filepath.Join(os.Getenv("HOME"), ".ztap", "bpf", "filter.o"),
-	}
-
-	var spec *ebpf.CollectionSpec
-	var err error
-	var attempts []string
-
-	for _, path := range bpfPaths {
-		if path == "" {
-			continue
+		log.Printf("Loading eBPF object from override: %s", safeP)
+		spec, err := ebpf.LoadCollectionSpec(p)
+		if err != nil {
+			return fmt.Errorf("failed to load eBPF object from %s: %w", safeP, err)
 		}
-		// Log attempt in debug mode
-		if os.Getenv("ZTAP_DEBUG_EBPF") == "1" {
-			safePath := strings.ReplaceAll(path, "\n", "")
-			safePath = strings.ReplaceAll(safePath, "\r", "")
-			log.Printf("Attempting to load eBPF object: %s", safePath)
+		if err := spec.LoadAndAssign(&objs, nil); err != nil {
+			return fmt.Errorf("failed to load eBPF objects from %s: %w", safeP, err)
 		}
-		if _, statErr := os.Stat(path); statErr != nil {
-			attempts = append(attempts, fmt.Sprintf("%s: %v", path, statErr))
-			continue
+	} else {
+		// Load embedded eBPF objects
+		if err = loadBpfObjects(&objs, nil); err != nil {
+			return fmt.Errorf("failed to load embedded eBPF objects: %w", err)
 		}
-		spec, err = ebpf.LoadCollectionSpec(path)
-		if err == nil {
-			safePath := strings.ReplaceAll(path, "\n", "")
-			safePath = strings.ReplaceAll(safePath, "\r", "")
-			log.Printf("Loaded eBPF spec from: %s", safePath)
-			break
-		}
-		attempts = append(attempts, fmt.Sprintf("%s: %v", path, err))
 	}
-
-	if spec == nil {
-		// Provide detailed diagnostic information
-		return fmt.Errorf("failed to load eBPF object. Please compile with: 'cd bpf && make'. Attempts: [%s]",
-			strings.Join(attempts, "; "))
-	}
-
-	objs := &bpfObjects{}
-	if err := spec.LoadAndAssign(objs, nil); err != nil {
-		return fmt.Errorf("failed to load eBPF objects: %w", err)
-	}
-	e.objs = objs
+	e.objs = &objs
 
 	// Populate policy map
 	for _, p := range policies {

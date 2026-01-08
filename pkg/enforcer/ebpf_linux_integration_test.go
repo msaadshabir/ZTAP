@@ -87,6 +87,12 @@ func compileTestBPF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to build eBPF program: %v\n%s", err, string(output))
 	}
+
+	// Set override so the enforcer uses the fresh build instead of embedded bytecode
+	os.Setenv("ZTAP_BPF_OBJECT", filepath.Join(repoRoot, "bpf", "filter.o"))
+	t.Cleanup(func() {
+		os.Unsetenv("ZTAP_BPF_OBJECT")
+	})
 }
 
 func createTestCgroup(t *testing.T) string {

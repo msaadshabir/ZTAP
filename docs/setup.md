@@ -8,9 +8,11 @@
 - **Go**: 1.24 or later
 - **Memory**: 2 GB RAM minimum
 - **Disk**: 200 MB for binary, policies, and logs
+- **Note on eBPF**: Production binaries include pre-compiled bytecode. Runtime dependencies like `clang` or `llvm` are **not** required for enforcement.
 
-### Optional Components
+### Optional Components (Development)
 
+- **Clang/LLVM**: Required only if you plan to modify and recompile the eBPF source code (`bpf/filter.c`).
 - **AWS Account**: For cloud integration and Security Group sync
 - **Azure Subscription**: For cloud integration and NSG sync
 - **Docker**: For full stack deployment (Prometheus + Grafana + Anomaly Detector)

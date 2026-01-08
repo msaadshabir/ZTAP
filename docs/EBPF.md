@@ -2,102 +2,73 @@
 
 ZTAP uses eBPF (Extended Berkeley Packet Filter) for high-performance, kernel-level network policy enforcement on Linux systems.
 
+## Overview
+
+ZTAP employs a **pre-compiled binary** strategy. The eBPF bytecode is compiled at build-time and embedded directly into the Go binary using `bpf2go`. This eliminates the need for `clang`, `llvm`, or kernel headers on the target production systems.
+
 ## Prerequisites
 
-### System Requirements
+### Runtime Requirements
 
 - **Operating System**: Linux kernel 5.7+ (for cgroup v2 support)
 - **Root/CAP_BPF**: Root privileges or `CAP_BPF` and `CAP_NET_ADMIN` capabilities
 - **cgroup v2**: Must be mounted at `/sys/fs/cgroup`
 
-### Build Dependencies
+No compiler toolchain is required at runtime.
+
+### Build/Development Dependencies
+
+If you are building ZTAP from source or modifying the eBPF program, you will need:
 
 - `clang` (LLVM compiler)
-- Linux kernel headers
-- `make`
+- `llvm`
+- Go 1.24+
 
-#### Install on Ubuntu/Debian
+#### Install Build Dependencies (Ubuntu/Debian)
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y clang llvm make linux-headers-$(uname -r)
-```
-
-#### Install on Fedora/RHEL
-
-```bash
-sudo dnf install -y clang llvm make kernel-headers kernel-devel
-```
-
-#### Install on Arch Linux
-
-```bash
-sudo pacman -S clang llvm make linux-headers
+sudo apt-get install -y clang llvm
 ```
 
 ## Compilation
 
-### Build the eBPF Program
+### Standard Build (Go)
+
+The eBPF bytecode is automatically generated and embedded during the build process if `go generate` is run:
+
+```bash
+# Generate the Go wrappers for eBPF bytecode
+go generate ./pkg/enforcer/...
+
+# Build the binary
+go build -o ztap
+```
+
+### Manual C Compilation (Optional)
+
+If you wish to manually compile the C source without using the Go generator:
 
 ```bash
 cd bpf
 make
 ```
 
-After a successful build, the object file will be at `bpf/filter.o`.
-
-The enforcer loader searches for the eBPF object in the following locations (in order):
-
-- `<repo-root>/bpf/filter.o` (preferred when running from anywhere)
-- `bpf/filter.o` (when your CWD is the repo root)
-- `../../bpf/filter.o` (when your CWD is `pkg/enforcer`)
-- `/usr/local/share/ztap/bpf/filter.o` (system-wide install used by CI)
-- `$HOME/.ztap/bpf/filter.o` (user install)
-
-In CI, we additionally install the object to a standard path for reliability:
+After a manual build, the object file will be at `bpf/filter.o`. You can force ZTAP to use this local file instead of the embedded bytecode by setting an environment variable:
 
 ```bash
-sudo mkdir -p /usr/local/share/ztap/bpf
-sudo cp -v bpf/filter.o /usr/local/share/ztap/bpf/filter.o
+export ZTAP_BPF_OBJECT=$PWD/bpf/filter.o
+sudo ./ztap enforce -f policy.yaml
 ```
 
-This compiles `filter.c` to `filter.o` (eBPF bytecode).
+## Loader Search Order
 
-Note on BTF: The build uses `-g` (see `bpf/Makefile`) so the object embeds BTF type info required by modern loaders. If you modify the Makefile, keep `-g` to avoid loader errors.
+When `ZTAP_BPF_OBJECT` is not set, ZTAP uses the embedded bytecode. If `ZTAP_BPF_OBJECT` is provided, it takes precedence.
 
-### Verify Compilation
+Historical search paths for `filter.o` (deprecated in favor of embedding):
 
-```bash
-make verify
-```
-
-This uses `llvm-objdump` to inspect the compiled eBPF program.
-
-### Clean Build Artifacts
-
-```bash
-make clean
-```
-
-## Installation
-
-### System-Wide Installation
-
-Copy the compiled eBPF program to a system location:
-
-```bash
-sudo mkdir -p /usr/local/share/ztap/bpf
-sudo cp filter.o /usr/local/share/ztap/bpf/
-```
-
-### User Installation
-
-For non-root users (limited functionality):
-
-```bash
-mkdir -p ~/.ztap/bpf
-cp filter.o ~/.ztap/bpf/
-```
+- `<repo-root>/bpf/filter.o`
+- `/usr/local/share/ztap/bpf/filter.o`
 
 ## eBPF Program Variants
 

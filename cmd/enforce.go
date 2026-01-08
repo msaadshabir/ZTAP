@@ -124,7 +124,7 @@ var enforceCmd = &cobra.Command{
 func init() {
 	enforceCmd.Flags().StringP("file", "f", "policy.yaml", "Path to policy YAML file")
 	enforceCmd.Flags().String("cgroup", "", "Cgroup v2 path for eBPF attachment (Linux only)")
-	enforceCmd.Flags().String("bpf-object", "", "Path to compiled eBPF object file (overrides search paths; Linux only)")
+	enforceCmd.Flags().String("bpf-object", "", "Optional path to compiled eBPF object file (overrides embedded bytecode; Linux only)")
 	enforceCmd.Flags().Bool("debug-ebpf", false, "Enable debug logging for eBPF object loading (Linux only)")
 	enforceCmd.Flags().Bool("resolve-labels", false, "Resolve pod selectors to IP blocks using configured discovery backend")
 	rootCmd.AddCommand(enforceCmd)

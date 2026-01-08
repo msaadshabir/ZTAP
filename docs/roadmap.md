@@ -32,16 +32,28 @@
 - Kubernetes Operator with NetworkPolicy CRD
 - Windows enforcement via Windows Filtering Platform (WFP) (experimental; Windows flow monitoring is WIP)
 - iptables fallback for older Linux kernels
+- Pre-compiled eBPF binaries (built with bpf2go)
 
 ## Planned
 
 ### Essential for Production Use
 
-- **Pre-compiled eBPF binaries** - Remove clang/llvm build dependency for Linux deployment
 - **TLS for API servers** - HTTPS for REST and TLS for gRPC
 - **Policy validation CLI** - `ztap policy validate -f policy.yaml` for CI/CD pipelines
+- **IPv6 support** - Extend eBPF and iptables enforcers to handle IPv6 CIDRs
+- **Policy dry-run mode** - `ztap enforce --dry-run` to preview rules without applying
+- **Graceful policy reload** - Update policies without dropping active connections
+- **Persistent sessions** - Store auth sessions in a durable backend (SQLite/etcd)
 
-### Future Enhancements
+### Operational Readiness
 
-- **Web UI for policy management** - Visual policy editor and enforcement status dashboard
+- **Health/readiness probes** - `/healthz` and `/readyz` endpoints for Kubernetes deployments
+- **Configuration backup/restore** - Export and import policies, discovery state, and config
+- **Rate limiting on APIs** - Prevent abuse on REST and gRPC endpoints
 - **Windows flow monitoring** - Complete WFP flow event capture
+
+### Compliance and Enterprise
+
+- **Namespace/tenant isolation** - Multi-tenant policy scoping
+- **Compliance report generation** - PCI-DSS, SOC2, HIPAA policy mapping exports
+- **Certificate-based authentication** - mTLS client authentication for API access

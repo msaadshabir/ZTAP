@@ -17,12 +17,12 @@
 ### Installation
 
 ```bash
-# Linux (Production with eBPF)
-sudo apt-get install clang llvm make linux-headers-$(uname -r)
-cd bpf && make && cd ..
+# Build and install (Linux/macOS/Windows)
+go build -o ztap
+sudo mv ztap /usr/local/bin/
 
-# Build and install
-go build && sudo mv ztap /usr/local/bin/
+# Note for Linux: The binary includes pre-compiled eBPF bytecode.
+# No clang/llvm dependency is required at runtime.
 ```
 
 ### First Steps
