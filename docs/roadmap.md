@@ -35,13 +35,13 @@
 
 ## Planned
 
-- Pre-compiled eBPF binaries
-- 2FA/MFA authentication
-- Certificate-based authentication
-- OAuth/OIDC and SAML SSO
-- LDAP/Active Directory integration
-- Distributed rate limiting
-- Web UI for policy management
-- Namespace/tenant isolation
-- Compliance reporting (PCI-DSS, SOC2, HIPAA)
-- Network segmentation visualization
+### Essential for Production Use
+
+- **Pre-compiled eBPF binaries** - Remove clang/llvm build dependency for Linux deployment
+- **TLS for API servers** - HTTPS for REST and TLS for gRPC
+- **Policy validation CLI** - `ztap policy validate -f policy.yaml` for CI/CD pipelines
+
+### Future Enhancements
+
+- **Web UI for policy management** - Visual policy editor and enforcement status dashboard
+- **Windows flow monitoring** - Complete WFP flow event capture
