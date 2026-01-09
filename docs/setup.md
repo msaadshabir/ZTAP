@@ -87,7 +87,39 @@ ztap --help
 ztap status
 ```
 
-### 2. macOS-Specific Setup
+### 2. TLS Configuration (Recommended for Production)
+
+ZTAP supports HTTPS for the REST API and TLS for the gRPC API. You can configure this via `config.yaml` or CLI flags.
+
+**Using `config.yaml`:**
+
+```yaml
+api:
+  listen: 127.0.0.1:8080
+  tls:
+    enabled: true
+    cert_file: "/path/to/server.crt"
+    key_file: "/path/to/server.key"
+
+grpc:
+  listen: 127.0.0.1:9092
+  tls:
+    enabled: true
+    cert_file: "/path/to/grpc.crt"
+    key_file: "/path/to/grpc.key"
+```
+
+**Using CLI flags:**
+
+```bash
+# Start REST API with TLS
+ztap api serve --tls --tls-cert /path/to/cert.crt --tls-key /path/to/key.key
+
+# Start gRPC API with TLS
+ztap grpc serve --tls --tls-cert /path/to/cert.crt --tls-key /path/to/key.key
+```
+
+### 3. macOS-Specific Setup
 
 ZTAP uses pf (packet filter) on macOS, which requires sudo:
 

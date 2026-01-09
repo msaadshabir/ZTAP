@@ -3,6 +3,7 @@ package apihttp
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,13 @@ import (
 type Config struct {
 	Listen      string
 	AuthEnabled bool
+	TLS         TLSConfig
+}
+
+type TLSConfig struct {
+	Enabled  bool
+	CertFile string
+	KeyFile  string
 }
 
 type Server struct {
@@ -109,7 +117,18 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 
 	go func() {
-		errCh <- httpServer.ListenAndServe()
+		if s.cfg.TLS.Enabled {
+			if s.cfg.TLS.CertFile == "" || s.cfg.TLS.KeyFile == "" {
+				errCh <- fmt.Errorf("TLS is enabled but certificate or key file is missing")
+				return
+			}
+			httpServer.TLSConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
+			errCh <- httpServer.ListenAndServeTLS(s.cfg.TLS.CertFile, s.cfg.TLS.KeyFile)
+		} else {
+			errCh <- httpServer.ListenAndServe()
+		}
 	}()
 
 	select {

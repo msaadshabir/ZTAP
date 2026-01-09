@@ -27,6 +27,7 @@
 - Policy conflict detection (structural + overlap)
 - REST API server (basic v1 endpoints via `ztap api serve`)
 - gRPC interface (basic v1 RPCs via `ztap grpc serve`)
+- TLS/HTTPS support for API and gRPC servers
 - Alerting with webhook integrations (Slack, PagerDuty)
 - GCP VPC Firewall Rules synchronization
 - Kubernetes Operator with NetworkPolicy CRD
@@ -38,7 +39,6 @@
 
 ### Essential for Production Use
 
-- **TLS for API servers** - HTTPS for REST and TLS for gRPC
 - **Policy validation CLI** - `ztap policy validate -f policy.yaml` for CI/CD pipelines
 - **IPv6 support** - Extend eBPF and iptables enforcers to handle IPv6 CIDRs
 - **Policy dry-run mode** - `ztap enforce --dry-run` to preview rules without applying

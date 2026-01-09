@@ -44,6 +44,20 @@ api:
   listen: 127.0.0.1:8080
   auth:
     enabled: true
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+
+# gRPC API server
+grpc:
+  listen: 127.0.0.1:9092
+  auth:
+    enabled: true
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
 
 # AWS Cloud Integration
 aws:

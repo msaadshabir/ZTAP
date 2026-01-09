@@ -72,6 +72,7 @@ ztap status
 - **Kernel-Level Filtering** – Real eBPF on Linux
 - **Older Kernel Support** – iptables fallback for pre-5.7 kernels or non-BPF environments
 - **Bidirectional Enforcement** – Ingress and egress policies
+- **Secure Communication** – HTTPS/TLS support for API and gRPC endpoints
 - **RBAC** – Admin, Operator, Viewer roles
 - **Session Management** – 24-hour TTL
 - **Tamper-Proof Audit Logging** – Cryptographic hash chaining

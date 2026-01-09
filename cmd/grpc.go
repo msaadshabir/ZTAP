@@ -48,12 +48,29 @@ var grpcServeCmd = &cobra.Command{
 		authEnabled, _ := cmd.Flags().GetBool("auth")
 		cfg.AuthEnabled = authEnabled
 
+		tlsEnabled, _ := cmd.Flags().GetBool("tls")
+		if tlsEnabled {
+			cfg.TLS.Enabled = true
+		}
+		tlsCert, _ := cmd.Flags().GetString("tls-cert")
+		if strings.TrimSpace(tlsCert) != "" {
+			cfg.TLS.CertFile = tlsCert
+		}
+		tlsKey, _ := cmd.Flags().GetString("tls-key")
+		if strings.TrimSpace(tlsKey) != "" {
+			cfg.TLS.KeyFile = tlsKey
+		}
+
 		srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, Alerts: alertManager})
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("starting grpc server on %s\n", srv.ListenAddr())
+		status := "plaintext"
+		if cfg.TLS.Enabled {
+			status = "TLS"
+		}
+		fmt.Printf("starting grpc server on %s (%s)\n", srv.ListenAddr(), status)
 		fmt.Println("press Ctrl+C to stop")
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -81,6 +98,11 @@ type grpcConfigFile struct {
 		Auth   struct {
 			Enabled *bool `yaml:"enabled"`
 		} `yaml:"auth"`
+		TLS struct {
+			Enabled  *bool  `yaml:"enabled"`
+			CertFile string `yaml:"cert_file"`
+			KeyFile  string `yaml:"key_file"`
+		} `yaml:"tls"`
 	} `yaml:"grpc"`
 }
 
@@ -90,7 +112,13 @@ func loadGRPCServerConfig() (apigrpc.Config, error) {
 		path = "config.yaml"
 	}
 
-	cfg := apigrpc.Config{Listen: "127.0.0.1:9092", AuthEnabled: true}
+	cfg := apigrpc.Config{
+		Listen:      "127.0.0.1:9092",
+		AuthEnabled: true,
+		TLS: apigrpc.TLSConfig{
+			Enabled: false,
+		},
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -111,6 +139,15 @@ func loadGRPCServerConfig() (apigrpc.Config, error) {
 	if fileCfg.GRPC.Auth.Enabled != nil {
 		cfg.AuthEnabled = *fileCfg.GRPC.Auth.Enabled
 	}
+	if fileCfg.GRPC.TLS.Enabled != nil {
+		cfg.TLS.Enabled = *fileCfg.GRPC.TLS.Enabled
+	}
+	if strings.TrimSpace(fileCfg.GRPC.TLS.CertFile) != "" {
+		cfg.TLS.CertFile = fileCfg.GRPC.TLS.CertFile
+	}
+	if strings.TrimSpace(fileCfg.GRPC.TLS.KeyFile) != "" {
+		cfg.TLS.KeyFile = fileCfg.GRPC.TLS.KeyFile
+	}
 
 	return cfg, nil
 }
@@ -118,6 +155,9 @@ func loadGRPCServerConfig() (apigrpc.Config, error) {
 func init() {
 	grpcServeCmd.Flags().String("listen", "", "Listen address (host:port)")
 	grpcServeCmd.Flags().Bool("auth", true, "Require auth for RPCs")
+	grpcServeCmd.Flags().Bool("tls", false, "Enable TLS")
+	grpcServeCmd.Flags().String("tls-cert", "", "Path to TLS certificate file")
+	grpcServeCmd.Flags().String("tls-key", "", "Path to TLS private key file")
 
 	grpcCmd.AddCommand(grpcServeCmd)
 	rootCmd.AddCommand(grpcCmd)

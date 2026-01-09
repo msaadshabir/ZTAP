@@ -21,6 +21,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -30,6 +31,13 @@ import (
 type Config struct {
 	Listen      string
 	AuthEnabled bool
+	TLS         TLSConfig
+}
+
+type TLSConfig struct {
+	Enabled  bool
+	CertFile string
+	KeyFile  string
 }
 
 type ServerOptions struct {
@@ -84,10 +92,23 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		flowReader: opts.FlowReaderFactory,
 	}
 
-	s.grpc = grpc.NewServer(
+	grpcOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(s.unaryAuthInterceptor),
 		grpc.StreamInterceptor(s.streamAuthInterceptor),
-	)
+	}
+
+	if s.cfg.TLS.Enabled {
+		if s.cfg.TLS.CertFile == "" || s.cfg.TLS.KeyFile == "" {
+			return nil, fmt.Errorf("gRPC TLS is enabled but certificate or key file is missing")
+		}
+		creds, err := credentials.NewServerTLSFromFile(s.cfg.TLS.CertFile, s.cfg.TLS.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load TLS credentials: %w", err)
+		}
+		grpcOpts = append(grpcOpts, grpc.Creds(creds))
+	}
+
+	s.grpc = grpc.NewServer(grpcOpts...)
 
 	s.registerServices()
 	return s, nil

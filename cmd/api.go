@@ -49,6 +49,19 @@ var apiServeCmd = &cobra.Command{
 		authEnabled, _ := cmd.Flags().GetBool("auth")
 		cfg.AuthEnabled = authEnabled
 
+		tlsEnabled, _ := cmd.Flags().GetBool("tls")
+		if tlsEnabled {
+			cfg.TLS.Enabled = true
+		}
+		tlsCert, _ := cmd.Flags().GetString("tls-cert")
+		if strings.TrimSpace(tlsCert) != "" {
+			cfg.TLS.CertFile = tlsCert
+		}
+		tlsKey, _ := cmd.Flags().GetString("tls-key")
+		if strings.TrimSpace(tlsKey) != "" {
+			cfg.TLS.KeyFile = tlsKey
+		}
+
 		// Initialize metrics so /metrics includes ZTAP counters.
 		metrics.GetCollector()
 
@@ -57,7 +70,11 @@ var apiServeCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("starting api server on http://%s\n", srv.ListenAddr())
+		scheme := "http"
+		if cfg.TLS.Enabled {
+			scheme = "https"
+		}
+		fmt.Printf("starting api server on %s://%s\n", scheme, srv.ListenAddr())
 		fmt.Println("press Ctrl+C to stop")
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -85,6 +102,11 @@ type apiConfigFile struct {
 		Auth   struct {
 			Enabled *bool `yaml:"enabled"`
 		} `yaml:"auth"`
+		TLS struct {
+			Enabled  *bool  `yaml:"enabled"`
+			CertFile string `yaml:"cert_file"`
+			KeyFile  string `yaml:"key_file"`
+		} `yaml:"tls"`
 	} `yaml:"api"`
 }
 
@@ -94,7 +116,13 @@ func loadAPIServerConfig() (apihttp.Config, error) {
 		path = "config.yaml"
 	}
 
-	cfg := apihttp.Config{Listen: "127.0.0.1:8080", AuthEnabled: true}
+	cfg := apihttp.Config{
+		Listen:      "127.0.0.1:8080",
+		AuthEnabled: true,
+		TLS: apihttp.TLSConfig{
+			Enabled: false,
+		},
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -115,6 +143,15 @@ func loadAPIServerConfig() (apihttp.Config, error) {
 	if fileCfg.API.Auth.Enabled != nil {
 		cfg.AuthEnabled = *fileCfg.API.Auth.Enabled
 	}
+	if fileCfg.API.TLS.Enabled != nil {
+		cfg.TLS.Enabled = *fileCfg.API.TLS.Enabled
+	}
+	if strings.TrimSpace(fileCfg.API.TLS.CertFile) != "" {
+		cfg.TLS.CertFile = fileCfg.API.TLS.CertFile
+	}
+	if strings.TrimSpace(fileCfg.API.TLS.KeyFile) != "" {
+		cfg.TLS.KeyFile = fileCfg.API.TLS.KeyFile
+	}
 
 	return cfg, nil
 }
@@ -122,6 +159,9 @@ func loadAPIServerConfig() (apihttp.Config, error) {
 func init() {
 	apiServeCmd.Flags().String("listen", "", "Listen address (host:port)")
 	apiServeCmd.Flags().Bool("auth", true, "Require auth for API endpoints")
+	apiServeCmd.Flags().Bool("tls", false, "Enable TLS (HTTPS)")
+	apiServeCmd.Flags().String("tls-cert", "", "Path to TLS certificate file")
+	apiServeCmd.Flags().String("tls-key", "", "Path to TLS private key file")
 
 	apiCmd.AddCommand(apiServeCmd)
 	rootCmd.AddCommand(apiCmd)
