@@ -120,18 +120,49 @@ func TestTLSServer(t *testing.T) {
 		errCh <- srv.Serve(ctx)
 	}()
 
-	// Wait for server to start
-	time.Sleep(200 * time.Millisecond)
-
-	// Test HTTPS connection
+	// Wait for server to become ready by polling the health endpoint with backoff.
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{Transport: tr}
 
-	resp, err := client.Get(fmt.Sprintf("https://%s/healthz", addr))
-	if err != nil {
-		t.Fatalf("failed to GET healthz via HTTPS: %v", err)
+	readyCtx, readyCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer readyCancel()
+
+	url := fmt.Sprintf("https://%s/healthz", addr)
+	var resp *http.Response
+	backoff := 10 * time.Millisecond
+
+	for {
+		select {
+		case <-readyCtx.Done():
+			t.Fatalf("server did not become ready: %v", readyCtx.Err())
+		case err := <-errCh:
+			t.Fatalf("server failed to start: %v", err)
+		default:
+		}
+
+		req, err := http.NewRequestWithContext(readyCtx, http.MethodGet, url, nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+
+		resp, err = client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+
+		if backoff > 200*time.Millisecond {
+			backoff = 200 * time.Millisecond
+		}
+		time.Sleep(backoff)
+		if backoff < 200*time.Millisecond {
+			backoff *= 2
+		}
 	}
 	defer resp.Body.Close()
 

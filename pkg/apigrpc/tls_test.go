@@ -110,19 +110,19 @@ func TestGRPCTLS(t *testing.T) {
 		_ = srv.Serve(ctx)
 	}()
 
-	// Wait for server to start
-	time.Sleep(200 * time.Millisecond)
-
 	// Test gRPC connection with TLS
 	creds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(creds))
+	clientCtx, clientCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer clientCancel()
+
+	conn, err := grpc.DialContext(clientCtx, addr, grpc.WithTransportCredentials(creds), grpc.WithBlock())
 	if err != nil {
 		t.Fatalf("failed to dial gRPC: %v", err)
 	}
 	defer conn.Close()
 
 	var resp structpb.Struct
-	err = conn.Invoke(ctx, "/ztap.api.v1.StatusService/GetStatus", &emptypb.Empty{}, &resp)
+	err = conn.Invoke(clientCtx, "/ztap.api.v1.StatusService/GetStatus", &emptypb.Empty{}, &resp)
 	if err != nil {
 		t.Fatalf("GetStatus RPC failed: %v", err)
 	}
