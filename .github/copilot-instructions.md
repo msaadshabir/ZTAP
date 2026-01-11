@@ -199,7 +199,7 @@ ztap policy validate -f policy.yaml
 
 # Remove AI code slop
 
-Check the diff against main, and remove all AI generated slop introduced in this branch.
+Check newest commit and remove AI Slop from it.
 
 This includes:
 
