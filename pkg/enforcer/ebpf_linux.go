@@ -351,8 +351,6 @@ func (e *eBPFEnforcer) GetFlowEventsMap() *ebpf.Map {
 	return e.objs.FlowEvents
 }
 
-// Helper functions
-
 func ipToUint32(ip net.IP) uint32 {
 	if ip == nil {
 		return 0
