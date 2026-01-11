@@ -347,3 +347,101 @@ func findOpenPort(t *testing.T) string {
 	}
 	return port
 }
+
+func TestPolicyValidate(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	validPolicy := `
+apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: valid-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: test
+  egress:
+    - to:
+        ipBlock:
+          cidr: 10.0.0.0/24
+      ports:
+        - protocol: TCP
+          port: 80
+`
+	validPath := filepath.Join(tmpDir, "valid.yaml")
+	if err := os.WriteFile(validPath, []byte(validPolicy), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	invalidPolicy := `
+apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: invalid-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: test
+  egress:
+    - to:
+        ipBlock:
+          cidr: 300.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 80
+`
+	invalidPath := filepath.Join(tmpDir, "invalid.yaml")
+	if err := os.WriteFile(invalidPath, []byte(invalidPolicy), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		args      []string
+		wantError bool
+		wantOut   string
+	}{
+		{
+			name:      "Valid Policy",
+			args:      []string{"policy", "validate", "-f", validPath},
+			wantError: false,
+			wantOut:   "is valid",
+		},
+		{
+			name:      "Invalid Policy",
+			args:      []string{"policy", "validate", "-f", invalidPath},
+			wantError: true,
+			wantOut:   "invalid CIDR address",
+		},
+		{
+			name:      "Missing File",
+			args:      []string{"policy", "validate"},
+			wantError: true,
+			wantOut:   "required",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			out, err := runCLI(ctx, tc.args...)
+			if tc.wantError {
+				if err == nil {
+					t.Errorf("expected error but got none. output: %s", out)
+				}
+				if !strings.Contains(out, tc.wantOut) && !strings.Contains(err.Error(), tc.wantOut) {
+					t.Errorf("expected output containing '%s', got '%s'", tc.wantOut, out)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("expected success but got error: %v. output: %s", err, out)
+				}
+				if !strings.Contains(out, tc.wantOut) {
+					t.Errorf("expected output containing '%s', got '%s'", tc.wantOut, out)
+				}
+			}
+		})
+	}
+}

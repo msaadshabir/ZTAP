@@ -3,6 +3,7 @@
 ## Delivered
 
 - Policy definition, parsing, and validation (label-based and IP-based rules)
+- Offline policy validation CLI (`ztap policy validate`)
 - Linux enforcement via eBPF
 - macOS enforcement via pf
 - DNS and label-based service discovery

@@ -39,9 +39,9 @@ Only the leader can initiate policy synchronization.`,
 		if !clusterElection.IsLeader() {
 			leader := clusterElection.GetLeader()
 			if leader == nil {
-				fmt.Println("Error: No leader elected. Cannot sync policies.")
+				fmt.Println("error: no leader elected, cannot sync policies")
 			} else {
-				fmt.Printf("Error: Only the leader can sync policies. Current leader: %s\n", leader.ID)
+				fmt.Printf("error: only the leader can sync policies, current leader: %s\n", leader.ID)
 			}
 			os.Exit(1)
 		}
@@ -51,19 +51,19 @@ Only the leader can initiate policy synchronization.`,
 		// Read policy YAML from file
 		policyYAML, err := os.ReadFile(policyFile)
 		if err != nil {
-			log.Fatalf("Failed to read policy file: %v", err)
+			log.Fatalf("failed to read policy file: %v", err)
 		}
 
 		policies, err := policy.LoadFromBytes(policyYAML)
 		if err != nil {
-			log.Fatalf("Failed to parse policy file: %v", err)
+			log.Fatalf("failed to parse policy file: %v", err)
 		}
 		if len(policies) == 0 {
-			log.Fatalf("Policy file contains no NetworkPolicy objects")
+			log.Fatalf("policy file contains no NetworkPolicy objects")
 		}
 		for _, p := range policies {
 			if err := p.Validate(); err != nil {
-				log.Fatalf("Invalid policy: %v", err)
+				log.Fatalf("invalid policy: %v", err)
 			}
 		}
 
@@ -83,11 +83,11 @@ Only the leader can initiate policy synchronization.`,
 
 		// Sync policy to cluster
 		if err := policySync.SyncPolicy(ctx, policyName, policyYAML); err != nil {
-			log.Fatalf("Failed to sync policy: %v", err)
+			log.Fatalf("failed to sync policy: %v", err)
 		}
 
 		version, _ := policySync.GetPolicyVersion(policyName)
-		fmt.Printf("Policy %s synced to cluster (version %d)\n", policyName, version)
+		fmt.Printf("policy %s synced to cluster (version %d)\n", policyName, version)
 	},
 }
 
@@ -97,13 +97,13 @@ var policyListCmd = &cobra.Command{
 	Long:  `Display all policies currently synchronized across the cluster with their versions.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if policySync == nil {
-			fmt.Println("Policy sync not initialized. Cluster must be running.")
+			fmt.Println("policy sync not initialized, cluster must be running")
 			os.Exit(1)
 		}
 
 		listable, ok := policySync.(interface{ ListPolicies() []*cluster.PolicyState })
 		if !ok {
-			fmt.Println("Error: Current policy sync backend doesn't support listing")
+			fmt.Println("error: current policy sync backend doesn't support listing")
 			os.Exit(1)
 		}
 
@@ -175,16 +175,16 @@ var policyShowCmd = &cobra.Command{
 			GetPolicy(string) (*cluster.PolicyState, error)
 		})
 		if !ok {
-			fmt.Println("Error: Current policy sync backend doesn't support policy retrieval")
+			fmt.Println("error: current policy sync backend doesn't support policy retrieval")
 			os.Exit(1)
 		}
 
 		policy, err := getter.GetPolicy(policyName)
 		if err != nil {
-			log.Fatalf("Failed to get policy: %v", err)
+			log.Fatalf("failed to get policy: %v", err)
 		}
 		if policy == nil {
-			fmt.Printf("Policy '%s' not found in cluster\n", policyName)
+			fmt.Printf("policy '%s' not found in cluster\n", policyName)
 			os.Exit(1)
 		}
 
@@ -221,11 +221,11 @@ var policyHistoryCmd = &cobra.Command{
 
 		revisions, err := store.ListPolicyRevisions(policyName, limit)
 		if err != nil {
-			log.Fatalf("Failed to list policy revisions: %v", err)
+			log.Fatalf("failed to list policy revisions: %v", err)
 		}
 
 		if len(revisions) == 0 {
-			fmt.Printf("No revisions found for policy '%s'\n", policyName)
+			fmt.Printf("no revisions found for policy '%s'\n", policyName)
 			return
 		}
 
@@ -286,12 +286,52 @@ var policyRollbackCmd = &cobra.Command{
 
 		rev, err := store.RollbackPolicy(ctx, policyName, targetVersion, reason)
 		if err != nil {
-			log.Fatalf("Rollback failed: %v", err)
+			log.Fatalf("rollback failed: %v", err)
 		}
 
 		rolledBackFrom := targetVersion
-		fmt.Printf("Rollback created policy %s version %d (from version %d)\n", rev.PolicyName, rev.Version, rolledBackFrom)
+		fmt.Printf("rollback created policy %s version %d (from version %d)\n", rev.PolicyName, rev.Version, rolledBackFrom)
 	},
+}
+
+var policyValidateCmd = &cobra.Command{
+	Use:   "validate",
+	Short: "Validate a policy file locally",
+	Long:  `Performs static validation of a policy file against the ZTAP specification options.`,
+	Run:   runPolicyValidate,
+}
+
+func runPolicyValidate(cmd *cobra.Command, args []string) {
+	policyFile, _ := cmd.Flags().GetString("file")
+
+	// Read policy YAML from file
+	policyYAML, err := os.ReadFile(policyFile)
+	if err != nil {
+		log.Fatalf("failed to read policy file: %v", err)
+	}
+
+	policies, err := policy.LoadFromBytes(policyYAML)
+	if err != nil {
+		log.Fatalf("failed to parse policy file: %v", err)
+	}
+
+	if len(policies) == 0 {
+		log.Fatalf("policy file contains no NetworkPolicy objects")
+	}
+
+	hasError := false
+	for _, p := range policies {
+		if err := p.Validate(); err != nil {
+			fmt.Printf("✗ %v\n", err)
+			hasError = true
+		} else {
+			fmt.Printf("✓ policy '%s' is valid\n", p.Metadata.Name)
+		}
+	}
+
+	if hasError {
+		os.Exit(1)
+	}
 }
 
 // pluralize is a simple helper for singular/plural forms
@@ -308,6 +348,8 @@ func init() {
 	policyHistoryCmd.Flags().Int("limit", 10, "Number of revisions to display (0 for all)")
 	policyRollbackCmd.Flags().Int64("to", 0, "Target version to rollback to")
 	policyRollbackCmd.Flags().String("reason", "", "Optional reason for rollback")
+	policyValidateCmd.Flags().StringP("file", "f", "", "Path to policy file")
+	_ = policyValidateCmd.MarkFlagRequired("file")
 
 	// Add subcommands
 	policyCmd.AddCommand(policySyncCmd)
@@ -316,6 +358,7 @@ func init() {
 	policyCmd.AddCommand(policyShowCmd)
 	policyCmd.AddCommand(policyHistoryCmd)
 	policyCmd.AddCommand(policyRollbackCmd)
+	policyCmd.AddCommand(policyValidateCmd)
 
 	// Register with root command
 	rootCmd.AddCommand(policyCmd)

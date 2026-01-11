@@ -37,6 +37,9 @@ ztap discovery register web-1 10.0.1.1 --labels app=web,tier=frontend
 ztap discovery register db-1 10.0.2.1 --labels app=database,tier=backend
 
 # 3. Enforce a policy
+# Validate the policy first (CI/CD friendly)
+ztap policy validate -f examples/web-to-db.yaml
+
 # macOS (pf)
 ztap enforce -f examples/web-to-db.yaml
 

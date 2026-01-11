@@ -47,6 +47,10 @@ Cloud sync backends may still translate selectors (for example, `ztap gcp firewa
 Three-tier application: web to API, IoT to internet.
 
 ```bash
+# Validate the policy offline
+ztap policy validate -f web-to-db.yaml
+
+# Enforce locally
 ztap enforce -f web-to-db.yaml
 ```
 
