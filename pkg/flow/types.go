@@ -132,8 +132,6 @@ func (f *FlowFilter) Matches(event FlowEvent) bool {
 	return true
 }
 
-// Helper functions
-
 // uint32ToIP converts a uint32 IP address from network byte order (big-endian) to net.IP.
 // Network byte order stores the most significant byte first, so 10.0.1.1 is stored as 0x0A000101.
 func uint32ToIP(ip uint32) net.IP {
