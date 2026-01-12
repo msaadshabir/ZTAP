@@ -21,12 +21,13 @@ func EnforceWithWFP(opts EnforcementOptions) error {
 	if opts.DryRun {
 		log.Println("[DRY-RUN] WFP: simulating policy translation and transaction")
 		for _, p := range opts.Policies {
+			safeName := sanitizeForLog(p.Metadata.Name)
 			specs, err := TranslatePolicyToWFP(p)
 			if err != nil {
-				log.Printf("[DRY-RUN] Warning: would skip policy '%s' due to translation error: %v", p.Metadata.Name, err)
+				log.Printf("[DRY-RUN] Warning: would skip policy '%s' due to translation error: %v", safeName, err)
 				continue
 			}
-			log.Printf("[DRY-RUN] WFP: would add %d filters for policy '%s'", len(specs), p.Metadata.Name)
+			log.Printf("[DRY-RUN] WFP: would add %d filters for policy '%s'", len(specs), safeName)
 		}
 		wfpActive = true // Mark as active so dry-run Stop works
 		return nil
@@ -60,16 +61,17 @@ func EnforceWithWFP(opts EnforcementOptions) error {
 
 	// Translate and add filters
 	for _, p := range opts.Policies {
+		safeName := sanitizeForLog(p.Metadata.Name)
 		specs, err := TranslatePolicyToWFP(p)
 		if err != nil {
-			log.Printf("Warning: skipping policy '%s' due to translation error: %v", p.Metadata.Name, err)
+			log.Printf("Warning: skipping policy '%s' due to translation error: %v", safeName, err)
 			continue
 		}
 
 		for _, spec := range specs {
 			if err := engine.AddFilter(&spec); err != nil {
 				engine.AbortTransaction()
-				return fmt.Errorf("failed to add WFP filter for policy '%s': %w", p.Metadata.Name, err)
+				return fmt.Errorf("failed to add WFP filter for policy '%s': %w", safeName, err)
 			}
 		}
 	}

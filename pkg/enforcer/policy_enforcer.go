@@ -234,7 +234,7 @@ func (pe *PolicyEnforcer) reapplyAllPolicies() {
 	for _, update := range policies {
 		parsed, err := policy.LoadFromBytes(update.YAML)
 		if err != nil {
-			log.Printf("Error parsing policy %s during re-apply: %v", update.PolicyName, err)
+			log.Printf("Error parsing policy %s during re-apply: %v", sanitizeForLog(update.PolicyName), err)
 			continue
 		}
 		allPolicies = append(allPolicies, parsed...)
