@@ -156,8 +156,13 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		opts := enforcer.EnforcementOptions{
+			Policies:   policies,
+			CgroupPath: cgroupPath,
+			Context:    r.Context(),
+		}
 		platform := "linux"
-		if err := enforcer.EnforceWithEBPFIfAvailable(policies, cgroupPath); err != nil {
+		if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
 			s.emitAlert(alert.Alert{
 				Source:   "api-http",
 				Severity: alert.SeverityError,
@@ -185,7 +190,11 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 
 	if enforcer.IsWindows() {
 		platform := "windows"
-		if err := enforcer.EnforceWithWFP(policies); err != nil {
+		opts := enforcer.EnforcementOptions{
+			Policies: policies,
+			Context:  r.Context(),
+		}
+		if err := enforcer.EnforceWithWFP(opts); err != nil {
 			s.emitAlert(alert.Alert{
 				Source:   "api-http",
 				Severity: alert.SeverityError,
@@ -212,7 +221,10 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 	}
 
 	platform := runtime.GOOS
-	enforcer.EnforceWithPF(policies)
+	enforcer.EnforceWithPF(enforcer.EnforcementOptions{
+		Policies: policies,
+		Context:  r.Context(),
+	})
 	_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": platform, "count": len(policies)})
 	s.emitAlert(alert.Alert{
 		Source:   "api-http",
