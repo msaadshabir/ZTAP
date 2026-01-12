@@ -11,6 +11,15 @@ import (
 	"ztap/pkg/policy"
 )
 
+// sanitizeForLogPlain removes characters that could break log formatting.
+// In particular, it strips newline and carriage return characters so that
+// user-controlled values cannot inject additional log lines.
+func sanitizeForLogPlain(s string) string {
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	return s
+}
+
 // EnforcementOptions holds parameters for enforcement operations.
 type EnforcementOptions struct {
 	Policies   []policy.NetworkPolicy
@@ -102,7 +111,7 @@ func EnforceWithPF(opts EnforcementOptions) {
 	anchorContent := "# ZTAP Managed Rules\n"
 
 	for _, p := range opts.Policies {
-		anchorContent += fmt.Sprintf("# Policy: %s\n", sanitizeForLog(p.Metadata.Name))
+		anchorContent += fmt.Sprintf("# Policy: %s\n", sanitizeForLogPlain(p.Metadata.Name))
 
 		// Process egress rules (outbound traffic)
 		for _, egress := range p.Spec.Egress {
@@ -114,7 +123,7 @@ func EnforceWithPF(opts EnforcementOptions) {
 			if egress.To.IPBlock.CIDR != "" {
 				for _, port := range egress.Ports {
 					anchorContent += fmt.Sprintf("pass out quick proto %s from any to %s port = %d\n",
-						port.Protocol, egress.To.IPBlock.CIDR, port.Port)
+						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(egress.To.IPBlock.CIDR), port.Port)
 				}
 			}
 		}
@@ -129,7 +138,7 @@ func EnforceWithPF(opts EnforcementOptions) {
 			if ingress.From.IPBlock.CIDR != "" {
 				for _, port := range ingress.Ports {
 					anchorContent += fmt.Sprintf("pass in quick proto %s from %s to any port = %d\n",
-						port.Protocol, ingress.From.IPBlock.CIDR, port.Port)
+						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(ingress.From.IPBlock.CIDR), port.Port)
 				}
 			}
 		}
