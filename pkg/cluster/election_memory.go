@@ -88,7 +88,8 @@ func (e *InMemoryElection) Start(ctx context.Context) error {
 	e.ticker = time.NewTicker(e.config.HeartbeatInterval)
 
 	go e.runElectionLoop(ctx)
-	log.Printf("In-memory leader election started for node %s", e.config.NodeID)
+	safeNodeID := sanitizeForLog(e.config.NodeID)
+	log.Printf("In-memory leader election started for node %s", safeNodeID)
 
 	return nil
 }
@@ -337,7 +338,7 @@ func (e *InMemoryElection) checkAndElect() {
 
 	// Check for leader timeout
 	if time.Since(e.leader.LastSeen) > e.config.ElectionTimeout {
-		log.Printf("Leader %s timed out; triggering election", e.leader.ID)
+		log.Printf("Leader %s timed out; triggering election", sanitizeForLog(e.leader.ID))
 		e.triggerElection()
 	}
 }
@@ -363,7 +364,8 @@ func (e *InMemoryElection) triggerElection() {
 		e.state.Version++
 		e.lastElection = time.Now()
 
-		log.Printf("New leader elected: %s (this node leader=%v)", e.leader.ID, e.isLeader)
+		safeLeaderID := sanitizeForLog(e.leader.ID)
+		log.Printf("New leader elected: %s (this node leader=%v)", safeLeaderID, e.isLeader)
 
 		// Notify leader change watchers
 		e.broadcastLeaderChange(e.leader)

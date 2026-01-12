@@ -11,15 +11,6 @@ import (
 	"ztap/pkg/policy"
 )
 
-// sanitizeForLog removes newline characters from user-controlled strings
-// before they are included in log or dry-run output, to prevent log
-// injection or output spoofing.
-func sanitizeForLog(s string) string {
-	s = strings.ReplaceAll(s, "\n", "")
-	s = strings.ReplaceAll(s, "\r", "")
-	return s
-}
-
 // EnforcementOptions holds parameters for enforcement operations.
 type EnforcementOptions struct {
 	Policies   []policy.NetworkPolicy

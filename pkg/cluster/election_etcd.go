@@ -112,7 +112,8 @@ func (e *EtcdElection) Start(ctx context.Context) error {
 	// Start node monitoring
 	go e.monitorNodes()
 
-	log.Printf("Etcd leader election started for node %s", e.config.NodeID)
+	safeNodeID := sanitizeForLog(e.config.NodeID)
+	log.Printf("Etcd leader election started for node %s", safeNodeID)
 	return nil
 }
 
@@ -160,7 +161,8 @@ func (e *EtcdElection) Stop() error {
 		}
 	}
 
-	log.Printf("Etcd leader election stopped for node %s", e.config.NodeID)
+	safeNodeID := sanitizeForLog(e.config.NodeID)
+	log.Printf("Etcd leader election stopped for node %s", safeNodeID)
 	return nil
 }
 
@@ -369,6 +371,8 @@ func (e *EtcdElection) WatchClusterState() <-chan ClusterStateChange {
 
 // runElectionLoop runs the leader election campaign.
 func (e *EtcdElection) runElectionLoop() {
+	safeNodeID := sanitizeForLog(e.config.NodeID)
+
 	// Prepare node data for campaign
 	thisNode := &Node{
 		ID:       e.config.NodeID,
@@ -395,7 +399,7 @@ func (e *EtcdElection) runElectionLoop() {
 		}
 
 		// Campaign to become leader
-		log.Printf("Node %s campaigning for leadership", e.config.NodeID)
+		log.Printf("Node %s campaigning for leadership", safeNodeID)
 		if err := e.election.Campaign(e.ctx, string(nodeData)); err != nil {
 			if err == context.Canceled {
 				return
@@ -411,14 +415,14 @@ func (e *EtcdElection) runElectionLoop() {
 		e.currentState.Leader = thisNode
 		e.mu.Unlock()
 
-		log.Printf("Node %s became leader", e.config.NodeID)
+		log.Printf("Node %s became leader", safeNodeID)
 		e.notifyLeaderChange(thisNode)
 
 		// Keep the leadership by keeping the session alive
 		// The session will automatically renew its lease
 		select {
 		case <-e.session.Done():
-			log.Printf("Session expired, node %s lost leadership", e.config.NodeID)
+			log.Printf("Session expired, node %s lost leadership", safeNodeID)
 			e.mu.Lock()
 			e.isLeader = false
 			e.currentState.Leader = nil
