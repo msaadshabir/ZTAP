@@ -16,6 +16,23 @@ ZTAP employs a **pre-compiled binary** strategy. The eBPF bytecode is compiled a
 
 No compiler toolchain is required at runtime.
 
+### Dry-Run Mode
+
+You can verify eBPF program loading and policy map generation without attaching to the kernel:
+
+```bash
+# Validates policy compilation and map updates
+sudo ztap enforce -f policy.yaml --dry-run
+```
+
+In dry-run mode:
+
+- Policies are parsed and validated
+- eBPF maps are prepared (keys/values generated)
+- Kernel attachment is skipped
+- Map pinning (for flow monitoring) is skipped
+- Actions are logged to stdout
+
 ### Build/Development Dependencies
 
 If you are building ZTAP from source or modifying the eBPF program, you will need:

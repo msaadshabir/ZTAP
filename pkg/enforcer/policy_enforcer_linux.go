@@ -5,24 +5,32 @@ package enforcer
 import (
 	"log"
 	"os"
-	"ztap/pkg/policy"
 )
 
 var activeIptablesEnforcer *IptablesEnforcer
 
 // EnforceWithEBPFIfAvailable uses the best available enforcer on Linux (eBPF or iptables).
-func EnforceWithEBPFIfAvailable(policies []policy.NetworkPolicy, cgroupPath string) error {
+func EnforceWithEBPFIfAvailable(opts EnforcementOptions) error {
 	if CanUseEBPF() {
-		log.Println("Enforcing via eBPF (Linux)...")
-		return EnforceWithEBPFReal(policies, cgroupPath)
+		if opts.DryRun {
+			log.Println("[DRY-RUN] Enforcing via eBPF (Linux)...")
+		} else {
+			log.Println("Enforcing via eBPF (Linux)...")
+		}
+		return EnforceWithEBPFReal(opts)
 	}
 
-	log.Println("Enforcing via iptables fallback (Linux)...")
+	if opts.DryRun {
+		log.Println("[DRY-RUN] Enforcing via iptables fallback (Linux)...")
+	} else {
+		log.Println("Enforcing via iptables fallback (Linux)...")
+	}
 	activeIptablesEnforcer = NewIptablesEnforcer()
 	if err := activeIptablesEnforcer.Init(); err != nil {
 		return err
 	}
-	return activeIptablesEnforcer.LoadPolicies(policies)
+	activeIptablesEnforcer.dryRun = opts.DryRun
+	return activeIptablesEnforcer.LoadPolicies(opts.Policies)
 }
 
 // StopLinuxEnforcement stops whichever linux enforcer is currently active.

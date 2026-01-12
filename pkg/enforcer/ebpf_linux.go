@@ -372,7 +372,7 @@ func protocolToNum(protocol string) uint8 {
 }
 
 // EnforceWithEBPFReal uses actual eBPF enforcement (requires root)
-func EnforceWithEBPFReal(policies []policy.NetworkPolicy, cgroupPath string) error {
+func EnforceWithEBPFReal(opts EnforcementOptions) error {
 	activeEBPFMu.Lock()
 	defer activeEBPFMu.Unlock()
 
@@ -386,12 +386,18 @@ func EnforceWithEBPFReal(policies []policy.NetworkPolicy, cgroupPath string) err
 		return fmt.Errorf("failed to create eBPF enforcer: %w", err)
 	}
 
-	if err := enforcer.LoadPolicies(policies); err != nil {
+	if err := enforcer.LoadPolicies(opts.Policies); err != nil {
 		_ = enforcer.Close()
 		return fmt.Errorf("failed to load policies: %w", err)
 	}
 
-	if err := enforcer.Attach(cgroupPath); err != nil {
+	if opts.DryRun {
+		log.Printf("[DRY-RUN] eBPF: Validated %d policies, skipping attachment and pinning", len(opts.Policies))
+		_ = enforcer.Close()
+		return nil
+	}
+
+	if err := enforcer.Attach(opts.CgroupPath); err != nil {
 		_ = enforcer.Close()
 		return fmt.Errorf("failed to attach eBPF program: %w", err)
 	}
@@ -400,7 +406,7 @@ func EnforceWithEBPFReal(policies []policy.NetworkPolicy, cgroupPath string) err
 		log.Printf("Warning: Failed to pin flow_events map (ztap flows may not work): %v", err)
 	}
 
-	log.Printf("Successfully enforced %d policies via eBPF", len(policies))
+	log.Printf("Successfully enforced %d policies via eBPF", len(opts.Policies))
 	activeEBPFEnforcer = enforcer
 	return nil
 }

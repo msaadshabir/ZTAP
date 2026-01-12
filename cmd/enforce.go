@@ -21,6 +21,7 @@ var enforceCmd = &cobra.Command{
 		bpfObject, _ := cmd.Flags().GetString("bpf-object")
 		debugEBPF, _ := cmd.Flags().GetBool("debug-ebpf")
 		resolveLabels, _ := cmd.Flags().GetBool("resolve-labels")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		policies, err := policy.LoadFromFile(policyFile)
 		if err != nil {
@@ -82,8 +83,19 @@ var enforceCmd = &cobra.Command{
 				log.Fatalf("Policy is not supported by enforcer yet: %v", err)
 			}
 
-			if err := enforcer.EnforceWithEBPFIfAvailable(policies, cgroupPath); err != nil {
+			opts := enforcer.EnforcementOptions{
+				Policies:   policies,
+				DryRun:     dryRun,
+				CgroupPath: cgroupPath,
+			}
+
+			if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
 				log.Fatalf("Failed to enforce: %v", err)
+			}
+
+			if dryRun {
+				fmt.Println("Dry-run complete. No changes were applied.")
+				return
 			}
 
 			fmt.Println("Enforcement active. Press Ctrl+C to stop.")
@@ -98,8 +110,17 @@ var enforceCmd = &cobra.Command{
 			return
 		} else if enforcer.IsWindows() {
 			fmt.Println("Enforcing via WFP (Windows)...")
-			if err := enforcer.EnforceWithWFP(policies); err != nil {
+			opts := enforcer.EnforcementOptions{
+				Policies: policies,
+				DryRun:   dryRun,
+			}
+			if err := enforcer.EnforceWithWFP(opts); err != nil {
 				log.Fatalf("Failed to enforce via WFP: %v", err)
+			}
+
+			if dryRun {
+				fmt.Println("Dry-run complete. No changes were applied.")
+				return
 			}
 
 			fmt.Println("Enforcement active. Press Ctrl+C to stop.")
@@ -114,7 +135,14 @@ var enforceCmd = &cobra.Command{
 			return
 		} else {
 			fmt.Println("Enforcing via pf (macOS)...")
-			enforcer.EnforceWithPF(policies)
+			opts := enforcer.EnforcementOptions{
+				Policies: policies,
+				DryRun:   dryRun,
+			}
+			enforcer.EnforceWithPF(opts)
+			if dryRun {
+				fmt.Println("Dry-run complete. No rules were loaded into pf.")
+			}
 		}
 
 		fmt.Println("Enforcement complete.")
@@ -127,5 +155,6 @@ func init() {
 	enforceCmd.Flags().String("bpf-object", "", "Optional path to compiled eBPF object file (overrides embedded bytecode; Linux only)")
 	enforceCmd.Flags().Bool("debug-ebpf", false, "Enable debug logging for eBPF object loading (Linux only)")
 	enforceCmd.Flags().Bool("resolve-labels", false, "Resolve pod selectors to IP blocks using configured discovery backend")
+	enforceCmd.Flags().Bool("dry-run", false, "Simulate enforcement without making system changes")
 	rootCmd.AddCommand(enforceCmd)
 }

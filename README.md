@@ -56,6 +56,11 @@ ztap enforce -f policy.yaml
 # - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s`
 sudo ztap enforce -f policy.yaml
 
+# Dry-run mode (all platforms)
+# Simulate enforcement without making system changes
+ztap enforce -f policy.yaml --dry-run
+ztap agent --dry-run
+
 # 4. Check status
 ztap status
 ```

@@ -28,6 +28,7 @@ type PolicyEnforcer struct {
 	auditLogger     *audit.AuditLogger // Audit logging for policy operations
 	alerts          *alert.Manager
 	resolveLabels   bool
+	dryRun          bool
 	retriggerCh     chan struct{}
 }
 
@@ -38,6 +39,7 @@ type PolicyEnforcerConfig struct {
 	CgroupPath    string                  // Cgroup path for eBPF attachment (Linux only)
 	Alerts        *alert.Manager
 	ResolveLabels bool
+	DryRun        bool
 }
 
 // NewPolicyEnforcer creates a new policy enforcer that watches for policy updates.
@@ -61,6 +63,7 @@ func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
 		auditLogger:     auditLogger,
 		alerts:          config.Alerts,
 		resolveLabels:   config.ResolveLabels,
+		dryRun:          config.DryRun,
 	}
 }
 
@@ -78,7 +81,11 @@ func (pe *PolicyEnforcer) Start(ctx context.Context) error {
 		pe.alerts.Start(ctx)
 	}
 
-	log.Println("Policy enforcer started, watching for policy updates...")
+	if pe.dryRun {
+		log.Println("Policy enforcer started in DRY-RUN mode, watching for policy updates...")
+	} else {
+		log.Println("Policy enforcer started, watching for policy updates...")
+	}
 
 	// Subscribe to policy updates
 	policyUpdates := pe.policySync.SubscribePolicies(ctx)
@@ -163,6 +170,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 					details := map[string]interface{}{
 						"version": update.Version,
 						"source":  update.Source,
+						"dry_run": pe.dryRun,
 					}
 					_ = pe.auditLogger.LogFailure(audit.EventPolicyEnforced, "system",
 						update.PolicyName, "enforce", err.Error(), details)
@@ -190,6 +198,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 					"version":     update.Version,
 					"source":      update.Source,
 					"duration_ms": duration * 1000,
+					"dry_run":     pe.dryRun,
 				},
 			})
 
@@ -199,6 +208,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 					"version":     update.Version,
 					"source":      update.Source,
 					"duration_ms": duration * 1000,
+					"dry_run":     pe.dryRun,
 				}
 				_ = pe.auditLogger.Log(audit.EventPolicyEnforced, "system",
 					update.PolicyName, "enforce", details)
@@ -360,21 +370,31 @@ func (pe *PolicyEnforcer) applyPolicy(update cluster.PolicyUpdate) error {
 
 // enforceLinux applies policies using eBPF on Linux.
 func (pe *PolicyEnforcer) enforceLinux(policies []policy.NetworkPolicy) error {
+	opts := EnforcementOptions{
+		Policies:   policies,
+		DryRun:     pe.dryRun,
+		CgroupPath: pe.cgroupPath,
+	}
+
 	// Use the real eBPF enforcer if available and on Linux
 	if pe.cgroupPath != "" && IsLinux() {
 		// EnforceWithEBPFReal is only available on Linux (ebpf_linux.go)
 		// Call it through the generic enforcement function
-		return EnforceWithEBPFIfAvailable(policies, pe.cgroupPath)
+		return EnforceWithEBPFIfAvailable(opts)
 	}
 
 	// Fallback to simulation
-	EnforceWithEBPF(policies)
+	EnforceWithEBPF(opts)
 	return nil
 }
 
 // enforceMacOS applies policies using pf on macOS.
 func (pe *PolicyEnforcer) enforceMacOS(policies []policy.NetworkPolicy) error {
-	EnforceWithPF(policies)
+	opts := EnforcementOptions{
+		Policies: policies,
+		DryRun:   pe.dryRun,
+	}
+	EnforceWithPF(opts)
 	return nil
 }
 

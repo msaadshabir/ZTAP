@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-
-	"ztap/pkg/policy"
 )
 
 var (
@@ -16,9 +14,23 @@ var (
 )
 
 // EnforceWithWFP applies policies using Windows Filtering Platform.
-func EnforceWithWFP(policies []policy.NetworkPolicy) error {
+func EnforceWithWFP(opts EnforcementOptions) error {
 	activeWFPMu.Lock()
 	defer activeWFPMu.Unlock()
+
+	if opts.DryRun {
+		log.Println("[DRY-RUN] WFP: simulating policy translation and transaction")
+		for _, p := range opts.Policies {
+			specs, err := TranslatePolicyToWFP(p)
+			if err != nil {
+				log.Printf("[DRY-RUN] Warning: would skip policy '%s' due to translation error: %v", p.Metadata.Name, err)
+				continue
+			}
+			log.Printf("[DRY-RUN] WFP: would add %d filters for policy '%s'", len(specs), p.Metadata.Name)
+		}
+		wfpActive = true // Mark as active so dry-run Stop works
+		return nil
+	}
 
 	engine := &realWFPEngine{}
 	if err := engine.Open(); err != nil {
@@ -47,7 +59,7 @@ func EnforceWithWFP(policies []policy.NetworkPolicy) error {
 	}
 
 	// Translate and add filters
-	for _, p := range policies {
+	for _, p := range opts.Policies {
 		specs, err := TranslatePolicyToWFP(p)
 		if err != nil {
 			log.Printf("Warning: skipping policy '%s' due to translation error: %v", p.Metadata.Name, err)

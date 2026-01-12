@@ -289,6 +289,9 @@ Delete the bootstrap password file after you log in and rotate the password.
 ### 1. Enforce a Policy
 
 ```bash
+# Verify policy safely (Dry Run)
+ztap enforce -f examples/web-to-db.yaml --dry-run
+
 # macOS (pf)
 ztap enforce -f examples/web-to-db.yaml
 

@@ -23,6 +23,7 @@ var agentCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		namespace, _ := cmd.Flags().GetString("namespace")
 		cgroupPath, _ := cmd.Flags().GetString("cgroup")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if namespace == "" {
 			namespace = os.Getenv("ZTAP_NAMESPACE")
@@ -53,6 +54,7 @@ var agentCmd = &cobra.Command{
 			Discovery:     disc,
 			CgroupPath:    cgroupPath,
 			ResolveLabels: true, // Enable auto-discovery in agent mode
+			DryRun:        dryRun,
 		})
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -93,5 +95,6 @@ var agentCmd = &cobra.Command{
 func init() {
 	agentCmd.Flags().String("namespace", "", "Kubernetes namespace to watch for policies")
 	agentCmd.Flags().String("cgroup", "/sys/fs/cgroup", "Cgroup v2 path for eBPF attachment (Linux only)")
+	agentCmd.Flags().Bool("dry-run", false, "Simulate enforcement without making system changes")
 	rootCmd.AddCommand(agentCmd)
 }

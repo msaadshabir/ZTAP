@@ -44,6 +44,7 @@ func (r *realIptablesRunner) RunWithStdin(stdin string, name string, arg ...stri
 type IptablesEnforcer struct {
 	mu     sync.Mutex
 	runner iptablesRunner
+	dryRun bool
 }
 
 // NewIptablesEnforcer creates a new iptables enforcer.
@@ -57,6 +58,11 @@ func NewIptablesEnforcer() *IptablesEnforcer {
 func (e *IptablesEnforcer) Init() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	if e.dryRun {
+		log.Println("[DRY-RUN] iptables: would create chains ZTAP-INGRESS and ZTAP-EGRESS and hook them into INPUT/OUTPUT")
+		return nil
+	}
 
 	// Create chains if they don't exist
 	_ = e.runner.Run("iptables", "-N", "ZTAP-INGRESS")
@@ -89,6 +95,11 @@ func (e *IptablesEnforcer) Cleanup() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if e.dryRun {
+		log.Println("[DRY-RUN] iptables: would cleanup ZTAP chains and hooks")
+		return nil
+	}
+
 	// Flush and remove hooks
 	_ = e.runner.Run("iptables", "-D", "INPUT", "-j", "ZTAP-INGRESS")
 	_ = e.runner.Run("iptables", "-D", "OUTPUT", "-j", "ZTAP-EGRESS")
@@ -108,6 +119,11 @@ func (e *IptablesEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	defer e.mu.Unlock()
 
 	restoreInput := e.generateRestoreInput(policies)
+
+	if e.dryRun {
+		log.Printf("[DRY-RUN] iptables: would apply the following rules via iptables-restore:\n%s", restoreInput)
+		return nil
+	}
 
 	if err := e.runner.RunWithStdin(restoreInput, "iptables-restore", "--noflush"); err != nil {
 		return fmt.Errorf("iptables-restore failed: %w", err)

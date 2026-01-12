@@ -67,12 +67,17 @@ ResolveLabels(labels map[string]string) ([]string, error)
 **Key Functions**:
 
 ```go
-EnforceWithEBPFIfAvailable(policies []NetworkPolicy, cgroupPath string) error
+EnforceWithEBPFIfAvailable(opts EnforcementOptions) error
 StopEBPFEnforcement() error
-EnforceWithPF(policies []NetworkPolicy)
-EnforceWithWFP(policies []NetworkPolicy) error
+EnforceWithPF(opts EnforcementOptions)
+EnforceWithWFP(opts EnforcementOptions) error
 StopWFPEnforcement() error
 ```
+
+**Features**:
+
+- **Dry-run Mode**: Simulate enforcement without applying kernel rules (`--dry-run`)
+- **Platform Abstraction**: Unified interface across OSes
 
 ### 3. Cloud Integrator (`pkg/cloud`)
 

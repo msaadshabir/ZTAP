@@ -303,3 +303,59 @@ func TestPolicyEnforcerInvalidYAML(t *testing.T) {
 		t.Error("invalid policy should not be enforced")
 	}
 }
+
+func TestPolicyEnforcerDryRun(t *testing.T) {
+	mockSync := newMockPolicySync()
+
+	enforcer := NewPolicyEnforcer(PolicyEnforcerConfig{
+		PolicySync: mockSync,
+		DryRun:     true,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := enforcer.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = enforcer.Stop() }()
+
+	if !enforcer.dryRun {
+		t.Error("expected dryRun to be true")
+	}
+
+	policyYAML := []byte(`apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: dry-run-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: test
+  ingress:
+  - from:
+      ipBlock:
+        cidr: 192.168.1.0/24
+    ports:
+    - protocol: TCP
+      port: 80`)
+
+	update := cluster.PolicyUpdate{
+		PolicyName: "dry-run-policy",
+		YAML:       policyYAML,
+		Version:    1,
+		Source:     "node-1",
+		Timestamp:  time.Now(),
+	}
+
+	mockSync.sendUpdate(update)
+
+	// Wait for enforcement
+	time.Sleep(200 * time.Millisecond)
+
+	// Check that version was tracked even in dry-run
+	version := enforcer.GetEnforcedVersion("dry-run-policy")
+	if version != 1 {
+		t.Errorf("expected enforced version 1 in dry-run, got %d", version)
+	}
+}

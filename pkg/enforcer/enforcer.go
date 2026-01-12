@@ -1,6 +1,7 @@
 package enforcer
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,14 @@ import (
 	"strings"
 	"ztap/pkg/policy"
 )
+
+// EnforcementOptions holds parameters for enforcement operations.
+type EnforcementOptions struct {
+	Policies   []policy.NetworkPolicy
+	DryRun     bool
+	CgroupPath string // Used for Linux eBPF
+	Context    context.Context
+}
 
 // IsLinux returns true if running on Linux
 func IsLinux() bool {
@@ -21,20 +30,31 @@ func IsWindows() bool {
 }
 
 // EnforceWithEBPF (Linux) - placeholder for real eBPF logic
-func EnforceWithEBPF(policies []policy.NetworkPolicy) {
-	fmt.Printf("Applying %d eBPF-based policies on Linux\n", len(policies))
+func EnforceWithEBPF(opts EnforcementOptions) {
+	fmt.Printf("Applying %d eBPF-based policies on Linux\n", len(opts.Policies))
+	if opts.DryRun {
+		fmt.Println("[DRY-RUN] Mode: Skipping kernel modifications")
+	}
 	// In production: load eBPF programs, attach to cgroup/socket hooks
 	// For demonstration: simulate with logs
-	for _, p := range policies {
+	for _, p := range opts.Policies {
 		fmt.Printf("  Policy '%s': %s\n", p.Metadata.Name, p.Spec.PodSelector.MatchLabels)
 		if len(p.Spec.Egress) > 0 {
 			fmt.Printf("    Egress rules: %d\n", len(p.Spec.Egress))
 			for _, egress := range p.Spec.Egress {
 				if egress.To.IPBlock.CIDR != "" {
-					fmt.Printf("      -> %s (ports: %v)\n", egress.To.IPBlock.CIDR, egress.Ports)
+					if opts.DryRun {
+						fmt.Printf("[DRY-RUN] Would apply: -> %s (ports: %v)\n", egress.To.IPBlock.CIDR, egress.Ports)
+					} else {
+						fmt.Printf("      -> %s (ports: %v)\n", egress.To.IPBlock.CIDR, egress.Ports)
+					}
 				}
 				if len(egress.To.PodSelector.MatchLabels) > 0 {
-					fmt.Printf("      -> pods: %v (ports: %v)\n", egress.To.PodSelector.MatchLabels, egress.Ports)
+					if opts.DryRun {
+						fmt.Printf("[DRY-RUN] Would apply: -> pods: %v (ports: %v)\n", egress.To.PodSelector.MatchLabels, egress.Ports)
+					} else {
+						fmt.Printf("      -> pods: %v (ports: %v)\n", egress.To.PodSelector.MatchLabels, egress.Ports)
+					}
 				}
 			}
 		}
@@ -42,10 +62,18 @@ func EnforceWithEBPF(policies []policy.NetworkPolicy) {
 			fmt.Printf("    Ingress rules: %d\n", len(p.Spec.Ingress))
 			for _, ingress := range p.Spec.Ingress {
 				if ingress.From.IPBlock.CIDR != "" {
-					fmt.Printf("      <- %s (ports: %v)\n", ingress.From.IPBlock.CIDR, ingress.Ports)
+					if opts.DryRun {
+						fmt.Printf("[DRY-RUN] Would apply: <- %s (ports: %v)\n", ingress.From.IPBlock.CIDR, ingress.Ports)
+					} else {
+						fmt.Printf("      <- %s (ports: %v)\n", ingress.From.IPBlock.CIDR, ingress.Ports)
+					}
 				}
 				if len(ingress.From.PodSelector.MatchLabels) > 0 {
-					fmt.Printf("      <- pods: %v (ports: %v)\n", ingress.From.PodSelector.MatchLabels, ingress.Ports)
+					if opts.DryRun {
+						fmt.Printf("[DRY-RUN] Would apply: <- pods: %v (ports: %v)\n", ingress.From.PodSelector.MatchLabels, ingress.Ports)
+					} else {
+						fmt.Printf("      <- pods: %v (ports: %v)\n", ingress.From.PodSelector.MatchLabels, ingress.Ports)
+					}
 				}
 			}
 		}
@@ -53,8 +81,8 @@ func EnforceWithEBPF(policies []policy.NetworkPolicy) {
 }
 
 // EnforceWithPF (macOS) - uses pfctl to manage rules
-func EnforceWithPF(policies []policy.NetworkPolicy) {
-	fmt.Printf("Applying %d pf-based policies on macOS\n", len(policies))
+func EnforceWithPF(opts EnforcementOptions) {
+	fmt.Printf("Applying %d pf-based policies on macOS\n", len(opts.Policies))
 
 	if os.Getenv("ZTAP_SKIP_PF") == "1" {
 		log.Println("Skipping pf enforcement due to ZTAP_SKIP_PF environment override")
@@ -66,10 +94,14 @@ func EnforceWithPF(policies []policy.NetworkPolicy) {
 		return
 	}
 
+	if opts.DryRun {
+		log.Println("[DRY-RUN] Mode: Skipping pfctl execution")
+	}
+
 	// Create anchor file content
 	anchorContent := "# ZTAP Managed Rules\n"
 
-	for _, p := range policies {
+	for _, p := range opts.Policies {
 		anchorContent += fmt.Sprintf("# Policy: %s\n", p.Metadata.Name)
 
 		// Process egress rules (outbound traffic)
@@ -101,6 +133,11 @@ func EnforceWithPF(policies []policy.NetworkPolicy) {
 				}
 			}
 		}
+	}
+
+	if opts.DryRun {
+		fmt.Printf("[DRY-RUN] Would have written the following to /etc/pf.anchors/ztap:\n%s\n", anchorContent)
+		return
 	}
 
 	anchorFile := "/etc/pf.anchors/ztap"

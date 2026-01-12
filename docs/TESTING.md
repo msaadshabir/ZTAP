@@ -60,6 +60,14 @@ ZTAP includes comprehensive test coverage across all critical components with un
 
 **Run**: `go test ./pkg/metrics/... -v`
 
+#### Enforcer Package (`pkg/enforcer/policy_enforcer_test.go`)
+
+- **TestPolicyEnforcerDryRun**: Verifies that dry-run mode correctly tracks policy versions without applying system changes
+- **TestPolicyEnforcerStartStop**: Validates lifecycle management
+- **TestPolicyEnforcerAppliesUpdates**: End-to-end enforcement logic check
+
+**Run**: `go test ./pkg/enforcer/... -v`
+
 ### Integration Tests (`tests/integration_test.go`)
 
 #### Policy-Discovery Integration
