@@ -121,7 +121,9 @@ func (e *IptablesEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	restoreInput := e.generateRestoreInput(policies)
 
 	if e.dryRun {
-		log.Printf("[DRY-RUN] iptables: would apply the following rules via iptables-restore:\n%s", restoreInput)
+		sanitizedRestoreInput := strings.ReplaceAll(restoreInput, "\n", "")
+		sanitizedRestoreInput = strings.ReplaceAll(sanitizedRestoreInput, "\r", "")
+		log.Printf("[DRY-RUN] iptables: would apply the following rules via iptables-restore: %s", sanitizedRestoreInput)
 		return nil
 	}
 
