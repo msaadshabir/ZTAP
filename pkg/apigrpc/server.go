@@ -478,7 +478,12 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 		if err := enforcer.ValidatePoliciesForEBPF(policies); err != nil {
 			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy is not supported by eBPF enforcer yet: %w", err).Error())
 		}
-		if err := enforcer.EnforceWithEBPFIfAvailable(policies, resolvedCgroupPath); err != nil {
+		opts := enforcer.EnforcementOptions{
+			Policies:   policies,
+			CgroupPath: resolvedCgroupPath,
+			Context:    ctx,
+		}
+		if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
 			e.srv.emitAlert(alert.Alert{
 				Source:   "api-grpc",
 				Severity: alert.SeverityError,
@@ -506,7 +511,10 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 		return resp, nil
 	}
 
-	enforcer.EnforceWithPF(policies)
+	enforcer.EnforceWithPF(enforcer.EnforcementOptions{
+		Policies: policies,
+		Context:  ctx,
+	})
 	_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
 	e.srv.emitAlert(alert.Alert{
 		Source:   "api-grpc",
