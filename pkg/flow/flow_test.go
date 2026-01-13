@@ -20,13 +20,14 @@ func TestFlowEventConversion(t *testing.T) {
 			name: "TCP egress allowed",
 			raw: RawFlowEvent{
 				TimestampNs: uint64(1 * time.Second),
-				SrcIP:       0x0A000101, // 10.0.1.1 in big-endian
-				DestIP:      0x0A000201, // 10.0.2.1
+				SrcIP:       [4]uint32{0x0A000101}, // 10.0.1.1 in big-endian
+				DestIP:      [4]uint32{0x0A000201}, // 10.0.2.1
 				SrcPort:     45678,
 				DestPort:    5432,
 				Protocol:    ProtocolTCP,
 				Direction:   DirectionEgress,
 				Action:      ActionAllowed,
+				Family:      4,
 			},
 			expected: FlowEvent{
 				SourceIP:   net.IPv4(10, 0, 1, 1),
@@ -42,13 +43,14 @@ func TestFlowEventConversion(t *testing.T) {
 			name: "UDP ingress blocked",
 			raw: RawFlowEvent{
 				TimestampNs: uint64(2 * time.Second),
-				SrcIP:       0xC0A80164, // 192.168.1.100
-				DestIP:      0x0A000101,
+				SrcIP:       [4]uint32{0xC0A80164}, // 192.168.1.100
+				DestIP:      [4]uint32{0x0A000101},
 				SrcPort:     53421,
 				DestPort:    53,
 				Protocol:    ProtocolUDP,
 				Direction:   DirectionIngress,
 				Action:      ActionBlocked,
+				Family:      4,
 			},
 			expected: FlowEvent{
 				SourceIP:   net.IPv4(192, 168, 1, 100),
@@ -64,13 +66,14 @@ func TestFlowEventConversion(t *testing.T) {
 			name: "ICMP egress",
 			raw: RawFlowEvent{
 				TimestampNs: uint64(3 * time.Second),
-				SrcIP:       0x0A000101,
-				DestIP:      0x08080808, // 8.8.8.8
+				SrcIP:       [4]uint32{0x0A000101},
+				DestIP:      [4]uint32{0x08080808}, // 8.8.8.8
 				SrcPort:     0,
 				DestPort:    0,
 				Protocol:    ProtocolICMP,
 				Direction:   DirectionEgress,
 				Action:      ActionAllowed,
+				Family:      4,
 			},
 			expected: FlowEvent{
 				SourceIP:   net.IPv4(10, 0, 1, 1),
@@ -252,23 +255,25 @@ func TestMonitorSubscription(t *testing.T) {
 	events := []RawFlowEvent{
 		{
 			TimestampNs: uint64(time.Now().UnixNano()),
-			SrcIP:       0x0A000101,
-			DestIP:      0x0A000201,
+			SrcIP:       [4]uint32{0x0A000101},
+			DestIP:      [4]uint32{0x0A000201},
 			SrcPort:     45678,
 			DestPort:    5432,
 			Protocol:    ProtocolTCP,
 			Direction:   DirectionEgress,
 			Action:      ActionAllowed,
+			Family:      4,
 		},
 		{
 			TimestampNs: uint64(time.Now().UnixNano()),
-			SrcIP:       0xC0A80164,
-			DestIP:      0x0A000101,
+			SrcIP:       [4]uint32{0xC0A80164},
+			DestIP:      [4]uint32{0x0A000101},
 			SrcPort:     53421,
 			DestPort:    22,
 			Protocol:    ProtocolTCP,
 			Direction:   DirectionIngress,
 			Action:      ActionBlocked,
+			Family:      4,
 		},
 	}
 	reader := &delayedReader{events: events, delay: 100 * time.Millisecond}

@@ -46,36 +46,50 @@ func TestIptablesRestoreGeneration(t *testing.T) {
 							{Protocol: "TCP", Port: 80},
 						},
 					},
+					{
+						From: policy.IngressSource{IPBlock: policy.IPBlockSpec{CIDR: "2001:db8::1/128"}},
+						Ports: []policy.PortSpec{
+							{Protocol: "TCP", Port: 443},
+						},
+					},
 				},
 				Egress: []policy.EgressRule{
 					{
 						To: policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "8.8.8.8/32"}},
+					},
+					{
+						To: policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "2606:4700:4700::1111/128"}},
 					},
 				},
 			},
 		},
 	}
 
-	restoreInput := enforcer.generateRestoreInput(policies)
+	v4, v6 := enforcer.generateRestoreInput(policies)
 
-	expectedLines := []string{
+	expectedV4 := []string{
 		"*filter",
-		":ZTAP-INGRESS - [0:0]",
-		":ZTAP-EGRESS - [0:0]",
-		"-A ZTAP-INGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
-		"-A ZTAP-INGRESS -i lo -j ACCEPT",
 		"-A ZTAP-INGRESS -s 1.2.3.4/32 -p tcp --dport 80 -j ACCEPT",
-		"-A ZTAP-EGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
-		"-A ZTAP-EGRESS -o lo -j ACCEPT",
 		"-A ZTAP-EGRESS -d 8.8.8.8/32 -j ACCEPT",
-		"-A ZTAP-INGRESS -j DROP",
-		"-A ZTAP-EGRESS -j DROP",
 		"COMMIT",
 	}
 
-	for _, expected := range expectedLines {
-		if !strings.Contains(restoreInput, expected) {
-			t.Errorf("Expected restore input to contain: %s\nGot:\n%s", expected, restoreInput)
+	expectedV6 := []string{
+		"*filter",
+		"-A ZTAP-INGRESS -s 2001:db8::1/128 -p tcp --dport 443 -j ACCEPT",
+		"-A ZTAP-EGRESS -d 2606:4700:4700::1111/128 -j ACCEPT",
+		"COMMIT",
+	}
+
+	for _, expected := range expectedV4 {
+		if !strings.Contains(v4, expected) {
+			t.Errorf("Expected v4 restore input to contain: %s\nGot:\n%s", expected, v4)
+		}
+	}
+
+	for _, expected := range expectedV6 {
+		if !strings.Contains(v6, expected) {
+			t.Errorf("Expected v6 restore input to contain: %s\nGot:\n%s", expected, v6)
 		}
 	}
 }

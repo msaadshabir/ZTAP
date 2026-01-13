@@ -53,6 +53,16 @@ type policyKey struct {
 	Direction uint8 // 0 = egress, 1 = ingress
 }
 
+// policyKeyV6 represents the key for eBPF policy map (IPv6)
+// Must match struct policy_key_v6 in bpf/filter.c
+type policyKeyV6 struct {
+	CgroupID  uint64
+	IP        [4]uint32
+	Port      uint16
+	Protocol  uint8
+	Direction uint8
+}
+
 // policyValue represents the value for eBPF policy map
 type policyValue struct {
 	Action uint8    // 0 = block, 1 = allow
@@ -143,26 +153,37 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			return fmt.Errorf("invalid CIDR %s: %w", egress.To.IPBlock.CIDR, err)
 		}
 
-		// For simplicity, use network address (full CIDR support requires range)
-		destIP := ipToUint32(ip.To4())
+		// Detect if it's IPv4 or IPv6
+		isIPv6 := ip.To4() == nil
 
 		for _, port := range egress.Ports {
 			if port.Port < 0 || port.Port > 65535 {
 				return fmt.Errorf("invalid port %d: must be 0-65535", port.Port)
 			}
-			key := policyKey{
-				IP:        destIP,
-				Port:      uint16(port.Port),
-				Protocol:  protocolToNum(port.Protocol),
-				Direction: DirectionEgress,
-			}
+			protocol := protocolToNum(port.Protocol)
 
-			value := policyValue{
-				Action: 1, // allow
-			}
-
-			if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
-				return fmt.Errorf("failed to update policy map: %w", err)
+			if isIPv6 {
+				key := policyKeyV6{
+					IP:        ipToUint32Array(ip),
+					Port:      uint16(port.Port),
+					Protocol:  protocol,
+					Direction: DirectionEgress,
+				}
+				value := policyValue{Action: 1}
+				if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
+					return fmt.Errorf("failed to update IPv6 policy map: %w", err)
+				}
+			} else {
+				key := policyKey{
+					IP:        ipToUint32(ip.To4()),
+					Port:      uint16(port.Port),
+					Protocol:  protocol,
+					Direction: DirectionEgress,
+				}
+				value := policyValue{Action: 1}
+				if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+					return fmt.Errorf("failed to update policy map: %w", err)
+				}
 			}
 
 			safeDest := strings.ReplaceAll(ipnet.String(), "\n", "")
@@ -196,26 +217,37 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 			return fmt.Errorf("invalid CIDR %s: %w", ingress.From.IPBlock.CIDR, err)
 		}
 
-		// For simplicity, use network address (full CIDR support requires range)
-		srcIP := ipToUint32(ip.To4())
+		// Detect if it's IPv4 or IPv6
+		isIPv6 := ip.To4() == nil
 
 		for _, port := range ingress.Ports {
 			if port.Port < 0 || port.Port > 65535 {
 				return fmt.Errorf("invalid port %d: must be 0-65535", port.Port)
 			}
-			key := policyKey{
-				IP:        srcIP,
-				Port:      uint16(port.Port),
-				Protocol:  protocolToNum(port.Protocol),
-				Direction: DirectionIngress,
-			}
+			protocol := protocolToNum(port.Protocol)
 
-			value := policyValue{
-				Action: 1, // allow
-			}
-
-			if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
-				return fmt.Errorf("failed to update policy map: %w", err)
+			if isIPv6 {
+				key := policyKeyV6{
+					IP:        ipToUint32Array(ip),
+					Port:      uint16(port.Port),
+					Protocol:  protocol,
+					Direction: DirectionIngress,
+				}
+				value := policyValue{Action: 1}
+				if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
+					return fmt.Errorf("failed to update IPv6 policy map: %w", err)
+				}
+			} else {
+				key := policyKey{
+					IP:        ipToUint32(ip.To4()),
+					Port:      uint16(port.Port),
+					Protocol:  protocol,
+					Direction: DirectionIngress,
+				}
+				value := policyValue{Action: 1}
+				if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+					return fmt.Errorf("failed to update policy map: %w", err)
+				}
 			}
 
 			safeSrc := strings.ReplaceAll(ipnet.String(), "\n", "")
@@ -356,6 +388,23 @@ func ipToUint32(ip net.IP) uint32 {
 		return 0
 	}
 	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+}
+
+func ipToUint32Array(ip net.IP) [4]uint32 {
+	if ip == nil {
+		return [4]uint32{}
+	}
+	// For IPv6, net.IP is 16 bytes.
+	v6 := ip.To16()
+	if v6 == nil {
+		return [4]uint32{}
+	}
+	return [4]uint32{
+		uint32(v6[0]) | uint32(v6[1])<<8 | uint32(v6[2])<<16 | uint32(v6[3])<<24,
+		uint32(v6[4]) | uint32(v6[5])<<8 | uint32(v6[6])<<16 | uint32(v6[7])<<24,
+		uint32(v6[8]) | uint32(v6[9])<<8 | uint32(v6[10])<<16 | uint32(v6[11])<<24,
+		uint32(v6[12]) | uint32(v6[13])<<8 | uint32(v6[14])<<16 | uint32(v6[15])<<24,
+	}
 }
 
 func protocolToNum(protocol string) uint8 {

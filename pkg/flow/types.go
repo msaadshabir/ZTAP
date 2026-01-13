@@ -41,15 +41,15 @@ type FlowEvent struct {
 // RawFlowEvent is the raw structure from eBPF ring buffer.
 // Must match struct flow_event in bpf/filter.c exactly.
 type RawFlowEvent struct {
-	TimestampNs uint64 // Kernel timestamp in nanoseconds
-	SrcIP       uint32 // Source IP in network byte order
-	DestIP      uint32 // Destination IP in network byte order
-	SrcPort     uint16 // Source port
-	DestPort    uint16 // Destination port
-	Protocol    uint8  // Protocol number
-	Direction   uint8  // 0=egress, 1=ingress
-	Action      uint8  // 0=blocked, 1=allowed
-	Pad         uint8  // Padding
+	TimestampNs uint64    // Kernel timestamp in nanoseconds
+	SrcIP       [4]uint32 // Source IP (v4 uses first word)
+	DestIP      [4]uint32 // Destination IP (v4 uses first word)
+	SrcPort     uint16    // Source port
+	DestPort    uint16    // Destination port
+	Protocol    uint8     // Protocol number
+	Direction   uint8     // 0=egress, 1=ingress
+	Action      uint8     // 0=blocked, 1=allowed
+	Family      uint8     // 4=IPv4, 6=IPv6
 }
 
 // ToFlowEvent converts a raw eBPF event to a FlowEvent.
@@ -62,8 +62,8 @@ func (r *RawFlowEvent) ToFlowEvent(bootTime time.Time) FlowEvent {
 	}
 	return FlowEvent{
 		Timestamp:  bootTime.Add(time.Duration(int64(ns))), // #nosec G115 -- ns is clamped to max int64 above
-		SourceIP:   uint32ToIP(r.SrcIP),
-		DestIP:     uint32ToIP(r.DestIP),
+		SourceIP:   uint32ArrayToIP(r.SrcIP, r.Family),
+		DestIP:     uint32ArrayToIP(r.DestIP, r.Family),
 		SourcePort: r.SrcPort,
 		DestPort:   r.DestPort,
 		Protocol:   protocolToString(r.Protocol),
@@ -141,6 +141,20 @@ func uint32ToIP(ip uint32) net.IP {
 		byte(ip>>8),
 		byte(ip),
 	)
+}
+
+func uint32ArrayToIP(ip [4]uint32, family uint8) net.IP {
+	if family == 6 {
+		res := make(net.IP, 16)
+		for i := 0; i < 4; i++ {
+			res[i*4] = byte(ip[i])
+			res[i*4+1] = byte(ip[i] >> 8)
+			res[i*4+2] = byte(ip[i] >> 16)
+			res[i*4+3] = byte(ip[i] >> 24)
+		}
+		return res
+	}
+	return uint32ToIP(ip[0])
 }
 
 func protocolToString(proto uint8) string {

@@ -20,6 +20,14 @@ type bpfPolicyKey struct {
 	Direction uint8
 }
 
+type bpfPolicyKeyV6 struct {
+	CgroupId  uint64
+	Ip        [4]uint32
+	Port      uint16
+	Protocol  uint8
+	Direction uint8
+}
+
 type bpfPolicyValue struct {
 	Action  uint8
 	Padding [3]uint8
@@ -77,8 +85,9 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	FlowEvents *ebpf.MapSpec `ebpf:"flow_events"`
-	PolicyMap  *ebpf.MapSpec `ebpf:"policy_map"`
+	FlowEvents  *ebpf.MapSpec `ebpf:"flow_events"`
+	PolicyMap   *ebpf.MapSpec `ebpf:"policy_map"`
+	PolicyMapV6 *ebpf.MapSpec `ebpf:"policy_map_v6"`
 }
 
 // bpfVariableSpecs contains global variables before they are loaded into the kernel.
@@ -107,14 +116,16 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	FlowEvents *ebpf.Map `ebpf:"flow_events"`
-	PolicyMap  *ebpf.Map `ebpf:"policy_map"`
+	FlowEvents  *ebpf.Map `ebpf:"flow_events"`
+	PolicyMap   *ebpf.Map `ebpf:"policy_map"`
+	PolicyMapV6 *ebpf.Map `ebpf:"policy_map_v6"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.FlowEvents,
 		m.PolicyMap,
+		m.PolicyMapV6,
 	)
 }
 

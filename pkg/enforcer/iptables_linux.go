@@ -64,20 +64,22 @@ func (e *IptablesEnforcer) Init() error {
 		return nil
 	}
 
-	// Create chains if they don't exist
-	_ = e.runner.Run("iptables", "-N", "ZTAP-INGRESS")
-	_ = e.runner.Run("iptables", "-N", "ZTAP-EGRESS")
+	for _, bin := range []string{"iptables", "ip6tables"} {
+		// Create chains if they don't exist
+		_ = e.runner.Run(bin, "-N", "ZTAP-INGRESS")
+		_ = e.runner.Run(bin, "-N", "ZTAP-EGRESS")
 
-	// Hook into INPUT and OUTPUT if not already hooked
-	if !e.isHooked("INPUT", "ZTAP-INGRESS") {
-		if err := e.runner.Run("iptables", "-I", "INPUT", "1", "-j", "ZTAP-INGRESS"); err != nil {
-			return fmt.Errorf("failed to hook ZTAP-INGRESS into INPUT: %w", err)
+		// Hook into INPUT and OUTPUT if not already hooked
+		if !e.isHooked(bin, "INPUT", "ZTAP-INGRESS") {
+			if err := e.runner.Run(bin, "-I", "INPUT", "1", "-j", "ZTAP-INGRESS"); err != nil {
+				log.Printf("Warning: failed to hook %s ZTAP-INGRESS into INPUT: %v", bin, err)
+			}
 		}
-	}
 
-	if !e.isHooked("OUTPUT", "ZTAP-EGRESS") {
-		if err := e.runner.Run("iptables", "-I", "OUTPUT", "1", "-j", "ZTAP-EGRESS"); err != nil {
-			return fmt.Errorf("failed to hook ZTAP-EGRESS into OUTPUT: %w", err)
+		if !e.isHooked(bin, "OUTPUT", "ZTAP-EGRESS") {
+			if err := e.runner.Run(bin, "-I", "OUTPUT", "1", "-j", "ZTAP-EGRESS"); err != nil {
+				log.Printf("Warning: failed to hook %s ZTAP-EGRESS into OUTPUT: %v", bin, err)
+			}
 		}
 	}
 
@@ -85,8 +87,8 @@ func (e *IptablesEnforcer) Init() error {
 }
 
 // isHooked checks if a chain is hooked into another chain.
-func (e *IptablesEnforcer) isHooked(parent, child string) bool {
-	out, err := e.runner.CombinedOutput("iptables", "-C", parent, "-j", child)
+func (e *IptablesEnforcer) isHooked(bin, parent, child string) bool {
+	out, err := e.runner.CombinedOutput(bin, "-C", parent, "-j", child)
 	return err == nil && len(out) == 0
 }
 
@@ -100,15 +102,17 @@ func (e *IptablesEnforcer) Cleanup() error {
 		return nil
 	}
 
-	// Flush and remove hooks
-	_ = e.runner.Run("iptables", "-D", "INPUT", "-j", "ZTAP-INGRESS")
-	_ = e.runner.Run("iptables", "-D", "OUTPUT", "-j", "ZTAP-EGRESS")
+	for _, bin := range []string{"iptables", "ip6tables"} {
+		// Flush and remove hooks
+		_ = e.runner.Run(bin, "-D", "INPUT", "-j", "ZTAP-INGRESS")
+		_ = e.runner.Run(bin, "-D", "OUTPUT", "-j", "ZTAP-EGRESS")
 
-	_ = e.runner.Run("iptables", "-F", "ZTAP-INGRESS")
-	_ = e.runner.Run("iptables", "-F", "ZTAP-EGRESS")
+		_ = e.runner.Run(bin, "-F", "ZTAP-INGRESS")
+		_ = e.runner.Run(bin, "-F", "ZTAP-EGRESS")
 
-	_ = e.runner.Run("iptables", "-X", "ZTAP-INGRESS")
-	_ = e.runner.Run("iptables", "-X", "ZTAP-EGRESS")
+		_ = e.runner.Run(bin, "-X", "ZTAP-INGRESS")
+		_ = e.runner.Run(bin, "-X", "ZTAP-EGRESS")
+	}
 
 	return nil
 }
@@ -118,35 +122,43 @@ func (e *IptablesEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	restoreInput := e.generateRestoreInput(policies)
+	v4Rules, v6Rules := e.generateRestoreInput(policies)
 
 	if e.dryRun {
-		sanitizedRestoreInput := strings.ReplaceAll(restoreInput, "\n", "")
-		sanitizedRestoreInput = strings.ReplaceAll(sanitizedRestoreInput, "\r", "")
-		log.Printf("[DRY-RUN] iptables: would apply the following rules via iptables-restore: %s", sanitizedRestoreInput)
+		log.Printf("[DRY-RUN] iptables: would apply v4 and v6 rules via iptables-restore")
 		return nil
 	}
 
-	if err := e.runner.RunWithStdin(restoreInput, "iptables-restore", "--noflush"); err != nil {
+	if err := e.runner.RunWithStdin(v4Rules, "iptables-restore", "--noflush"); err != nil {
 		return fmt.Errorf("iptables-restore failed: %w", err)
 	}
 
-	log.Printf("Applied %d policies via iptables", len(policies))
+	// Only apply v6 rules if ip6tables is available/enabled
+	if v6Rules != "" {
+		if err := e.runner.RunWithStdin(v6Rules, "ip6tables-restore", "--noflush"); err != nil {
+			log.Printf("Warning: ip6tables-restore failed: %v", err)
+		}
+	}
+
+	log.Printf("Applied %d policies via iptables/ip6tables", len(policies))
 	return nil
 }
 
-func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy) string {
-	var builder strings.Builder
-	builder.WriteString("*filter\n")
-	builder.WriteString(":ZTAP-INGRESS - [0:0]\n")
-	builder.WriteString(":ZTAP-EGRESS - [0:0]\n")
+func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy) (string, string) {
+	var v4, v6 strings.Builder
 
-	// Helper to add rules to chains
-	// Always allow established connections
-	builder.WriteString("-A ZTAP-INGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n")
-	builder.WriteString("-A ZTAP-INGRESS -i lo -j ACCEPT\n")
-	builder.WriteString("-A ZTAP-EGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n")
-	builder.WriteString("-A ZTAP-EGRESS -o lo -j ACCEPT\n")
+	setupChains := func(b *strings.Builder) {
+		b.WriteString("*filter\n")
+		b.WriteString(":ZTAP-INGRESS - [0:0]\n")
+		b.WriteString(":ZTAP-EGRESS - [0:0]\n")
+		b.WriteString("-A ZTAP-INGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n")
+		b.WriteString("-A ZTAP-INGRESS -i lo -j ACCEPT\n")
+		b.WriteString("-A ZTAP-EGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n")
+		b.WriteString("-A ZTAP-EGRESS -o lo -j ACCEPT\n")
+	}
+
+	setupChains(&v4)
+	setupChains(&v6)
 
 	for _, p := range policies {
 		// Ingress rules
@@ -156,15 +168,20 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 				continue
 			}
 
+			target := &v4
+			if strings.Contains(cidr, ":") {
+				target = &v6
+			}
+
 			if len(ingress.Ports) == 0 {
-				builder.WriteString(fmt.Sprintf("-A ZTAP-INGRESS -s %s -j ACCEPT\n", cidr))
+				target.WriteString(fmt.Sprintf("-A ZTAP-INGRESS -s %s -j ACCEPT\n", cidr))
 			} else {
 				for _, port := range ingress.Ports {
 					proto := strings.ToLower(port.Protocol)
 					if proto == "" {
 						proto = "tcp"
 					}
-					builder.WriteString(fmt.Sprintf("-A ZTAP-INGRESS -s %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port))
+					target.WriteString(fmt.Sprintf("-A ZTAP-INGRESS -s %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port))
 				}
 			}
 		}
@@ -176,15 +193,20 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 				continue
 			}
 
+			target := &v4
+			if strings.Contains(cidr, ":") {
+				target = &v6
+			}
+
 			if len(egress.Ports) == 0 {
-				builder.WriteString(fmt.Sprintf("-A ZTAP-EGRESS -d %s -j ACCEPT\n", cidr))
+				target.WriteString(fmt.Sprintf("-A ZTAP-EGRESS -d %s -j ACCEPT\n", cidr))
 			} else {
 				for _, port := range egress.Ports {
 					proto := strings.ToLower(port.Protocol)
 					if proto == "" {
 						proto = "tcp"
 					}
-					builder.WriteString(fmt.Sprintf("-A ZTAP-EGRESS -d %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port))
+					target.WriteString(fmt.Sprintf("-A ZTAP-EGRESS -d %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port))
 				}
 			}
 		}
@@ -192,10 +214,13 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 
 	// Default drop if we have policies
 	if len(policies) > 0 {
-		builder.WriteString("-A ZTAP-INGRESS -j DROP\n")
-		builder.WriteString("-A ZTAP-EGRESS -j DROP\n")
+		v4.WriteString("-A ZTAP-INGRESS -j DROP\n")
+		v4.WriteString("-A ZTAP-EGRESS -j DROP\n")
+		v6.WriteString("-A ZTAP-INGRESS -j DROP\n")
+		v6.WriteString("-A ZTAP-EGRESS -j DROP\n")
 	}
 
-	builder.WriteString("COMMIT\n")
-	return builder.String()
+	v4.WriteString("COMMIT\n")
+	v6.WriteString("COMMIT\n")
+	return v4.String(), v6.String()
 }

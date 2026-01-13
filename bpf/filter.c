@@ -14,9 +14,11 @@ typedef unsigned long long __u64;
 
 // BPF constants
 #define ETH_P_IP 0x0800
+#define ETH_P_IPV6 0x86DD
 #define IPPROTO_TCP 6
 #define IPPROTO_UDP 17
 #define IPPROTO_ICMP 1
+#define IPPROTO_ICMPV6 58
 
 // BPF helper function declarations
 static void *(*bpf_map_lookup_elem)(void *map, void *key) = (void *)1;
@@ -64,6 +66,30 @@ struct iphdr
     unsigned int daddr;
 };
 
+struct in6_addr
+{
+    union
+    {
+        __u8 u6_addr8[16];
+        __u16 u6_addr16[8];
+        __u32 u6_addr32[4];
+    } in6_u;
+#define s6_addr in6_u.u6_addr8
+#define s6_addr32 in6_u.u6_addr32
+};
+
+// IPv6 header
+struct ipv6hdr
+{
+    __u8 priority_version;
+    __u8 flow_lbl[3];
+    __u16 payload_len;
+    __u8 nexthdr;
+    __u8 hop_limit;
+    struct in6_addr saddr;
+    struct in6_addr daddr;
+};
+
 // TCP header (simplified)
 struct tcphdr
 {
@@ -104,6 +130,16 @@ struct policy_key
     __u8 direction; // 0 = egress, 1 = ingress
 };
 
+// Policy key structure for IPv6
+struct policy_key_v6
+{
+    __u64 cgroup_id;
+    __u32 ip[4]; // dest_ip for egress, src_ip for ingress
+    __u16 port;  // dest_port for egress, dest_port for ingress
+    __u8 protocol;
+    __u8 direction; // 0 = egress, 1 = ingress
+};
+
 // Policy value structure (must match Go struct)
 struct policy_value
 {
@@ -121,18 +157,26 @@ struct
     __type(value, struct policy_value);
 } policy_map SEC(".maps");
 
+struct
+{
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10000);
+    __type(key, struct policy_key_v6);
+    __type(value, struct policy_value);
+} policy_map_v6 SEC(".maps");
+
 // Flow event structure for real-time monitoring (must match Go struct in pkg/flow/types.go)
 struct flow_event
 {
     __u64 timestamp_ns; // Kernel timestamp in nanoseconds
-    __u32 src_ip;       // Source IP address
-    __u32 dest_ip;      // Destination IP address
+    __u32 src_ip[4];    // Source IP address (v4 uses first word)
+    __u32 dest_ip[4];   // Destination IP address (v4 uses first word)
     __u16 src_port;     // Source port
     __u16 dest_port;    // Destination port
     __u8 protocol;      // Protocol (6=TCP, 17=UDP, 1=ICMP)
     __u8 direction;     // 0=egress, 1=ingress
     __u8 action;        // 0=blocked, 1=allowed
-    __u8 _pad;          // Padding for alignment
+    __u8 family;        // 4=IPv4, 6=IPv6
 };
 
 // Ring buffer for flow events (256KB buffer)
@@ -143,9 +187,10 @@ struct
 } flow_events SEC(".maps");
 
 // Helper to emit flow event to ring buffer
-static __always_inline void emit_flow_event(__u32 src_ip, __u32 dest_ip,
+static __always_inline void emit_flow_event(__u32 *src_ip, __u32 *dest_ip,
                                             __u16 src_port, __u16 dest_port,
-                                            __u8 protocol, __u8 direction, __u8 action)
+                                            __u8 protocol, __u8 direction,
+                                            __u8 action, __u8 family)
 {
     struct flow_event *event;
 
@@ -154,14 +199,33 @@ static __always_inline void emit_flow_event(__u32 src_ip, __u32 dest_ip,
         return;
 
     event->timestamp_ns = bpf_ktime_get_ns();
-    event->src_ip = src_ip;
-    event->dest_ip = dest_ip;
+
+    if (family == 4)
+    {
+        event->src_ip[0] = src_ip[0];
+        event->src_ip[1] = 0;
+        event->src_ip[2] = 0;
+        event->src_ip[3] = 0;
+        event->dest_ip[0] = dest_ip[0];
+        event->dest_ip[1] = 0;
+        event->dest_ip[2] = 0;
+        event->dest_ip[3] = 0;
+    }
+    else
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            event->src_ip[i] = src_ip[i];
+            event->dest_ip[i] = dest_ip[i];
+        }
+    }
+
     event->src_port = src_port;
     event->dest_port = dest_port;
     event->protocol = protocol;
     event->direction = direction;
     event->action = action;
-    event->_pad = 0;
+    event->family = family;
 
     bpf_ringbuf_submit(event, 0);
 }
@@ -220,6 +284,58 @@ static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *src_ip, __u3
     return 0;
 }
 
+// Helper to parse IPv6 packet and extract addresses and ports
+static __always_inline int parse_ipv6(struct __sk_buff *skb, __u32 *src_ip, __u32 *dest_ip,
+                                      __u8 *protocol, __u16 *src_port, __u16 *dest_port)
+{
+    struct ethhdr eth;
+    struct ipv6hdr ip;
+
+    // Load ethernet header
+    if (bpf_skb_load_bytes(skb, 0, &eth, sizeof(eth)) < 0)
+        return -1;
+
+    // Check if IPv6
+    if (eth.h_proto != bpf_htons(ETH_P_IPV6))
+        return -1;
+
+    // Load IPv6 header
+    if (bpf_skb_load_bytes(skb, sizeof(eth), &ip, sizeof(ip)) < 0)
+        return -1;
+
+    for (int i = 0; i < 4; i++)
+    {
+        src_ip[i] = ip.saddr.s6_addr32[i];
+        dest_ip[i] = ip.daddr.s6_addr32[i];
+    }
+    *protocol = ip.nexthdr;
+
+    // Parse port based on protocol (skipping IPv6 extensions for simplicity in this MVP)
+    if (ip.nexthdr == IPPROTO_TCP)
+    {
+        struct tcphdr tcp;
+        if (bpf_skb_load_bytes(skb, sizeof(eth) + sizeof(struct ipv6hdr), &tcp, sizeof(tcp)) < 0)
+            return -1;
+        *src_port = bpf_ntohs(tcp.source);
+        *dest_port = bpf_ntohs(tcp.dest);
+    }
+    else if (ip.nexthdr == IPPROTO_UDP)
+    {
+        struct udphdr udp;
+        if (bpf_skb_load_bytes(skb, sizeof(eth) + sizeof(struct ipv6hdr), &udp, sizeof(udp)) < 0)
+            return -1;
+        *src_port = bpf_ntohs(udp.source);
+        *dest_port = bpf_ntohs(udp.dest);
+    }
+    else
+    {
+        *src_port = 0;
+        *dest_port = 0;
+    }
+
+    return 0;
+}
+
 // Direction constants
 #define DIRECTION_EGRESS 0
 #define DIRECTION_INGRESS 1
@@ -228,52 +344,92 @@ static __always_inline int parse_ipv4(struct __sk_buff *skb, __u32 *src_ip, __u3
 SEC("cgroup_skb/egress")
 int filter_egress(struct __sk_buff *skb)
 {
-    __u32 src_ip, dest_ip;
+    __u32 src_ip[4] = {0}, dest_ip[4] = {0};
     __u8 protocol;
     __u16 src_port, dest_port;
+    __u8 family = 0;
 
     // Parse packet
-    if (parse_ipv4(skb, &src_ip, &dest_ip, &protocol, &src_port, &dest_port) < 0)
+    if (parse_ipv4(skb, &src_ip[0], &dest_ip[0], &protocol, &src_port, &dest_port) == 0)
     {
-        // If not IPv4 or parse error, allow by default
+        family = 4;
+    }
+    else if (parse_ipv6(skb, src_ip, dest_ip, &protocol, &src_port, &dest_port) == 0)
+    {
+        family = 6;
+    }
+    else
+    {
+        // If not IPv4/IPv6 or parse error, allow by default
         return 1;
     }
 
-    // Lookup policy in map (egress uses destination IP/port)
-    struct policy_key key = {
-        .cgroup_id = bpf_get_current_cgroup_id(),
-        .ip = dest_ip,
-        .port = dest_port,
-        .protocol = protocol,
-        .direction = DIRECTION_EGRESS,
-    };
+    if (family == 4)
+    {
+        // Lookup policy in map (egress uses destination IP/port)
+        struct policy_key key = {
+            .cgroup_id = bpf_get_current_cgroup_id(),
+            .ip = dest_ip[0],
+            .port = dest_port,
+            .protocol = protocol,
+            .direction = DIRECTION_EGRESS,
+        };
 
-    struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
-    if (!value)
-    {
-        // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
-        key.cgroup_id = 0;
-        value = bpf_map_lookup_elem(&policy_map, &key);
-    }
-    if (value)
-    {
-        // Found matching policy
-        if (value->action == 1)
+        struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
+        if (!value)
         {
-            // ALLOW
-            emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 1);
-            return 1;
+            // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
+            key.cgroup_id = 0;
+            value = bpf_map_lookup_elem(&policy_map, &key);
         }
-        else
+        if (value)
         {
-            // BLOCK
-            emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 0);
-            return 0;
+            if (value->action == 1)
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 1, 4);
+                return 1;
+            }
+            else
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 0, 4);
+                return 0;
+            }
+        }
+    }
+    else if (family == 6)
+    {
+        struct policy_key_v6 key = {
+            .cgroup_id = bpf_get_current_cgroup_id(),
+            .port = dest_port,
+            .protocol = protocol,
+            .direction = DIRECTION_EGRESS,
+        };
+        for (int i = 0; i < 4; i++)
+            key.ip[i] = dest_ip[i];
+
+        struct policy_value *value = bpf_map_lookup_elem(&policy_map_v6, &key);
+        if (!value)
+        {
+            key.cgroup_id = 0;
+            value = bpf_map_lookup_elem(&policy_map_v6, &key);
+        }
+        if (value)
+        {
+            if (value->action == 1)
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 1, 6);
+                return 1;
+            }
+            else
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 0, 6);
+                return 0;
+            }
         }
     }
 
     // Default deny: if no policy matches, block
-    emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 0);
+    emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 0, family);
     return 0;
 }
 
@@ -281,53 +437,92 @@ int filter_egress(struct __sk_buff *skb)
 SEC("cgroup_skb/ingress")
 int filter_ingress(struct __sk_buff *skb)
 {
-    __u32 src_ip, dest_ip;
+    __u32 src_ip[4] = {0}, dest_ip[4] = {0};
     __u8 protocol;
     __u16 src_port, dest_port;
+    __u8 family = 0;
 
     // Parse packet
-    if (parse_ipv4(skb, &src_ip, &dest_ip, &protocol, &src_port, &dest_port) < 0)
+    if (parse_ipv4(skb, &src_ip[0], &dest_ip[0], &protocol, &src_port, &dest_port) == 0)
     {
-        // If not IPv4 or parse error, allow by default
+        family = 4;
+    }
+    else if (parse_ipv6(skb, src_ip, dest_ip, &protocol, &src_port, &dest_port) == 0)
+    {
+        family = 6;
+    }
+    else
+    {
+        // If not IPv4/IPv6 or parse error, allow by default
         return 1;
     }
 
-    // Lookup policy in map (ingress uses source IP and destination port)
-    // The policy specifies: allow traffic FROM source_ip TO our port
-    struct policy_key key = {
-        .cgroup_id = bpf_get_current_cgroup_id(),
-        .ip = src_ip,
-        .port = dest_port,
-        .protocol = protocol,
-        .direction = DIRECTION_INGRESS,
-    };
+    if (family == 4)
+    {
+        // Lookup policy in map (ingress uses source IP and destination port)
+        struct policy_key key = {
+            .cgroup_id = bpf_get_current_cgroup_id(),
+            .ip = src_ip[0],
+            .port = dest_port,
+            .protocol = protocol,
+            .direction = DIRECTION_INGRESS,
+        };
 
-    struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
-    if (!value)
-    {
-        // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
-        key.cgroup_id = 0;
-        value = bpf_map_lookup_elem(&policy_map, &key);
-    }
-    if (value)
-    {
-        // Found matching policy
-        if (value->action == 1)
+        struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
+        if (!value)
         {
-            // ALLOW
-            emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 1);
-            return 1;
+            // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
+            key.cgroup_id = 0;
+            value = bpf_map_lookup_elem(&policy_map, &key);
         }
-        else
+        if (value)
         {
-            // BLOCK
-            emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 0);
-            return 0;
+            if (value->action == 1)
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 1, 4);
+                return 1;
+            }
+            else
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 0, 4);
+                return 0;
+            }
+        }
+    }
+    else if (family == 6)
+    {
+        struct policy_key_v6 key = {
+            .cgroup_id = bpf_get_current_cgroup_id(),
+            .port = dest_port,
+            .protocol = protocol,
+            .direction = DIRECTION_INGRESS,
+        };
+        for (int i = 0; i < 4; i++)
+            key.ip[i] = src_ip[i];
+
+        struct policy_value *value = bpf_map_lookup_elem(&policy_map_v6, &key);
+        if (!value)
+        {
+            key.cgroup_id = 0;
+            value = bpf_map_lookup_elem(&policy_map_v6, &key);
+        }
+        if (value)
+        {
+            if (value->action == 1)
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 1, 6);
+                return 1;
+            }
+            else
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 0, 6);
+                return 0;
+            }
         }
     }
 
     // Default deny: if no policy matches, block
-    emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 0);
+    emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 0, family);
     return 0;
 }
 
