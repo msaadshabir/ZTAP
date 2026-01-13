@@ -29,9 +29,10 @@ var (
 
 // eBPFEnforcer manages eBPF programs for network policy enforcement
 type eBPFEnforcer struct {
-	objs     *bpfObjects
-	links    []link.Link
-	policies []policy.NetworkPolicy
+	objs        *bpfObjects
+	egressLink  link.Link
+	ingressLink link.Link
+	policies    []policy.NetworkPolicy
 	// flowEventsPinPath is the bpffs pin path for the flow_events map (if pinned).
 	flowEventsPinPath string
 }
@@ -77,9 +78,7 @@ func NewEBPFEnforcer() (*eBPFEnforcer, error) {
 		return nil, fmt.Errorf("failed to remove memlock: %w", err)
 	}
 
-	return &eBPFEnforcer{
-		links: make([]link.Link, 0),
-	}, nil
+	return &eBPFEnforcer{}, nil
 }
 
 // LoadPolicies loads policies into eBPF maps
@@ -310,7 +309,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 		if err != nil {
 			return fmt.Errorf("failed to attach egress filter to cgroup: %w", err)
 		}
-		e.links = append(e.links, l)
+		e.egressLink = l
 		log.Printf("eBPF egress filter attached to cgroup: %s", safeCgroupPath)
 	}
 
@@ -324,8 +323,38 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 		if err != nil {
 			return fmt.Errorf("failed to attach ingress filter to cgroup: %w", err)
 		}
-		e.links = append(e.links, l)
+		e.ingressLink = l
 		log.Printf("eBPF ingress filter attached to cgroup: %s", safeCgroupPath)
+	}
+
+	return nil
+}
+
+// UpdateFrom transfers and updates eBPF links from an old enforcer.
+// This implements graceful reload by updating existing links with new programs.
+func (e *eBPFEnforcer) UpdateFrom(old *eBPFEnforcer) error {
+	if old == nil {
+		return nil
+	}
+
+	// Update Egress Link
+	if old.egressLink != nil && e.objs.FilterEgress != nil {
+		if err := old.egressLink.Update(e.objs.FilterEgress); err != nil {
+			return fmt.Errorf("failed to update egress link: %w", err)
+		}
+		e.egressLink = old.egressLink
+		old.egressLink = nil // Steal ownership
+		log.Println("eBPF egress link updated atomically")
+	}
+
+	// Update Ingress Link
+	if old.ingressLink != nil && e.objs.FilterIngress != nil {
+		if err := old.ingressLink.Update(e.objs.FilterIngress); err != nil {
+			return fmt.Errorf("failed to update ingress link: %w", err)
+		}
+		e.ingressLink = old.ingressLink
+		old.ingressLink = nil // Steal ownership
+		log.Println("eBPF ingress link updated atomically")
 	}
 
 	return nil
@@ -334,10 +363,17 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 // Close cleans up eBPF resources
 func (e *eBPFEnforcer) Close() error {
 	// Detach programs
-	for _, l := range e.links {
-		if err := l.Close(); err != nil {
-			log.Printf("Warning: Failed to close link: %v", err)
+	if e.egressLink != nil {
+		if err := e.egressLink.Close(); err != nil {
+			log.Printf("Warning: Failed to close egress link: %v", err)
 		}
+		e.egressLink = nil
+	}
+	if e.ingressLink != nil {
+		if err := e.ingressLink.Close(); err != nil {
+			log.Printf("Warning: Failed to close ingress link: %v", err)
+		}
+		e.ingressLink = nil
 	}
 
 	// Close maps and programs
@@ -440,43 +476,59 @@ func protocolToNum(protocol string) uint8 {
 	}
 }
 
-// EnforceWithEBPFReal uses actual eBPF enforcement (requires root)
+// EnforceWithEBPFReal uses actual eBPF enforcement (requires root).
+// It implements graceful reload by updating existing links if an enforcer
+// is already active.
 func EnforceWithEBPFReal(opts EnforcementOptions) error {
-	activeEBPFMu.Lock()
-	defer activeEBPFMu.Unlock()
-
-	if activeEBPFEnforcer != nil {
-		_ = activeEBPFEnforcer.Close()
-		activeEBPFEnforcer = nil
-	}
-
-	enforcer, err := NewEBPFEnforcer()
+	newEnforcer, err := NewEBPFEnforcer()
 	if err != nil {
 		return fmt.Errorf("failed to create eBPF enforcer: %w", err)
 	}
 
-	if err := enforcer.LoadPolicies(opts.Policies); err != nil {
-		_ = enforcer.Close()
+	if err := newEnforcer.LoadPolicies(opts.Policies); err != nil {
+		_ = newEnforcer.Close()
 		return fmt.Errorf("failed to load policies: %w", err)
 	}
 
 	if opts.DryRun {
 		log.Printf("[DRY-RUN] eBPF: Validated %d policies, skipping attachment and pinning", len(opts.Policies))
-		_ = enforcer.Close()
+		_ = newEnforcer.Close()
 		return nil
 	}
 
-	if err := enforcer.Attach(opts.CgroupPath); err != nil {
-		_ = enforcer.Close()
-		return fmt.Errorf("failed to attach eBPF program: %w", err)
+	activeEBPFMu.Lock()
+	defer activeEBPFMu.Unlock()
+
+	if activeEBPFEnforcer != nil {
+		// Graceful reload: update existing links
+		if err := newEnforcer.UpdateFrom(activeEBPFEnforcer); err != nil {
+			log.Printf("Warning: Atomic update failed, falling back to full re-attach: %v", err)
+			// Fallback: stop old and start new (non-graceful)
+			_ = activeEBPFEnforcer.Close()
+			if err := newEnforcer.Attach(opts.CgroupPath); err != nil {
+				_ = newEnforcer.Close()
+				activeEBPFEnforcer = nil
+				return fmt.Errorf("failed to attach eBPF program: %w", err)
+			}
+		} else {
+			// Clean up old maps and programs from the previous enforcer instance.
+			// Ownership of links was already transferred in UpdateFrom.
+			_ = activeEBPFEnforcer.Close()
+		}
+	} else {
+		// First run: just attach
+		if err := newEnforcer.Attach(opts.CgroupPath); err != nil {
+			_ = newEnforcer.Close()
+			return fmt.Errorf("failed to attach eBPF program: %w", err)
+		}
 	}
 
-	if err := enforcer.PinFlowEventsMap(DefaultFlowEventsPinPath); err != nil {
+	if err := newEnforcer.PinFlowEventsMap(DefaultFlowEventsPinPath); err != nil {
 		log.Printf("Warning: Failed to pin flow_events map (ztap flows may not work): %v", err)
 	}
 
 	log.Printf("Successfully enforced %d policies via eBPF", len(opts.Policies))
-	activeEBPFEnforcer = enforcer
+	activeEBPFEnforcer = newEnforcer
 	return nil
 }
 

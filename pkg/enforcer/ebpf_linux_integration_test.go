@@ -134,3 +134,94 @@ func allowTCPPolicy(name, cidr string, port int) policy.NetworkPolicy {
 	policyObj.Spec.Egress = append(policyObj.Spec.Egress, egressRule)
 	return policyObj
 }
+
+// TestEBPFGracefulReload verifies that updating policies via EnforceWithEBPFReal
+// works without error and updates existing rules.
+func TestEBPFGracefulReload(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("integration test only runs on Linux")
+	}
+
+	if os.Geteuid() != 0 {
+		t.Skip("requires root privileges")
+	}
+
+	compileTestBPF(t)
+
+	cgroupPath := createTestCgroup(t)
+	defer StopEBPFEnforcement() // Ensure we clean up active enforcement
+
+	// Step 1: Initial enforcement
+	p1 := allowTCPPolicy("policy-1", "10.0.0.1/32", 80)
+	opts1 := EnforcementOptions{
+		Policies:   []policy.NetworkPolicy{p1},
+		CgroupPath: cgroupPath,
+	}
+
+	if err := EnforceWithEBPFReal(opts1); err != nil {
+		t.Fatalf("Initial enforcement failed: %v", err)
+	}
+
+	// Capture initial enforcer and its members
+	enf1 := activeEBPFEnforcer
+	if enf1 == nil {
+		t.Fatal("activeEBPFEnforcer is nil after initial enforcement")
+	}
+	if enf1.egressLink == nil {
+		t.Fatal("egressLink is nil")
+	}
+
+	// Step 2: Graceful reload with different policy
+	p2 := allowTCPPolicy("policy-1", "10.0.0.2/32", 443)
+	opts2 := EnforcementOptions{
+		Policies:   []policy.NetworkPolicy{p2},
+		CgroupPath: cgroupPath,
+	}
+
+	if err := EnforceWithEBPFReal(opts2); err != nil {
+		t.Fatalf("Graceful reload failed: %v", err)
+	}
+
+	enf2 := activeEBPFEnforcer
+	if enf2 == nil {
+		t.Fatal("activeEBPFEnforcer is nil after reload")
+	}
+
+	if enf2 == enf1 {
+		t.Fatal("activeEBPFEnforcer did not change after reload")
+	}
+
+	// Verify that ownership of the link was transferred
+	if enf1.egressLink != nil {
+		t.Error("old enforcer still owns egressLink")
+	}
+	if enf2.egressLink == nil {
+		t.Error("new enforcer does not own egressLink")
+	}
+
+	// Step 3: Verify the map content of the new enforcer
+	key := policyKey{
+		IP:        ipToUint32(net.ParseIP("10.0.0.2")),
+		Port:      443,
+		Protocol:  protocolToNum("TCP"),
+		Direction: DirectionEgress,
+	}
+	var val policyValue
+	if err := enf2.objs.PolicyMap.Lookup(&key, &val); err != nil {
+		t.Fatalf("New policy rule not found in map: %v", err)
+	}
+	if val.Action != 1 {
+		t.Errorf("Expected action 1, got %d", val.Action)
+	}
+
+	// Verify old rule is NOT in the new map
+	oldKey := policyKey{
+		IP:        ipToUint32(net.ParseIP("10.0.0.1")),
+		Port:      80,
+		Protocol:  protocolToNum("TCP"),
+		Direction: DirectionEgress,
+	}
+	if err := enf2.objs.PolicyMap.Lookup(&oldKey, &val); err == nil {
+		t.Error("Old policy rule still exists in the new map")
+	}
+}

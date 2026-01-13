@@ -33,6 +33,17 @@ In dry-run mode:
 - Map pinning (for flow monitoring) is skipped
 - Actions are logged to stdout
 
+### Graceful Policy Reload
+
+ZTAP supports atomic policy updates on Linux via `bpf_link` (kernel 5.7+). When a new policy is applied while enforcement is active:
+
+1. A new eBPF program is loaded and verified.
+2. The existing cgroup attachment is atomically updated to point to the new program using `bpf_link_update`.
+3. Ownership of the link is transferred to the new enforcer instance.
+4. Old maps and programs are cleaned up.
+
+This ensures zero downtime and no packet drops during policy updates. If the atomic update fails, ZTAP falls back to a full detach/attach cycle.
+
 ### Build/Development Dependencies
 
 If you are building ZTAP from source or modifying the eBPF program, you will need:

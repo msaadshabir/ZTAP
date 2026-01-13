@@ -48,6 +48,18 @@ ZTAP includes comprehensive test coverage across all critical components with un
 - **TestAuthorizeEgressDuplicate**: Suppresses duplicate rule errors
 - **TestRevokeAllEgress**: Revokes existing egress rules for cleanup
 - **TestRevokeAllEgressNoRules**: No-op when no rules exist
+
+### Integration Tests
+
+#### Enforcer Package (`pkg/enforcer/ebpf_linux_integration_test.go`)
+
+> **Note**: These tests require Linux, root privileges, and a kernel supporting eBPF (5.7+).
+
+- **TestEBPFIntegrationLoadAndAttach**: Verifies eBPF program compilation, map population, and cgroup attachment
+- **TestEBPFGracefulReload**: Verifies that policy updates are applied using atomic `bpf_link` updates without detaching the program (ensuring zero downtime)
+
+**Run**: `sudo go test -tags integration ./pkg/enforcer -v`
+
 - **TestRevokeAllEgressNotFound**: Detects missing Security Groups
 
 **Run**: `go test ./pkg/cloud/... -v`

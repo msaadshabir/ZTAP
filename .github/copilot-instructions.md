@@ -56,12 +56,13 @@ type FlowMonitor interface {
 ## Platform-Specific Code
 
 - Linux eBPF: `pkg/enforcer/ebpf_linux.go` with `//go:build linux` tag
+  - Supports atomic policy updates via `bpf_link` (graceful reload)
 - Linux iptables (fallback): `pkg/enforcer/iptables_linux.go` with `//go:build linux` tag. Automatically used if kernel < 5.7, BPF unavailable, or matching `ZTAP_FORCE_IPTABLES=1`.
 - macOS pf: Falls back to `EnforceWithPF()` in `pkg/enforcer/enforcer.go`
 - Windows WFP: `pkg/enforcer/wfp_windows.go` and `pkg/enforcer/wfp_engine_windows.go` with `//go:build windows` tags
 - Dry-run mode: `enforcer.EnforcementOptions` struct supports `.DryRun = true` for simulated enforcement on all platforms (logs actions instead of applying kernel rules).
 - eBPF requires: compiled `bpf/filter.o`, root/CAP_BPF, kernel 5.7+
-- Linux `ztap enforce` keeps running while enforcement is active; Ctrl+C detaches and exits
+- Linux `ztap enforce` keeps running while enforcement is active; Ctrl+C detaches and exits; atomic updates logic preserves connections
 - CLI flags for Linux enforcement: `--cgroup`, `--bpf-object`, `--debug-ebpf`, `--dry-run` (and env vars `ZTAP_BPF_OBJECT`, `ZTAP_DEBUG_EBPF`)
 - iptables fallback uses: `iptables-restore` for atomicity, custom chains (`ZTAP-INGRESS`, `ZTAP-EGRESS`)
 

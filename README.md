@@ -78,6 +78,7 @@ ztap status
 ### Security & Enforcement
 
 - **Kernel-Level Filtering** – Real eBPF on Linux
+- **Zero-Downtime Updates** – Graceful, atomic policy reloads using eBPF `bpf_link`
 - **Older Kernel Support** – iptables fallback for pre-5.7 kernels or non-BPF environments
 - **Bidirectional Enforcement** – Ingress and egress policies
 - **Secure Communication** – HTTPS/TLS support for API and gRPC endpoints

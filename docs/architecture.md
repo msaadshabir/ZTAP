@@ -46,6 +46,7 @@ ResolveLabels(labels map[string]string) ([]string, error)
 
 - **Linux**: eBPF (Primary)
   - Attach to cgroup hooks (egress and ingress)
+  - Uses `bpf_link` for atomic, graceful policy reloads without connection drops
   - Per-cgroup policy keys (falls back to global keys while per-pod scoping is WIP)
   - Kernel-level enforcement with BTF support
   - Safe packet parsing using bpf_skb_load_bytes
