@@ -36,13 +36,13 @@
 - iptables fallback for older Linux kernels
 - Pre-compiled eBPF binaries (built with bpf2go)
 - **Policy dry-run mode** - `ztap enforce --dry-run` to preview rules without applying
+- **IPv6 support** - Extend eBPF and iptables enforcers to handle IPv6 CIDRs
 
 ## Planned
 
 ### Essential for Production Use
 
 - **Policy validation CLI** - `ztap policy validate -f policy.yaml` for CI/CD pipelines
-- **IPv6 support** - Extend eBPF and iptables enforcers to handle IPv6 CIDRs
 - **Graceful policy reload** - Update policies without dropping active connections
 - **Persistent sessions** - Store auth sessions in a durable backend (SQLite/etcd)
 

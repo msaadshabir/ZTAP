@@ -163,6 +163,11 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			protocol := protocolToNum(port.Protocol)
 
 			if isIPv6 {
+				// Remap ICMP (1) to ICMPv6 (58) for IPv6 rules
+				if protocol == 1 {
+					protocol = 58
+				}
+
 				key := policyKeyV6{
 					IP:        ipToUint32Array(ip),
 					Port:      uint16(port.Port),
@@ -227,6 +232,11 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 			protocol := protocolToNum(port.Protocol)
 
 			if isIPv6 {
+				// Remap ICMP (1) to ICMPv6 (58) for IPv6 rules
+				if protocol == 1 {
+					protocol = 58
+				}
+
 				key := policyKeyV6{
 					IP:        ipToUint32Array(ip),
 					Port:      uint16(port.Port),

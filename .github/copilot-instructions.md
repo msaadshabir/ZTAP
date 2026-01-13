@@ -67,7 +67,7 @@ type FlowMonitor interface {
 
 Windows enforcement constraints (WFP):
 
-- IPv4 `ipBlock` rules with `/32` CIDRs
+- IPv4 `ipBlock` rules with `/32` CIDRs (IPv6 WIP)
 - TCP/UDP only
 - Requires an elevated terminal (Administrator) to apply/tear down filters
 
@@ -161,9 +161,9 @@ spec:
 
 Current Linux eBPF enforcement constraints:
 
-- Only IPv4 `ipBlock` rules with `/32` CIDRs
-- TCP/UDP only (ICMP is rejected)
-- `podSelector.matchLabels` targets are supported when translated into `/32` `ipBlock` rules via discovery (e.g., `ztap agent` or `ztap enforce --resolve-labels` with `discovery.backend: k8s`)
+- Only IPv4 `ipBlock` rules with `/32` CIDRs or IPv6 with `/128` CIDRs
+- TCP/UDP/ICMP supported
+- `podSelector.matchLabels` targets are supported when translated into `/32` or `/128` `ipBlock` rules via discovery (e.g., `ztap agent` or `ztap enforce --resolve-labels` with `discovery.backend: k8s`)
 
 Note: this limitation is specific to kernel enforcement. Cloud sync backends can still translate selectors; for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels and syncs them into VPC firewall rules.
 

@@ -113,15 +113,31 @@ FilterProg *ebpf.Program `ebpf:"filter_egress_permissive"`
 
 ### eBPF Map Structure
 
+IPv4 Policy Key:
+
 ```c
 struct policy_key {
     __u64 cgroup_id;  // Source cgroup id (0 = global fallback)
-    __u32 dest_ip;    // Destination IP address (network byte order)
-    __u16 dest_port;  // Destination port
+    __u32 ip;         // IP address (network byte order)
+    __u16 port;       // Port
     __u8  protocol;   // Protocol (6=TCP, 17=UDP, 1=ICMP)
-    __u8  _pad;       // Padding for alignment
+    __u8  direction;  // 0=egress, 1=ingress
 };
+```
 
+IPv6 Policy Key:
+
+```c
+struct policy_key_v6 {
+    __u64 cgroup_id;
+    __u32 ip[4];      // IPv6 Address (128 bits)
+    __u16 port;
+    __u8  protocol;
+    __u8  direction;
+};
+```
+
+```c
 struct policy_value {
     __u8 action;      // 0=block, 1=allow
     __u8 _pad[3];     // Padding for alignment
@@ -132,6 +148,8 @@ Lookup behavior:
 
 - The dataplane looks up policies using the current process cgroup id.
 - If there is no match for the current cgroup id, it falls back to `cgroup_id = 0` to preserve existing “global” enforcement.
+- IPv4 packets are looked up in `policy_map`.
+- IPv6 packets are looked up in `policy_map_v6`.
 
 ### Flow Events Ring Buffer
 
@@ -140,14 +158,14 @@ Flow events are streamed to userspace via a ring buffer:
 ```c
 struct flow_event {
     __u64 timestamp_ns;  // Kernel timestamp (nanoseconds since boot)
-    __u32 src_ip;        // Source IP address
-    __u32 dest_ip;       // Destination IP address
+    __u32 src_ip[4];     // Source IP address (v4 uses first word)
+    __u32 dest_ip[4];    // Destination IP address (v4 uses first word)
     __u16 src_port;      // Source port
     __u16 dest_port;     // Destination port
     __u8  protocol;      // Protocol (TCP=6, UDP=17, ICMP=1)
     __u8  direction;     // 0=egress, 1=ingress
     __u8  action;        // 0=blocked, 1=allowed
-    __u8  pad;           // Padding
+    __u8  family;        // 4=IPv4, 6=IPv6
 };
 ```
 
@@ -193,9 +211,10 @@ ztap status
 Notes:
 
 - `ztap enforce` keeps running while enforcement is active. Press Ctrl+C to detach and exit.
-- The eBPF enforcer currently supports only IPv4 `ipBlock` rules with `/32` CIDRs, and TCP/UDP only.
-  Policies that use non-/32 CIDRs will be rejected to avoid unsafe partial enforcement.
-  Policies that use `podSelector` targets can be enforced on Linux by first resolving selectors into `/32` `ipBlock` rules:
+- The eBPF enforcer currently supports only IPv4 `ipBlock` rules with `/32` CIDRs and IPv6 `ipBlock` rules with `/128` CIDRs.
+  TCP, UDP, and ICMP protocols are supported.
+  Policies that use non-exact CIDRs (e.g. `/24`) will be rejected or effectively enforce only the network address to avoid unsafe partial enforcement.
+  Policies that use `podSelector` targets can be enforced on Linux by first resolving selectors into `/32` or `/128` `ipBlock` rules:
   - In-cluster: run `ztap agent` (Kubernetes discovery is used automatically)
   - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s` configured (kubeconfig-based)
     Cloud sync backends can also translate selectors (for example, `ztap gcp firewall-sync`).
