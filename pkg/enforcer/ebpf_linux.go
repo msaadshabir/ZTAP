@@ -8,6 +8,7 @@ package enforcer
 import (
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -157,8 +158,9 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 		isIPv6 := ip.To4() == nil
 
 		for _, port := range egress.Ports {
-			if port.Port < 0 || port.Port > 65535 {
-				return fmt.Errorf("invalid port %d: must be 0-65535", port.Port)
+			portValue, err := toUint16Port(port.Port)
+			if err != nil {
+				return err
 			}
 			protocol := protocolToNum(port.Protocol)
 
@@ -170,7 +172,7 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 
 				key := policyKeyV6{
 					IP:        ipToUint32Array(ip),
-					Port:      uint16(port.Port),
+					Port:      portValue,
 					Protocol:  protocol,
 					Direction: DirectionEgress,
 				}
@@ -181,7 +183,7 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			} else {
 				key := policyKey{
 					IP:        ipToUint32(ip.To4()),
-					Port:      uint16(port.Port),
+					Port:      portValue,
 					Protocol:  protocol,
 					Direction: DirectionEgress,
 				}
@@ -226,8 +228,9 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 		isIPv6 := ip.To4() == nil
 
 		for _, port := range ingress.Ports {
-			if port.Port < 0 || port.Port > 65535 {
-				return fmt.Errorf("invalid port %d: must be 0-65535", port.Port)
+			portValue, err := toUint16Port(port.Port)
+			if err != nil {
+				return err
 			}
 			protocol := protocolToNum(port.Protocol)
 
@@ -239,7 +242,7 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 
 				key := policyKeyV6{
 					IP:        ipToUint32Array(ip),
-					Port:      uint16(port.Port),
+					Port:      portValue,
 					Protocol:  protocol,
 					Direction: DirectionIngress,
 				}
@@ -250,7 +253,7 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 			} else {
 				key := policyKey{
 					IP:        ipToUint32(ip.To4()),
-					Port:      uint16(port.Port),
+					Port:      portValue,
 					Protocol:  protocol,
 					Direction: DirectionIngress,
 				}
@@ -279,6 +282,13 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 	}
 
 	return nil
+}
+
+func toUint16Port(p int) (uint16, error) {
+	if p < 0 || p > math.MaxUint16 {
+		return 0, fmt.Errorf("invalid port %d: must be 0-%d", p, math.MaxUint16)
+	}
+	return uint16(p), nil //nolint:gosec // G115: conversion is safe after bounds check
 }
 
 // Attach attaches the eBPF programs to cgroup for both egress and ingress
