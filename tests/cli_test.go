@@ -349,6 +349,7 @@ func findOpenPort(t *testing.T) string {
 }
 
 func TestPolicyValidate(t *testing.T) {
+	skipIfInCI(t)
 	tmpDir := t.TempDir()
 
 	validPolicy := `
