@@ -145,7 +145,8 @@ func EnforceWithPF(opts EnforcementOptions) {
 	}
 
 	if opts.DryRun {
-		fmt.Printf("[DRY-RUN] Would have written the following to /etc/pf.anchors/ztap:\n%s\n", anchorContent)
+		safeAnchorContent := sanitizeForLogPlain(anchorContent)
+		fmt.Printf("[DRY-RUN] Would have written the following to /etc/pf.anchors/ztap:\n%s\n", safeAnchorContent)
 		return
 	}
 
