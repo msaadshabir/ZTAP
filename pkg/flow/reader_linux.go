@@ -128,25 +128,28 @@ func (r *LinuxReader) Available() bool {
 
 // parseRawEvent parses a raw ring buffer record into a RawFlowEvent.
 func parseRawEvent(data []byte) (RawFlowEvent, error) {
-	if len(data) < 24 {
+	if len(data) < 48 {
 		return RawFlowEvent{}, fmt.Errorf("event data too short: %d bytes", len(data))
 	}
 
-	// Parse according to struct flow_event layout in filter.c
-	// Timestamp: native byte order (little-endian on x86/ARM)
-	// IPs: network byte order (big-endian) as received from kernel
-	// Ports: host byte order (little-endian) - already converted by bpf_ntohs in eBPF
-	event := RawFlowEvent{
-		TimestampNs: binary.LittleEndian.Uint64(data[0:8]),
-		SrcIP:       binary.BigEndian.Uint32(data[8:12]),     // Network byte order
-		DestIP:      binary.BigEndian.Uint32(data[12:16]),    // Network byte order
-		SrcPort:     binary.LittleEndian.Uint16(data[16:18]), // Host byte order (converted by bpf_ntohs)
-		DestPort:    binary.LittleEndian.Uint16(data[18:20]), // Host byte order (converted by bpf_ntohs)
-		Protocol:    data[20],
-		Direction:   data[21],
-		Action:      data[22],
-		Pad:         data[23],
+	event := RawFlowEvent{}
+	event.TimestampNs = binary.LittleEndian.Uint64(data[0:8])
+
+	for i := 0; i < 4; i++ {
+		start := 8 + i*4
+		event.SrcIP[i] = binary.LittleEndian.Uint32(data[start : start+4])
 	}
+	for i := 0; i < 4; i++ {
+		start := 24 + i*4
+		event.DestIP[i] = binary.LittleEndian.Uint32(data[start : start+4])
+	}
+
+	event.SrcPort = binary.LittleEndian.Uint16(data[40:42])
+	event.DestPort = binary.LittleEndian.Uint16(data[42:44])
+	event.Protocol = data[44]
+	event.Direction = data[45]
+	event.Action = data[46]
+	event.Family = data[47]
 
 	return event, nil
 }
