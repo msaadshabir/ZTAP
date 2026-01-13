@@ -154,7 +154,7 @@ func uint32ArrayToIP(ip [4]uint32, family uint8) net.IP {
 		}
 		return res
 	}
-	return uint32ToIP(ip[0])
+	return uint32ToIP(ip[0]) //nolint:gosec // ip is a fixed-length array; index 0 is always valid
 }
 
 func protocolToString(proto uint8) string {
