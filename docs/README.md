@@ -36,6 +36,7 @@ ZTAP includes a minimal REST API server and a minimal gRPC API server.
 - Start (gRPC): `ztap grpc serve`
 - Configure: set `api.listen` and `api.auth.enabled` in `config.yaml` (see `config.yaml.example`)
 - Configure (gRPC): set `grpc.listen` and `grpc.auth.enabled` in `config.yaml`
+- Sessions: persistent by default (SQLite at `~/.ztap/sessions.db`); configure via `auth.sessions.*` in `config.yaml.example`
 
 ## Alerting
 

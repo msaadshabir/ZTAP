@@ -83,7 +83,7 @@ ztap status
 - **Bidirectional Enforcement** – Ingress and egress policies
 - **Secure Communication** – HTTPS/TLS support for API and gRPC endpoints
 - **RBAC** – Admin, Operator, Viewer roles
-- **Session Management** – 24-hour TTL
+- **Session Management** – Configurable TTL with persistent sessions (SQLite default)
 - **Tamper-Proof Audit Logging** – Cryptographic hash chaining
 - **NIST SP 800-207** compliant
 
@@ -266,6 +266,7 @@ ztap grpc serve
 curl -s http://127.0.0.1:8080/healthz
 
 # Login (default users DB: ~/.ztap/users.json)
+# Sessions persist by default in ~/.ztap/sessions.db (SQLite)
 token=$(curl -sS http://127.0.0.1:8080/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"ztap-admin-change-me"}' | jq -r .token)

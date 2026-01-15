@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -102,13 +103,33 @@ func TestValidateSession(t *testing.T) {
 		t.Error("Expected error for invalid token")
 	}
 
-	manager.mu.Lock()
-	manager.sessions[session.Token].ExpiresAt = time.Now().Add(-1 * time.Hour)
-	manager.mu.Unlock()
+	session.ExpiresAt = time.Now().Add(-1 * time.Hour)
+	if err := manager.store.Put(context.Background(), session.Token, session); err != nil {
+		t.Fatalf("Put expired session: %v", err)
+	}
 
 	_, err = manager.ValidateSession(session.Token)
 	if err == nil {
 		t.Error("Expected error for expired session")
+	}
+}
+
+func TestDisableUserRevokesSessions(t *testing.T) {
+	tmpDir := t.TempDir()
+	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
+
+	_ = manager.CreateUser("testuser", "password", RoleOperator)
+	session, _ := manager.Authenticate("testuser", "password")
+
+	if _, err := manager.ValidateSession(session.Token); err != nil {
+		t.Fatalf("ValidateSession before disable: %v", err)
+	}
+
+	if err := manager.DisableUser("testuser"); err != nil {
+		t.Fatalf("DisableUser: %v", err)
+	}
+	if _, err := manager.ValidateSession(session.Token); err == nil {
+		t.Fatalf("expected session to be revoked")
 	}
 }
 

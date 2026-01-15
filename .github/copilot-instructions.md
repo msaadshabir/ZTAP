@@ -80,7 +80,7 @@ Windows enforcement constraints (WFP):
 
 - Command: `ztap api serve` (implemented in `cmd/api.go` and `pkg/apihttp/`)
 - Command: `ztap grpc serve` (implemented in `cmd/grpc.go` and `pkg/apigrpc/`)
-- Auth: bearer tokens via `Authorization: Bearer <token>`; sessions are currently in-memory (non-persistent across restarts)
+- Auth: bearer tokens via `Authorization: Bearer <token>`; sessions are persistent by default (SQLite at `~/.ztap/sessions.db`)
 - Flow streaming: `GET /v1/flows/stream` uses SSE; on Linux it will read the pinned eBPF map when available, otherwise it falls back to simulated events
 - Flow streaming (gRPC): `ztap.api.v1.FlowsService/Stream` is server-streaming; send `authorization: Bearer <token>` via gRPC metadata
 - Metrics: `GET /metrics` is served via promhttp; avoid registering Prometheus collectors in constructors (global registry)

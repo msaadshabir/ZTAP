@@ -33,6 +33,7 @@ var createUserCmd = &cobra.Command{
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+		defer func() { _ = am.Close() }()
 
 		// Prompt for password
 		fmt.Print("Enter password: ")
@@ -83,6 +84,7 @@ var listUsersCmd = &cobra.Command{
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+		defer func() { _ = am.Close() }()
 
 		users := am.ListUsers()
 		if len(users) == 0 {
@@ -129,6 +131,7 @@ var changePasswordCmd = &cobra.Command{
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+		defer func() { _ = am.Close() }()
 
 		// Prompt for old password
 		fmt.Print("Enter current password: ")
@@ -191,6 +194,7 @@ var disableUserCmd = &cobra.Command{
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+		defer func() { _ = am.Close() }()
 
 		if err := am.DisableUser(username); err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -213,6 +217,7 @@ var enableUserCmd = &cobra.Command{
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+		defer func() { _ = am.Close() }()
 
 		if err := am.EnableUser(username); err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -244,6 +249,7 @@ var loginCmd = &cobra.Command{
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+		defer func() { _ = am.Close() }()
 
 		session, err := am.Authenticate(username, string(passwordBytes))
 		if err != nil {
@@ -279,6 +285,7 @@ var logoutCmd = &cobra.Command{
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+		defer func() { _ = am.Close() }()
 
 		if err := am.Logout(string(tokenBytes)); err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -307,13 +314,7 @@ func init() {
 }
 
 func getAuthManager() (*auth.AuthManager, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	dbPath := filepath.Join(homeDir, ".ztap", "users.json")
-	return auth.NewAuthManager(dbPath)
+	return getAuthManagerFromConfig()
 }
 
 func getTokenFile() string {
@@ -333,6 +334,7 @@ func CheckAuth(perm auth.Permission) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = am.Close() }()
 
 	return am.HasPermission(string(tokenBytes), perm)
 }

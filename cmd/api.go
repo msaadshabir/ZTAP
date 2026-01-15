@@ -65,7 +65,13 @@ var apiServeCmd = &cobra.Command{
 		// Initialize metrics so /metrics includes ZTAP counters.
 		metrics.GetCollector()
 
-		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, Alerts: alertManager})
+		am, err := getAuthManagerFromConfig()
+		if err != nil {
+			return err
+		}
+		defer am.Close()
+
+		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager})
 		if err != nil {
 			return err
 		}

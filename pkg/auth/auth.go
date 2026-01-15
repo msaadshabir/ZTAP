@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -58,10 +59,11 @@ type Session struct {
 
 // AuthManager manages authentication and authorization
 type AuthManager struct {
-	users    map[string]*User
-	sessions map[string]*Session
-	mu       sync.RWMutex
-	dbPath   string
+	users      map[string]*User
+	store      SessionStore
+	mu         sync.RWMutex
+	dbPath     string
+	sessionTTL time.Duration
 }
 
 // Role permissions mapping
@@ -101,10 +103,34 @@ var (
 
 // NewAuthManager creates a new authentication manager
 func NewAuthManager(dbPath string) (*AuthManager, error) {
+	return NewAuthManagerWithOptions(AuthManagerOptions{DBPath: dbPath})
+}
+
+type AuthManagerOptions struct {
+	DBPath     string
+	Store      SessionStore
+	SessionTTL time.Duration
+}
+
+func NewAuthManagerWithStore(dbPath string, store SessionStore) (*AuthManager, error) {
+	return NewAuthManagerWithOptions(AuthManagerOptions{DBPath: dbPath, Store: store})
+}
+
+func NewAuthManagerWithOptions(opts AuthManagerOptions) (*AuthManager, error) {
+	store := opts.Store
+	if store == nil {
+		store = NewInMemorySessionStore()
+	}
+	ttl := opts.SessionTTL
+	if ttl == 0 {
+		ttl = 24 * time.Hour
+	}
+
 	am := &AuthManager{
-		users:    make(map[string]*User),
-		sessions: make(map[string]*Session),
-		dbPath:   dbPath,
+		users:      make(map[string]*User),
+		store:      store,
+		dbPath:     opts.DBPath,
+		sessionTTL: ttl,
 	}
 
 	// Load existing users from disk
@@ -251,10 +277,12 @@ func (am *AuthManager) Authenticate(username, password string) (*Session, error)
 		Username:  username,
 		Role:      user.Role,
 		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ExpiresAt: time.Now().Add(am.sessionTTL),
 	}
 
-	am.sessions[token] = session
+	if err := am.store.Put(context.Background(), token, session); err != nil {
+		return nil, err
+	}
 
 	if err := am.saveUsers(); err != nil {
 		return nil, err
@@ -265,18 +293,14 @@ func (am *AuthManager) Authenticate(username, password string) (*Session, error)
 
 // ValidateSession checks if a session is valid
 func (am *AuthManager) ValidateSession(token string) (*Session, error) {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
-
-	session, exists := am.sessions[token]
-	if !exists {
-		return nil, ErrSessionNotFound
+	session, err := am.store.Get(context.Background(), token)
+	if err != nil {
+		return nil, err
 	}
-
 	if time.Now().After(session.ExpiresAt) {
+		_ = am.store.Delete(context.Background(), token)
 		return nil, ErrSessionExpired
 	}
-
 	return session, nil
 }
 
@@ -302,10 +326,7 @@ func (am *AuthManager) HasPermission(token string, perm Permission) error {
 
 // Logout invalidates a session
 func (am *AuthManager) Logout(token string) error {
-	am.mu.Lock()
-	defer am.mu.Unlock()
-
-	delete(am.sessions, token)
+	_ = am.store.Delete(context.Background(), token)
 	return nil
 }
 
@@ -341,7 +362,16 @@ func (am *AuthManager) DisableUser(username string) error {
 		return ErrUserNotFound
 	}
 
+	prev := user.Enabled
 	user.Enabled = false
+
+	if revoker, ok := am.store.(SessionStoreUserRevoker); ok {
+		if _, err := revoker.DeleteByUsername(context.Background(), username); err != nil {
+			user.Enabled = prev
+			return fmt.Errorf("revoking sessions: %w", err)
+		}
+	}
+
 	return am.saveUsers()
 }
 
@@ -357,6 +387,13 @@ func (am *AuthManager) EnableUser(username string) error {
 
 	user.Enabled = true
 	return am.saveUsers()
+}
+
+func (am *AuthManager) Close() error {
+	if am.store == nil {
+		return nil
+	}
+	return am.store.Close()
 }
 
 // ListUsers returns all users
@@ -411,13 +448,5 @@ func (am *AuthManager) saveUsers() error {
 
 // CleanupExpiredSessions removes expired sessions
 func (am *AuthManager) CleanupExpiredSessions() {
-	am.mu.Lock()
-	defer am.mu.Unlock()
-
-	now := time.Now()
-	for token, session := range am.sessions {
-		if now.After(session.ExpiresAt) {
-			delete(am.sessions, token)
-		}
-	}
+	_, _ = am.store.DeleteExpired(context.Background(), time.Now())
 }

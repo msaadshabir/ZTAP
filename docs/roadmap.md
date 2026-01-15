@@ -10,6 +10,7 @@
 - Pod IP auto-discovery from K8s API
 - Role-based access control (admin, operator, viewer)
 - Session management with configurable lifetimes
+- Persistent auth sessions stored in SQLite (default)
 - AWS Security Group synchronization
 - Azure NSG synchronization
 - EC2 discovery and tagging
@@ -40,11 +41,6 @@
 - **Graceful policy reload** - Update eBPF policies without dropping active connections via atomic `bpf_link` updates
 
 ## Planned
-
-### Essential for Production Use
-
-- **Policy validation CLI** - `ztap policy validate -f policy.yaml` for CI/CD pipelines
-- **Persistent sessions** - Store auth sessions in a durable backend (SQLite/etcd)
 
 ### Operational Readiness
 

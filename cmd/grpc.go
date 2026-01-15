@@ -61,7 +61,13 @@ var grpcServeCmd = &cobra.Command{
 			cfg.TLS.KeyFile = tlsKey
 		}
 
-		srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, Alerts: alertManager})
+		am, err := getAuthManagerFromConfig()
+		if err != nil {
+			return err
+		}
+		defer am.Close()
+
+		srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager})
 		if err != nil {
 			return err
 		}

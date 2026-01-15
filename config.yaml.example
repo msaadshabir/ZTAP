@@ -59,6 +59,14 @@ grpc:
     cert_file: ""
     key_file: ""
 
+# Authentication
+auth:
+  sessions:
+    backend: sqlite # sqlite or memory
+    ttl: 24h # Session lifetime (Go duration; e.g., 30m, 24h)
+    sqlite:
+      path: ~/.ztap/sessions.db
+
 # AWS Cloud Integration
 aws:
   enabled: false
