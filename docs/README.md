@@ -47,6 +47,8 @@ ZTAP supports webhook alerting via Slack and PagerDuty.
 
 Core endpoints:
 
+- `GET /healthz` (liveness)
+- `GET /readyz` (readiness)
 - `POST /v1/auth/login` (body: `{ "username": "...", "password": "..." }`)
 - `GET /v1/auth/whoami` (requires `Authorization: Bearer <token>`)
 - `GET /v1/status`

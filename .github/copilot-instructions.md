@@ -80,6 +80,9 @@ Windows enforcement constraints (WFP):
 
 - Command: `ztap api serve` (implemented in `cmd/api.go` and `pkg/apihttp/`)
 - Command: `ztap grpc serve` (implemented in `cmd/grpc.go` and `pkg/apigrpc/`)
+- Probes:
+  - REST: `GET /healthz` (liveness) and `GET /readyz` (readiness)
+  - gRPC: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch`) and these health RPCs are unauthenticated
 - Auth: bearer tokens via `Authorization: Bearer <token>`; sessions are persistent by default (SQLite at `~/.ztap/sessions.db`)
 - Flow streaming: `GET /v1/flows/stream` uses SSE; on Linux it will read the pinned eBPF map when available, otherwise it falls back to simulated events
 - Flow streaming (gRPC): `ztap.api.v1.FlowsService/Stream` is server-streaming; send `authorization: Bearer <token>` via gRPC metadata

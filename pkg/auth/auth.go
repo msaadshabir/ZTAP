@@ -389,6 +389,19 @@ func (am *AuthManager) EnableUser(username string) error {
 	return am.saveUsers()
 }
 
+func (am *AuthManager) Ready(ctx context.Context) error {
+	if am == nil {
+		return errors.New("auth manager is nil")
+	}
+	if am.store == nil {
+		return errors.New("session store is nil")
+	}
+	if p, ok := am.store.(SessionStorePinger); ok {
+		return p.Ping(ctx)
+	}
+	return nil
+}
+
 func (am *AuthManager) Close() error {
 	if am.store == nil {
 		return nil

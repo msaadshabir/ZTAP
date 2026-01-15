@@ -361,8 +361,11 @@ ZTAP includes a minimal REST API server.
 # Starts HTTP server (defaults come from config.yaml.example)
 ztap api serve
 
-# Health check
+# Liveness check
 curl -s http://127.0.0.1:8080/healthz
+
+# Readiness check
+curl -s http://127.0.0.1:8080/readyz
 ```
 
 If API auth is enabled, `/metrics` on this server requires a valid bearer token with `view_metrics` permission.
@@ -379,6 +382,11 @@ api:
 ### 6. Start gRPC API Server
 
 ZTAP also includes a minimal gRPC API server.
+
+Health checks:
+
+- REST probes: `GET /healthz` (liveness) and `GET /readyz` (readiness)
+- gRPC probe: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check`)
 
 ```bash
 # Starts gRPC server (defaults come from config.yaml.example)

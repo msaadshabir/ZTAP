@@ -44,7 +44,7 @@
 
 ### Operational Readiness
 
-- **Health/readiness probes** - `/healthz` and `/readyz` endpoints for Kubernetes deployments
+- **Health/readiness probes** - `/healthz` and `/readyz` endpoints for Kubernetes deployments (implemented in REST API; gRPC also exposes standard `grpc.health.v1.Health`)
 - **Configuration backup/restore** - Export and import policies, discovery state, and config
 - **Rate limiting on APIs** - Prevent abuse on REST and gRPC endpoints
 - **Windows flow monitoring** - Complete WFP flow event capture

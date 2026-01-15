@@ -150,6 +150,13 @@ func (s *SQLiteSessionStore) DeleteByUsername(ctx context.Context, username stri
 	return int(n), nil
 }
 
+func (s *SQLiteSessionStore) Ping(ctx context.Context) error {
+	if s.db == nil {
+		return fmt.Errorf("sqlite sessions db is nil")
+	}
+	return s.db.PingContext(ctx)
+}
+
 func (s *SQLiteSessionStore) Close() error {
 	if s.db == nil {
 		return nil

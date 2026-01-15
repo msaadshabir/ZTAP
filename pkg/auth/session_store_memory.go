@@ -75,4 +75,6 @@ func (s *InMemorySessionStore) DeleteByUsername(_ context.Context, username stri
 	return deleted, nil
 }
 
+func (s *InMemorySessionStore) Ping(_ context.Context) error { return nil }
+
 func (s *InMemorySessionStore) Close() error { return nil }

@@ -17,11 +17,13 @@ import (
 	"ztap/pkg/auth"
 	"ztap/pkg/enforcer"
 	"ztap/pkg/flow"
+	"ztap/pkg/health"
 	"ztap/pkg/policy"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -55,6 +57,7 @@ type Server struct {
 	grpc      *grpc.Server
 	auth      *auth.AuthManager
 	audit     *audit.AuditLogger
+	readiness *health.Checker
 	startTime time.Time
 	alerts    *alert.Manager
 
@@ -87,6 +90,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		cfg:        opts.Config,
 		auth:       opts.AuthManager,
 		audit:      opts.AuditLogger,
+		readiness:  &health.Checker{AuthEnabled: opts.Config.AuthEnabled, Auth: opts.AuthManager, Audit: opts.AuditLogger},
 		startTime:  time.Now(),
 		alerts:     opts.Alerts,
 		flowReader: opts.FlowReaderFactory,
@@ -257,6 +261,10 @@ func permissionForMethod(fullMethod string) (auth.Permission, bool) {
 	switch fullMethod {
 	case "/ztap.api.v1.AuthService/Login":
 		return "", false
+	case "/grpc.health.v1.Health/Check":
+		return "", false
+	case "/grpc.health.v1.Health/Watch":
+		return "", false
 	case "/ztap.api.v1.AuthService/WhoAmI":
 		return auth.PermViewStatus, true
 	case "/ztap.api.v1.StatusService/GetStatus":
@@ -298,6 +306,28 @@ func (s *Server) registerServices() {
 	s.grpc.RegisterService(&statusServiceDesc, &statusService{srv: s})
 	s.grpc.RegisterService(&enforcementServiceDesc, &enforcementService{srv: s})
 	s.grpc.RegisterService(&flowsServiceDesc, &flowsService{srv: s})
+
+	grpc_health_v1.RegisterHealthServer(s.grpc, &healthService{srv: s})
+}
+
+type healthService struct{ srv *Server }
+
+func (h *healthService) Check(ctx context.Context, _ *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+	res := h.srv.readiness.Check(ctx)
+	status := grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	if res.Ready {
+		status = grpc_health_v1.HealthCheckResponse_SERVING
+	}
+	return &grpc_health_v1.HealthCheckResponse{Status: status}, nil
+}
+
+func (h *healthService) Watch(_ *grpc_health_v1.HealthCheckRequest, srv grpc_health_v1.Health_WatchServer) error {
+	res := h.srv.readiness.Check(srv.Context())
+	status := grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	if res.Ready {
+		status = grpc_health_v1.HealthCheckResponse_SERVING
+	}
+	return srv.Send(&grpc_health_v1.HealthCheckResponse{Status: status})
 }
 
 type authService struct{ srv *Server }

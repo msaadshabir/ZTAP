@@ -2,6 +2,7 @@ package audit
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -299,6 +300,26 @@ func (al *AuditLogger) VerifyIntegrity() (bool, error) {
 }
 
 // Close closes the audit log file.
+func (al *AuditLogger) Ready(ctx context.Context) error {
+	_ = ctx
+
+	al.mu.RLock()
+	f := al.logFile
+	path := al.logPath
+	al.mu.RUnlock()
+
+	if f == nil {
+		return fmt.Errorf("audit log file is nil")
+	}
+	if _, err := f.Stat(); err != nil {
+		return fmt.Errorf("stat audit log file: %w", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("stat audit log path: %w", err)
+	}
+	return nil
+}
+
 func (al *AuditLogger) Close() error {
 	al.mu.Lock()
 	defer al.mu.Unlock()

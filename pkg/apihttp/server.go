@@ -19,6 +19,7 @@ import (
 	"ztap/pkg/auth"
 	"ztap/pkg/enforcer"
 	"ztap/pkg/flow"
+	"ztap/pkg/health"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -40,6 +41,7 @@ type Server struct {
 	mux        *http.ServeMux
 	auth       *auth.AuthManager
 	audit      *audit.AuditLogger
+	readiness  *health.Checker
 	startTime  time.Time
 	flowReader func() flow.FlowReader
 	alerts     *alert.Manager
@@ -82,6 +84,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		mux:        http.NewServeMux(),
 		auth:       opts.AuthManager,
 		audit:      opts.AuditLogger,
+		readiness:  &health.Checker{AuthEnabled: opts.Config.AuthEnabled, Auth: opts.AuthManager, Audit: opts.AuditLogger},
 		startTime:  time.Now(),
 		flowReader: opts.FlowReaderFactory,
 		alerts:     opts.Alerts,
@@ -144,6 +147,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
+	s.mux.HandleFunc("/readyz", s.handleReady)
 
 	s.mux.HandleFunc("/v1/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("/v1/auth/whoami", s.requireAuth(auth.PermViewStatus, s.handleAuthWhoAmI))
@@ -190,6 +194,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	res := s.readiness.Check(r.Context())
+	if res.Ready {
+		writeJSON(w, http.StatusOK, res)
+		return
+	}
+	writeJSON(w, http.StatusServiceUnavailable, res)
 }
 
 type ctxKey int

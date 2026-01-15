@@ -15,6 +15,10 @@ type SessionStore interface {
 	Close() error
 }
 
+type SessionStorePinger interface {
+	Ping(ctx context.Context) error
+}
+
 type SessionStoreUserRevoker interface {
 	DeleteByUsername(ctx context.Context, username string) (int, error)
 }

@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -76,6 +77,50 @@ func TestGRPCAuthLoginAndWhoAmI(t *testing.T) {
 	}
 	if whoResp.Fields["username"].GetStringValue() != "alice" {
 		t.Fatalf("unexpected username: %s", whoResp.Fields["username"].GetStringValue())
+	}
+}
+
+func TestGRPCHealthCheck_Unauthenticated(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	am, err := auth.NewAuthManager(tmp + "/users.json")
+	if err != nil {
+		t.Fatalf("NewAuthManager: %v", err)
+	}
+	al, err := audit.NewAuditLogger(tmp + "/audit.log")
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+
+	srv, err := NewServer(ServerOptions{Config: Config{Listen: "bufnet", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	lis := bufconn.Listen(1024 * 1024)
+	gs := grpc.NewServer(grpc.UnaryInterceptor(srv.unaryAuthInterceptor), grpc.StreamInterceptor(srv.streamAuthInterceptor))
+	srv.grpc = gs
+	srv.registerServices()
+
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(func() { gs.Stop() })
+
+	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return lis.Dial()
+	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+	defer conn.Close()
+
+	hc := grpc_health_v1.NewHealthClient(conn)
+	resp, err := hc.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
+	if err != nil {
+		t.Fatalf("Health Check: %v", err)
+	}
+	if resp.GetStatus() != grpc_health_v1.HealthCheckResponse_SERVING {
+		t.Fatalf("expected SERVING, got %v", resp.GetStatus())
 	}
 }
 

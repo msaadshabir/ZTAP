@@ -262,8 +262,11 @@ ztap api serve
 # Start gRPC API server (default 127.0.0.1:9092)
 ztap grpc serve
 
-# Health
+# Liveness
 curl -s http://127.0.0.1:8080/healthz
+
+# Readiness
+curl -s http://127.0.0.1:8080/readyz
 
 # Login (default users DB: ~/.ztap/users.json)
 # Sessions persist by default in ~/.ztap/sessions.db (SQLite)
