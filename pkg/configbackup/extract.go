@@ -143,7 +143,10 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 	}
 
 	for _, it := range manifest.Items {
-		relPath := filepath.FromSlash(it.Path)
+		relPath, err := sanitizeManifestPath(it.Path)
+		if err != nil {
+			return Manifest{}, nil, fmt.Errorf("invalid manifest item path %s: %w", it.Path, err)
+		}
 		p := filepath.Join(extractedDir, relPath)
 
 		absBase, err := filepath.Abs(extractedDir)
@@ -164,4 +167,32 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 	}
 
 	return manifest, written, nil
+}
+
+// sanitizeManifestPath validates a manifest item path and returns a normalized
+// relative path using OS-specific separators. It rejects absolute paths and any
+// use of "." or ".." path components.
+func sanitizeManifestPath(p string) (string, error) {
+	relPath := filepath.FromSlash(p)
+	if relPath == "" {
+		return "", fmt.Errorf("empty path")
+	}
+
+	// Reject absolute paths (including drive letters or UNC paths on Windows).
+	if filepath.IsAbs(relPath) {
+		return "", fmt.Errorf("absolute paths are not allowed")
+	}
+
+	sep := string(os.PathSeparator)
+	parts := strings.Split(relPath, sep)
+	for _, part := range parts {
+		if part == "" {
+			return "", fmt.Errorf("empty path component")
+		}
+		if part == "." || part == ".." {
+			return "", fmt.Errorf("dot or dot-dot path components are not allowed")
+		}
+	}
+
+	return relPath, nil
 }
