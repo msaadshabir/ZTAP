@@ -143,8 +143,22 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 	}
 
 	for _, it := range manifest.Items {
-		p := filepath.Join(extractedDir, filepath.FromSlash(it.Path))
-		if _, err := os.Stat(p); err != nil {
+		relPath := filepath.FromSlash(it.Path)
+		p := filepath.Join(extractedDir, relPath)
+
+		absBase, err := filepath.Abs(extractedDir)
+		if err != nil {
+			return Manifest{}, nil, err
+		}
+		absP, err := filepath.Abs(p)
+		if err != nil {
+			return Manifest{}, nil, err
+		}
+		if !strings.HasPrefix(absP, absBase+string(os.PathSeparator)) && absP != absBase {
+			return Manifest{}, nil, fmt.Errorf("invalid manifest item path %s", it.Path)
+		}
+
+		if _, err := os.Stat(absP); err != nil {
 			return Manifest{}, nil, fmt.Errorf("missing file %s", it.Path)
 		}
 	}
