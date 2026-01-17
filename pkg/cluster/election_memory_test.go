@@ -106,10 +106,15 @@ func TestInMemoryElectionLeaderElection(t *testing.T) {
 	}
 	defer func() { _ = election.Stop() }()
 
-	// Wait for leader election
-	time.Sleep(200 * time.Millisecond)
-
-	leader := election.GetLeader()
+	deadline := time.Now().Add(1 * time.Second)
+	var leader *Node
+	for time.Now().Before(deadline) {
+		leader = election.GetLeader()
+		if leader != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if leader == nil {
 		t.Fatal("no leader elected")
 	}
