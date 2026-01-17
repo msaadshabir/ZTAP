@@ -62,6 +62,11 @@ func (s *Service) Restore(ctx context.Context, src io.Reader, extractedDir strin
 }
 
 func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, error) {
+	absExtractedDir, err := filepath.Abs(extractedDir)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+
 	gzr, err := gzip.NewReader(src)
 	if err != nil {
 		return Manifest{}, nil, err
@@ -124,14 +129,18 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 		}
 
 		// Write extracted file.
-		dst := filepath.Join(extractedDir, filepath.FromSlash(name))
-		if !strings.HasPrefix(dst, extractedDir+string(os.PathSeparator)) && dst != extractedDir {
-			return Manifest{}, nil, errors.New("invalid extraction path")
-		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+		dst := filepath.Join(absExtractedDir, filepath.FromSlash(name))
+		dstAbs, err := filepath.Abs(dst)
+		if err != nil {
 			return Manifest{}, nil, err
 		}
-		if err := os.WriteFile(dst, data, 0600); err != nil {
+		if dstAbs != absExtractedDir && !strings.HasPrefix(dstAbs, absExtractedDir+string(os.PathSeparator)) {
+			return Manifest{}, nil, errors.New("invalid extraction path")
+		}
+		if err := os.MkdirAll(filepath.Dir(dstAbs), 0700); err != nil {
+			return Manifest{}, nil, err
+		}
+		if err := os.WriteFile(dstAbs, data, 0600); err != nil {
 			return Manifest{}, nil, err
 		}
 
