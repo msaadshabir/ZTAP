@@ -51,6 +51,8 @@ Core endpoints:
 - `GET /readyz` (readiness)
 - `POST /v1/auth/login` (body: `{ "username": "...", "password": "..." }`)
 - `GET /v1/auth/whoami` (requires `Authorization: Bearer <token>`)
+- `POST /v1/config/backup` (download a `.tar.gz` backup bundle; requires `backup_restore`)
+- `POST /v1/config/restore?dry_run=1&force=1` (upload a `.tar.gz` backup bundle; requires `backup_restore`)
 - `GET /v1/status`
 - `GET /v1/enforcement/status`
 - `POST /v1/enforcement/start` (body includes `policy_yaml`)

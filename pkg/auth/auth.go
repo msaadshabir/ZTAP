@@ -30,12 +30,13 @@ const (
 type Permission string
 
 const (
-	PermEnforce      Permission = "enforce"
-	PermViewPolicies Permission = "view_policies"
-	PermViewLogs     Permission = "view_logs"
-	PermViewStatus   Permission = "view_status"
-	PermManageUsers  Permission = "manage_users"
-	PermViewMetrics  Permission = "view_metrics"
+	PermEnforce       Permission = "enforce"
+	PermViewPolicies  Permission = "view_policies"
+	PermViewLogs      Permission = "view_logs"
+	PermViewStatus    Permission = "view_status"
+	PermManageUsers   Permission = "manage_users"
+	PermViewMetrics   Permission = "view_metrics"
+	PermBackupRestore Permission = "backup_restore"
 )
 
 // User represents an authenticated user
@@ -66,15 +67,30 @@ type AuthManager struct {
 	sessionTTL time.Duration
 }
 
+func (am *AuthManager) UsersPath() string {
+	if am == nil {
+		return ""
+	}
+	return am.dbPath
+}
+
+func (am *AuthManager) SessionStore() SessionStore {
+	if am == nil {
+		return nil
+	}
+	return am.store
+}
+
 // Role permissions mapping
 var rolePermissions = map[Role]map[Permission]bool{
 	RoleAdmin: {
-		PermEnforce:      true,
-		PermViewPolicies: true,
-		PermViewLogs:     true,
-		PermViewStatus:   true,
-		PermManageUsers:  true,
-		PermViewMetrics:  true,
+		PermEnforce:       true,
+		PermViewPolicies:  true,
+		PermViewLogs:      true,
+		PermViewStatus:    true,
+		PermManageUsers:   true,
+		PermViewMetrics:   true,
+		PermBackupRestore: true,
 	},
 	RoleOperator: {
 		PermEnforce:      true,

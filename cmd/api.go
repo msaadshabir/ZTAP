@@ -71,7 +71,11 @@ var apiServeCmd = &cobra.Command{
 		}
 		defer am.Close()
 
-		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager})
+		sessionsPath, err := resolvedSessionsSQLitePath()
+		if err != nil {
+			return err
+		}
+		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, SessionsSQLitePath: sessionsPath})
 		if err != nil {
 			return err
 		}

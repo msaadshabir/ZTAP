@@ -84,6 +84,7 @@ Windows enforcement constraints (WFP):
   - REST: `GET /healthz` (liveness) and `GET /readyz` (readiness)
   - gRPC: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch`) and these health RPCs are unauthenticated
 - Auth: bearer tokens via `Authorization: Bearer <token>`; sessions are persistent by default (SQLite at `~/.ztap/sessions.db`)
+- Config backup/restore (REST): `POST /v1/config/backup` downloads a `tar.gz` bundle; `POST /v1/config/restore?dry_run=1&force=1` uploads a bundle; both require `auth.PermBackupRestore` (`backup_restore`)
 - Flow streaming: `GET /v1/flows/stream` uses SSE; on Linux it will read the pinned eBPF map when available, otherwise it falls back to simulated events
 - Flow streaming (gRPC): `ztap.api.v1.FlowsService/Stream` is server-streaming; send `authorization: Bearer <token>` via gRPC metadata
 - Metrics: `GET /metrics` is served via promhttp; avoid registering Prometheus collectors in constructors (global registry)

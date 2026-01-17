@@ -19,6 +19,17 @@ type authSessionsConfig struct {
 	SQLitePath string
 }
 
+func resolvedSessionsSQLitePath() (string, error) {
+	cfg, err := loadAuthSessionsConfig()
+	if err != nil {
+		return "", err
+	}
+	if strings.ToLower(strings.TrimSpace(cfg.Backend)) != "sqlite" && strings.TrimSpace(cfg.Backend) != "" {
+		return "", nil
+	}
+	return cfg.SQLitePath, nil
+}
+
 type authSessionsConfigFile struct {
 	Auth struct {
 		Sessions struct {

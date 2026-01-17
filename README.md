@@ -281,6 +281,8 @@ curl -sS http://127.0.0.1:8080/v1/auth/whoami -H "Authorization: Bearer $token"
 Core endpoints:
 
 - `POST /v1/auth/login`, `GET /v1/auth/whoami`
+- `POST /v1/config/backup` (download bundle; requires `backup_restore`)
+- `POST /v1/config/restore?dry_run=1&force=1` (upload bundle; requires `backup_restore`)
 - `GET /v1/status`
 - `GET /v1/enforcement/status`, `POST /v1/enforcement/start`, `POST /v1/enforcement/stop` (Linux only)
 - `GET /v1/flows/stream` (SSE)

@@ -37,14 +37,15 @@ type TLSConfig struct {
 }
 
 type Server struct {
-	cfg        Config
-	mux        *http.ServeMux
-	auth       *auth.AuthManager
-	audit      *audit.AuditLogger
-	readiness  *health.Checker
-	startTime  time.Time
-	flowReader func() flow.FlowReader
-	alerts     *alert.Manager
+	cfg                Config
+	mux                *http.ServeMux
+	auth               *auth.AuthManager
+	audit              *audit.AuditLogger
+	readiness          *health.Checker
+	startTime          time.Time
+	flowReader         func() flow.FlowReader
+	alerts             *alert.Manager
+	sessionsSQLitePath string
 }
 
 type ServerOptions struct {
@@ -53,6 +54,8 @@ type ServerOptions struct {
 	AuthManager *auth.AuthManager
 	AuditLogger *audit.AuditLogger
 	Alerts      *alert.Manager
+
+	SessionsSQLitePath string
 
 	FlowReaderFactory func() flow.FlowReader
 }
@@ -80,14 +83,15 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:        opts.Config,
-		mux:        http.NewServeMux(),
-		auth:       opts.AuthManager,
-		audit:      opts.AuditLogger,
-		readiness:  &health.Checker{AuthEnabled: opts.Config.AuthEnabled, Auth: opts.AuthManager, Audit: opts.AuditLogger},
-		startTime:  time.Now(),
-		flowReader: opts.FlowReaderFactory,
-		alerts:     opts.Alerts,
+		cfg:                opts.Config,
+		mux:                http.NewServeMux(),
+		auth:               opts.AuthManager,
+		audit:              opts.AuditLogger,
+		readiness:          &health.Checker{AuthEnabled: opts.Config.AuthEnabled, Auth: opts.AuthManager, Audit: opts.AuditLogger},
+		startTime:          time.Now(),
+		flowReader:         opts.FlowReaderFactory,
+		alerts:             opts.Alerts,
+		sessionsSQLitePath: opts.SessionsSQLitePath,
 	}
 
 	s.routes()
@@ -159,6 +163,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/enforcement/stop", s.requireAuth(auth.PermEnforce, s.handleEnforcementStop))
 
 	s.mux.HandleFunc("/v1/flows/stream", s.requireAuth(auth.PermViewStatus, s.handleFlowsStream))
+
+	s.mux.HandleFunc("/v1/config/backup", s.requireAuth(auth.PermBackupRestore, s.handleConfigBackup))
+	s.mux.HandleFunc("/v1/config/restore", s.requireAuth(auth.PermBackupRestore, s.handleConfigRestore))
 
 	metricsHandler := promhttp.Handler()
 	s.mux.HandleFunc("/metrics", s.requireAuth(auth.PermViewMetrics, metricsHandler.ServeHTTP))
