@@ -62,8 +62,7 @@ func (s *Service) Restore(ctx context.Context, src io.Reader, extractedDir strin
 }
 
 func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, error) {
-	absExtractedDir, err := filepath.Abs(extractedDir)
-	if err != nil {
+	if _, err := filepath.Abs(extractedDir); err != nil {
 		return Manifest{}, nil, err
 	}
 
