@@ -20,7 +20,7 @@ func (s *Service) ExtractAndPlan(ctx context.Context, src io.Reader, extractedDi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	manifest, files, err := readBundleIntoDir(src, extractedDir)
+	manifest, _, err := readBundleIntoDir(src, extractedDir)
 	if err != nil {
 		return Manifest{}, RestorePlan{}, err
 	}
@@ -30,8 +30,6 @@ func (s *Service) ExtractAndPlan(ctx context.Context, src io.Reader, extractedDi
 		return Manifest{}, RestorePlan{}, err
 	}
 
-	// Ensure membership checks: no extras.
-	_ = files
 	return manifest, plan, nil
 }
 
@@ -137,10 +135,10 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 		if !strings.HasPrefix(dst, extractedDir+string(os.PathSeparator)) && dst != extractedDir {
 			return Manifest{}, nil, errors.New("invalid extraction path")
 		}
-		if err := os.MkdirAll(filepath.Dir(dstAbs), 0700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
 			return Manifest{}, nil, err
 		}
-		if err := os.WriteFile(dstAbs, data, 0600); err != nil {
+		if err := os.WriteFile(dst, data, 0600); err != nil {
 			return Manifest{}, nil, err
 		}
 
