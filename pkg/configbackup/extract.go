@@ -60,10 +60,6 @@ func (s *Service) Restore(ctx context.Context, src io.Reader, extractedDir strin
 }
 
 func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, error) {
-	if _, err := filepath.Abs(extractedDir); err != nil {
-		return Manifest{}, nil, err
-	}
-
 	gzr, err := gzip.NewReader(src)
 	if err != nil {
 		return Manifest{}, nil, err
@@ -131,14 +127,22 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 		}
 
 		// Write extracted file.
-		dst := filepath.Join(extractedDir, filepath.FromSlash(name))
-		if !strings.HasPrefix(dst, extractedDir+string(os.PathSeparator)) && dst != extractedDir {
-			return Manifest{}, nil, errors.New("invalid extraction path")
+		relDst, err := sanitizeManifestPath(name)
+		if err != nil {
+			return Manifest{}, nil, fmt.Errorf("invalid extraction path %s: %w", name, err)
 		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+		dstAbs, err := filepath.Abs(filepath.Join(baseAbs, relDst))
+		if err != nil {
 			return Manifest{}, nil, err
 		}
-		if err := os.WriteFile(dst, data, 0600); err != nil {
+		rel, err := filepath.Rel(baseAbs, dstAbs)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return Manifest{}, nil, errors.New("invalid extraction path")
+		}
+		if err := os.MkdirAll(filepath.Dir(dstAbs), 0700); err != nil {
+			return Manifest{}, nil, err
+		}
+		if err := os.WriteFile(dstAbs, data, 0600); err != nil {
 			return Manifest{}, nil, err
 		}
 
