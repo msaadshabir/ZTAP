@@ -75,6 +75,11 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 	manifestItems := map[string]ManifestItem{}
 	written := []string{}
 
+	baseAbs, err := filepath.Abs(extractedDir)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -124,14 +129,22 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 		}
 
 		// Write extracted file.
-		dst := filepath.Join(extractedDir, filepath.FromSlash(name))
-		if !strings.HasPrefix(dst, extractedDir+string(os.PathSeparator)) && dst != extractedDir {
-			return Manifest{}, nil, errors.New("invalid extraction path")
+		relDst, err := sanitizeManifestPath(name)
+		if err != nil {
+			return Manifest{}, nil, fmt.Errorf("invalid extraction path %s: %w", name, err)
 		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+		dstAbs, err := filepath.Abs(filepath.Join(baseAbs, relDst))
+		if err != nil {
 			return Manifest{}, nil, err
 		}
-		if err := os.WriteFile(dst, data, 0600); err != nil {
+		rel, err := filepath.Rel(baseAbs, dstAbs)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return Manifest{}, nil, errors.New("invalid extraction path")
+		}
+		if err := os.MkdirAll(filepath.Dir(dstAbs), 0700); err != nil {
+			return Manifest{}, nil, err
+		}
+		if err := os.WriteFile(dstAbs, data, 0600); err != nil {
 			return Manifest{}, nil, err
 		}
 
@@ -147,17 +160,13 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 		if err != nil {
 			return Manifest{}, nil, fmt.Errorf("invalid manifest item path %s: %w", it.Path, err)
 		}
-		p := filepath.Join(extractedDir, relPath)
-
-		absBase, err := filepath.Abs(extractedDir)
-		if err != nil {
-			return Manifest{}, nil, err
-		}
+		p := filepath.Join(baseAbs, relPath)
 		absP, err := filepath.Abs(p)
 		if err != nil {
 			return Manifest{}, nil, err
 		}
-		if !strings.HasPrefix(absP, absBase+string(os.PathSeparator)) && absP != absBase {
+		rel, err := filepath.Rel(baseAbs, absP)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			return Manifest{}, nil, fmt.Errorf("invalid manifest item path %s", it.Path)
 		}
 
