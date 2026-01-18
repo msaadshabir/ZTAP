@@ -48,6 +48,22 @@ api:
     enabled: false
     cert_file: ""
     key_file: ""
+  rate_limit:
+    enabled: false
+    trust_proxy_headers: false
+    unauthenticated:
+      rps: 5
+      burst: 10
+    per_ip:
+      rps: 20
+      burst: 40
+    per_token:
+      rps: 10
+      burst: 20
+    exempt_paths:
+      - /healthz
+      - /readyz
+      - /metrics
 
 # gRPC API server
 grpc:
@@ -58,6 +74,20 @@ grpc:
     enabled: false
     cert_file: ""
     key_file: ""
+  rate_limit:
+    enabled: false
+    unauthenticated:
+      rps: 5
+      burst: 10
+    per_ip:
+      rps: 20
+      burst: 40
+    per_token:
+      rps: 10
+      burst: 20
+    exempt_methods:
+      - /grpc.health.v1.Health/*
+      - /ztap.api.v1.AuthService/Login
 
 # Authentication
 auth:

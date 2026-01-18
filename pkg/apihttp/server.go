@@ -20,7 +20,9 @@ import (
 	"ztap/pkg/enforcer"
 	"ztap/pkg/flow"
 	"ztap/pkg/health"
+	"ztap/pkg/ratelimit"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -28,6 +30,23 @@ type Config struct {
 	Listen      string
 	AuthEnabled bool
 	TLS         TLSConfig
+	RateLimit   RateLimitConfig
+}
+
+type RateLimitConfig struct {
+	Enabled           bool
+	TrustProxyHeaders bool
+
+	Unauthenticated RateLimitBucketConfig
+	PerIP           RateLimitBucketConfig
+	PerToken        RateLimitBucketConfig
+
+	ExemptPaths []string
+}
+
+type RateLimitBucketConfig struct {
+	RPS   float64
+	Burst int
 }
 
 type TLSConfig struct {
@@ -39,6 +58,7 @@ type TLSConfig struct {
 type Server struct {
 	cfg                Config
 	mux                *http.ServeMux
+	h                  http.Handler
 	auth               *auth.AuthManager
 	audit              *audit.AuditLogger
 	readiness          *health.Checker
@@ -46,6 +66,10 @@ type Server struct {
 	flowReader         func() flow.FlowReader
 	alerts             *alert.Manager
 	sessionsSQLitePath string
+
+	rateLimiter *ratelimit.Store
+	rlAllowed   *prometheus.CounterVec
+	rlLimited   *prometheus.CounterVec
 }
 
 type ServerOptions struct {
@@ -94,7 +118,9 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		sessionsSQLitePath: opts.SessionsSQLitePath,
 	}
 
+	s.initRateLimiting()
 	s.routes()
+	s.h = s.wrap(s.mux)
 	return s, nil
 }
 
@@ -103,13 +129,22 @@ func (s *Server) ListenAddr() string {
 }
 
 func (s *Server) Handler() http.Handler {
+	if s.h != nil {
+		return s.h
+	}
 	return s.mux
 }
 
 func (s *Server) Serve(ctx context.Context) error {
+	defer func() {
+		if s.rateLimiter != nil {
+			s.rateLimiter.Close()
+		}
+	}()
+
 	httpServer := &http.Server{
 		Addr:              s.cfg.Listen,
-		Handler:           s.mux,
+		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -175,6 +210,11 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+type rateLimitedResponse struct {
+	Error             string `json:"error"`
+	RetryAfterSeconds int    `json:"retry_after_seconds"`
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -188,11 +228,137 @@ func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, errorResponse{Error: err.Error()})
 }
 
+func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration, limit float64, burst int) {
+	retrySeconds := int(retryAfter.Truncate(time.Second).Seconds())
+	if retrySeconds <= 0 {
+		retrySeconds = 1
+	}
+	w.Header().Set("Retry-After", fmt.Sprintf("%d", retrySeconds))
+	if limit > 0 {
+		w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.2f", limit))
+	}
+	if burst > 0 {
+		w.Header().Set("X-RateLimit-Burst", fmt.Sprintf("%d", burst))
+	}
+	writeJSON(w, http.StatusTooManyRequests, rateLimitedResponse{Error: "rate_limited", RetryAfterSeconds: retrySeconds})
+}
+
 func (s *Server) emitAlert(a alert.Alert) {
 	if s.alerts == nil {
 		return
 	}
 	_ = s.alerts.Emit(a)
+}
+
+func (s *Server) initRateLimiting() {
+	rcfg := ratelimit.DefaultConfig()
+	rcfg.Enabled = s.cfg.RateLimit.Enabled
+	rcfg.TrustProxyHeaders = s.cfg.RateLimit.TrustProxyHeaders
+	unauth := s.cfg.RateLimit.Unauthenticated
+	if unauth.RPS == 0 {
+		unauth.RPS = rcfg.Unauthenticated.RPS
+	}
+	if unauth.Burst == 0 {
+		unauth.Burst = rcfg.Unauthenticated.Burst
+	}
+	rcfg.Unauthenticated = ratelimit.BucketConfig{RPS: unauth.RPS, Burst: unauth.Burst}
+	perIP := s.cfg.RateLimit.PerIP
+	if perIP.RPS == 0 {
+		perIP.RPS = rcfg.PerIP.RPS
+	}
+	if perIP.Burst == 0 {
+		perIP.Burst = rcfg.PerIP.Burst
+	}
+	rcfg.PerIP = ratelimit.BucketConfig{RPS: perIP.RPS, Burst: perIP.Burst}
+	perTok := s.cfg.RateLimit.PerToken
+	if perTok.RPS == 0 {
+		perTok.RPS = rcfg.PerToken.RPS
+	}
+	if perTok.Burst == 0 {
+		perTok.Burst = rcfg.PerToken.Burst
+	}
+	rcfg.PerToken = ratelimit.BucketConfig{RPS: perTok.RPS, Burst: perTok.Burst}
+	if len(s.cfg.RateLimit.ExemptPaths) > 0 {
+		rcfg.ExemptPaths = append([]string(nil), s.cfg.RateLimit.ExemptPaths...)
+	}
+
+	s.rateLimiter = ratelimit.NewStore(rcfg)
+
+	if !rcfg.Enabled {
+		return
+	}
+
+	// Do not force-register global metrics here; cmd/api explicitly initializes.
+
+	s.rlAllowed = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ztap_api_rate_limit_allowed_total",
+		Help: "Total number of API requests allowed by rate limiter",
+	}, []string{"surface", "bucket"})
+	s.rlLimited = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ztap_api_rate_limit_limited_total",
+		Help: "Total number of API requests rejected by rate limiter",
+	}, []string{"surface", "bucket"})
+
+	// Best-effort registration: tests may create multiple servers.
+	_ = prometheus.Register(s.rlAllowed)
+	_ = prometheus.Register(s.rlLimited)
+}
+
+func (s *Server) wrap(next http.Handler) http.Handler {
+	if !s.cfg.RateLimit.Enabled {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Login: prefer IP-based limiting even though it's unauthenticated.
+		if r.URL.Path == "/v1/auth/login" {
+			ip, _ := ratelimit.ClientIPFromRequest(r, s.cfg.RateLimit.TrustProxyHeaders)
+			dec := s.rateLimiter.DecisionForKey(ratelimit.KeyIP, "ip:"+ip)
+			dec.Bucket = "login_per_ip"
+			if dec.Allowed {
+				if s.rlAllowed != nil {
+					s.rlAllowed.WithLabelValues("rest", dec.Bucket).Inc()
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+			if s.rlLimited != nil {
+				s.rlLimited.WithLabelValues("rest", dec.Bucket).Inc()
+			}
+			writeRateLimited(w, dec.RetryAfter, dec.Limit, dec.Burst)
+			return
+		}
+
+		rForLimit := r
+		if s.cfg.AuthEnabled {
+			authz := strings.TrimSpace(r.Header.Get("Authorization"))
+			if tok, ok := ratelimit.BearerTokenFromAuthHeader(authz); ok {
+				if _, err := s.auth.ValidateSession(tok); err != nil {
+					rForLimit = r.Clone(r.Context())
+					rForLimit.Header = r.Header.Clone()
+					rForLimit.Header.Del("Authorization")
+				}
+			}
+		}
+
+		dec, err := s.rateLimiter.DecisionForHTTPRequest(rForLimit)
+		if err == nil {
+			if dec.Allowed {
+				if s.rlAllowed != nil {
+					s.rlAllowed.WithLabelValues("rest", dec.Bucket).Inc()
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+			if s.rlLimited != nil {
+				s.rlLimited.WithLabelValues("rest", dec.Bucket).Inc()
+			}
+			writeRateLimited(w, dec.RetryAfter, dec.Limit, dec.Burst)
+			return
+		}
+
+		// If we can't determine IP etc., fail open.
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

@@ -281,6 +281,13 @@ curl -sS http://127.0.0.1:8080/v1/auth/whoami -H "Authorization: Bearer $token"
 Core endpoints:
 
 - `POST /v1/auth/login`, `GET /v1/auth/whoami`
+
+Rate limiting:
+
+- Config (default: disabled): `api.rate_limit`, `grpc.rate_limit` in `config.yaml`
+- CLI flags: `ztap api serve --rate-limit ...`, `ztap grpc serve --rate-limit ...`
+- REST: invalid/expired `Authorization` tokens fall back to unauthenticated bucket
+- gRPC: rate-limited calls return `RESOURCE_EXHAUSTED` and include `RetryInfo` (retry delay)
 - `POST /v1/config/backup` (download bundle; requires `backup_restore`)
 - `POST /v1/config/restore?dry_run=1&force=1` (upload bundle; requires `backup_restore`)
 - `GET /v1/status`

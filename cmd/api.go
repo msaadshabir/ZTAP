@@ -49,6 +49,39 @@ var apiServeCmd = &cobra.Command{
 		authEnabled, _ := cmd.Flags().GetBool("auth")
 		cfg.AuthEnabled = authEnabled
 
+		rlEnabled, _ := cmd.Flags().GetBool("rate-limit")
+		if rlEnabled {
+			cfg.RateLimit.Enabled = true
+		}
+		rlTrustProxy, _ := cmd.Flags().GetBool("rate-limit-trust-proxy")
+		if rlTrustProxy {
+			cfg.RateLimit.TrustProxyHeaders = true
+		}
+		rlPerIPRPS, _ := cmd.Flags().GetFloat64("rate-limit-per-ip-rps")
+		if rlPerIPRPS > 0 {
+			cfg.RateLimit.PerIP.RPS = rlPerIPRPS
+		}
+		rlPerIPBurst, _ := cmd.Flags().GetInt("rate-limit-per-ip-burst")
+		if rlPerIPBurst > 0 {
+			cfg.RateLimit.PerIP.Burst = rlPerIPBurst
+		}
+		rlPerTokenRPS, _ := cmd.Flags().GetFloat64("rate-limit-per-token-rps")
+		if rlPerTokenRPS > 0 {
+			cfg.RateLimit.PerToken.RPS = rlPerTokenRPS
+		}
+		rlPerTokenBurst, _ := cmd.Flags().GetInt("rate-limit-per-token-burst")
+		if rlPerTokenBurst > 0 {
+			cfg.RateLimit.PerToken.Burst = rlPerTokenBurst
+		}
+		rlUnauthRPS, _ := cmd.Flags().GetFloat64("rate-limit-unauth-rps")
+		if rlUnauthRPS > 0 {
+			cfg.RateLimit.Unauthenticated.RPS = rlUnauthRPS
+		}
+		rlUnauthBurst, _ := cmd.Flags().GetInt("rate-limit-unauth-burst")
+		if rlUnauthBurst > 0 {
+			cfg.RateLimit.Unauthenticated.Burst = rlUnauthBurst
+		}
+
 		tlsEnabled, _ := cmd.Flags().GetBool("tls")
 		if tlsEnabled {
 			cfg.TLS.Enabled = true
@@ -117,6 +150,25 @@ type apiConfigFile struct {
 			CertFile string `yaml:"cert_file"`
 			KeyFile  string `yaml:"key_file"`
 		} `yaml:"tls"`
+		RateLimit struct {
+			Enabled           *bool `yaml:"enabled"`
+			TrustProxyHeaders *bool `yaml:"trust_proxy_headers"`
+
+			Unauthenticated struct {
+				RPS   float64 `yaml:"rps"`
+				Burst int     `yaml:"burst"`
+			} `yaml:"unauthenticated"`
+			PerIP struct {
+				RPS   float64 `yaml:"rps"`
+				Burst int     `yaml:"burst"`
+			} `yaml:"per_ip"`
+			PerToken struct {
+				RPS   float64 `yaml:"rps"`
+				Burst int     `yaml:"burst"`
+			} `yaml:"per_token"`
+
+			ExemptPaths []string `yaml:"exempt_paths"`
+		} `yaml:"rate_limit"`
 	} `yaml:"api"`
 }
 
@@ -163,6 +215,34 @@ func loadAPIServerConfig() (apihttp.Config, error) {
 		cfg.TLS.KeyFile = fileCfg.API.TLS.KeyFile
 	}
 
+	if fileCfg.API.RateLimit.Enabled != nil {
+		cfg.RateLimit.Enabled = *fileCfg.API.RateLimit.Enabled
+	}
+	if fileCfg.API.RateLimit.TrustProxyHeaders != nil {
+		cfg.RateLimit.TrustProxyHeaders = *fileCfg.API.RateLimit.TrustProxyHeaders
+	}
+	if fileCfg.API.RateLimit.Unauthenticated.RPS != 0 {
+		cfg.RateLimit.Unauthenticated.RPS = fileCfg.API.RateLimit.Unauthenticated.RPS
+	}
+	if fileCfg.API.RateLimit.Unauthenticated.Burst != 0 {
+		cfg.RateLimit.Unauthenticated.Burst = fileCfg.API.RateLimit.Unauthenticated.Burst
+	}
+	if fileCfg.API.RateLimit.PerIP.RPS != 0 {
+		cfg.RateLimit.PerIP.RPS = fileCfg.API.RateLimit.PerIP.RPS
+	}
+	if fileCfg.API.RateLimit.PerIP.Burst != 0 {
+		cfg.RateLimit.PerIP.Burst = fileCfg.API.RateLimit.PerIP.Burst
+	}
+	if fileCfg.API.RateLimit.PerToken.RPS != 0 {
+		cfg.RateLimit.PerToken.RPS = fileCfg.API.RateLimit.PerToken.RPS
+	}
+	if fileCfg.API.RateLimit.PerToken.Burst != 0 {
+		cfg.RateLimit.PerToken.Burst = fileCfg.API.RateLimit.PerToken.Burst
+	}
+	if len(fileCfg.API.RateLimit.ExemptPaths) > 0 {
+		cfg.RateLimit.ExemptPaths = append([]string(nil), fileCfg.API.RateLimit.ExemptPaths...)
+	}
+
 	return cfg, nil
 }
 
@@ -172,6 +252,15 @@ func init() {
 	apiServeCmd.Flags().Bool("tls", false, "Enable TLS (HTTPS)")
 	apiServeCmd.Flags().String("tls-cert", "", "Path to TLS certificate file")
 	apiServeCmd.Flags().String("tls-key", "", "Path to TLS private key file")
+
+	apiServeCmd.Flags().Bool("rate-limit", false, "Enable API rate limiting")
+	apiServeCmd.Flags().Bool("rate-limit-trust-proxy", false, "Trust X-Forwarded-For / X-Real-IP")
+	apiServeCmd.Flags().Float64("rate-limit-per-ip-rps", 0, "Per-IP requests per second")
+	apiServeCmd.Flags().Int("rate-limit-per-ip-burst", 0, "Per-IP burst")
+	apiServeCmd.Flags().Float64("rate-limit-per-token-rps", 0, "Per-token requests per second")
+	apiServeCmd.Flags().Int("rate-limit-per-token-burst", 0, "Per-token burst")
+	apiServeCmd.Flags().Float64("rate-limit-unauth-rps", 0, "Unauthenticated requests per second")
+	apiServeCmd.Flags().Int("rate-limit-unauth-burst", 0, "Unauthenticated burst")
 
 	apiCmd.AddCommand(apiServeCmd)
 	rootCmd.AddCommand(apiCmd)

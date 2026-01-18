@@ -91,6 +91,78 @@ ztap status
 
 ZTAP supports HTTPS for the REST API and TLS for the gRPC API. You can configure this via `config.yaml` or CLI flags.
 
+### 3. API Rate Limiting (Optional)
+
+Rate limiting is supported on both REST and gRPC endpoints to reduce abuse and accidental overload.
+
+- Default: disabled
+- REST behavior: returns HTTP `429` with `Retry-After` and JSON `{ "error": "rate_limited" }`
+- gRPC behavior: returns `RESOURCE_EXHAUSTED` and includes `RetryInfo` (retry delay)
+
+**Using `config.yaml`:**
+
+```yaml
+api:
+  rate_limit:
+    enabled: true
+    trust_proxy_headers: false
+    unauthenticated:
+      rps: 5
+      burst: 10
+    per_ip:
+      rps: 20
+      burst: 40
+    per_token:
+      rps: 10
+      burst: 20
+    exempt_paths:
+      - /healthz
+      - /readyz
+      - /metrics
+
+grpc:
+  rate_limit:
+    enabled: true
+    unauthenticated:
+      rps: 5
+      burst: 10
+    per_ip:
+      rps: 20
+      burst: 40
+    per_token:
+      rps: 10
+      burst: 20
+    exempt_methods:
+      - /grpc.health.v1.Health/*
+      - /ztap.api.v1.AuthService/Login
+```
+
+**Using CLI flags:**
+
+```bash
+# REST (enable with defaults)
+ztap api serve --rate-limit
+
+# REST (tune)
+ztap api serve --rate-limit \
+  --rate-limit-per-ip-rps 20 --rate-limit-per-ip-burst 40 \
+  --rate-limit-per-token-rps 10 --rate-limit-per-token-burst 20 \
+  --rate-limit-unauth-rps 5 --rate-limit-unauth-burst 10
+
+# gRPC (enable with defaults)
+ztap grpc serve --rate-limit
+
+# gRPC (tune)
+ztap grpc serve --rate-limit \
+  --rate-limit-per-ip-rps 20 --rate-limit-per-ip-burst 40 \
+  --rate-limit-per-token-rps 10 --rate-limit-per-token-burst 20 \
+  --rate-limit-unauth-rps 5 --rate-limit-unauth-burst 10
+```
+
+Notes:
+
+- If auth is enabled, invalid/expired bearer tokens are treated as unauthenticated for rate limiting.
+
 **Using `config.yaml`:**
 
 ```yaml

@@ -48,6 +48,35 @@ var grpcServeCmd = &cobra.Command{
 		authEnabled, _ := cmd.Flags().GetBool("auth")
 		cfg.AuthEnabled = authEnabled
 
+		rlEnabled, _ := cmd.Flags().GetBool("rate-limit")
+		if rlEnabled {
+			cfg.RateLimit.Enabled = true
+		}
+		rlPerIPRPS, _ := cmd.Flags().GetFloat64("rate-limit-per-ip-rps")
+		if rlPerIPRPS > 0 {
+			cfg.RateLimit.PerIP.RPS = rlPerIPRPS
+		}
+		rlPerIPBurst, _ := cmd.Flags().GetInt("rate-limit-per-ip-burst")
+		if rlPerIPBurst > 0 {
+			cfg.RateLimit.PerIP.Burst = rlPerIPBurst
+		}
+		rlPerTokenRPS, _ := cmd.Flags().GetFloat64("rate-limit-per-token-rps")
+		if rlPerTokenRPS > 0 {
+			cfg.RateLimit.PerToken.RPS = rlPerTokenRPS
+		}
+		rlPerTokenBurst, _ := cmd.Flags().GetInt("rate-limit-per-token-burst")
+		if rlPerTokenBurst > 0 {
+			cfg.RateLimit.PerToken.Burst = rlPerTokenBurst
+		}
+		rlUnauthRPS, _ := cmd.Flags().GetFloat64("rate-limit-unauth-rps")
+		if rlUnauthRPS > 0 {
+			cfg.RateLimit.Unauthenticated.RPS = rlUnauthRPS
+		}
+		rlUnauthBurst, _ := cmd.Flags().GetInt("rate-limit-unauth-burst")
+		if rlUnauthBurst > 0 {
+			cfg.RateLimit.Unauthenticated.Burst = rlUnauthBurst
+		}
+
 		tlsEnabled, _ := cmd.Flags().GetBool("tls")
 		if tlsEnabled {
 			cfg.TLS.Enabled = true
@@ -109,6 +138,24 @@ type grpcConfigFile struct {
 			CertFile string `yaml:"cert_file"`
 			KeyFile  string `yaml:"key_file"`
 		} `yaml:"tls"`
+		RateLimit struct {
+			Enabled *bool `yaml:"enabled"`
+
+			Unauthenticated struct {
+				RPS   float64 `yaml:"rps"`
+				Burst int     `yaml:"burst"`
+			} `yaml:"unauthenticated"`
+			PerIP struct {
+				RPS   float64 `yaml:"rps"`
+				Burst int     `yaml:"burst"`
+			} `yaml:"per_ip"`
+			PerToken struct {
+				RPS   float64 `yaml:"rps"`
+				Burst int     `yaml:"burst"`
+			} `yaml:"per_token"`
+
+			ExemptMethods []string `yaml:"exempt_methods"`
+		} `yaml:"rate_limit"`
 	} `yaml:"grpc"`
 }
 
@@ -155,6 +202,31 @@ func loadGRPCServerConfig() (apigrpc.Config, error) {
 		cfg.TLS.KeyFile = fileCfg.GRPC.TLS.KeyFile
 	}
 
+	if fileCfg.GRPC.RateLimit.Enabled != nil {
+		cfg.RateLimit.Enabled = *fileCfg.GRPC.RateLimit.Enabled
+	}
+	if fileCfg.GRPC.RateLimit.Unauthenticated.RPS != 0 {
+		cfg.RateLimit.Unauthenticated.RPS = fileCfg.GRPC.RateLimit.Unauthenticated.RPS
+	}
+	if fileCfg.GRPC.RateLimit.Unauthenticated.Burst != 0 {
+		cfg.RateLimit.Unauthenticated.Burst = fileCfg.GRPC.RateLimit.Unauthenticated.Burst
+	}
+	if fileCfg.GRPC.RateLimit.PerIP.RPS != 0 {
+		cfg.RateLimit.PerIP.RPS = fileCfg.GRPC.RateLimit.PerIP.RPS
+	}
+	if fileCfg.GRPC.RateLimit.PerIP.Burst != 0 {
+		cfg.RateLimit.PerIP.Burst = fileCfg.GRPC.RateLimit.PerIP.Burst
+	}
+	if fileCfg.GRPC.RateLimit.PerToken.RPS != 0 {
+		cfg.RateLimit.PerToken.RPS = fileCfg.GRPC.RateLimit.PerToken.RPS
+	}
+	if fileCfg.GRPC.RateLimit.PerToken.Burst != 0 {
+		cfg.RateLimit.PerToken.Burst = fileCfg.GRPC.RateLimit.PerToken.Burst
+	}
+	if len(fileCfg.GRPC.RateLimit.ExemptMethods) > 0 {
+		cfg.RateLimit.ExemptMethods = append([]string(nil), fileCfg.GRPC.RateLimit.ExemptMethods...)
+	}
+
 	return cfg, nil
 }
 
@@ -164,6 +236,14 @@ func init() {
 	grpcServeCmd.Flags().Bool("tls", false, "Enable TLS")
 	grpcServeCmd.Flags().String("tls-cert", "", "Path to TLS certificate file")
 	grpcServeCmd.Flags().String("tls-key", "", "Path to TLS private key file")
+
+	grpcServeCmd.Flags().Bool("rate-limit", false, "Enable gRPC rate limiting")
+	grpcServeCmd.Flags().Float64("rate-limit-per-ip-rps", 0, "Per-IP requests per second")
+	grpcServeCmd.Flags().Int("rate-limit-per-ip-burst", 0, "Per-IP burst")
+	grpcServeCmd.Flags().Float64("rate-limit-per-token-rps", 0, "Per-token requests per second")
+	grpcServeCmd.Flags().Int("rate-limit-per-token-burst", 0, "Per-token burst")
+	grpcServeCmd.Flags().Float64("rate-limit-unauth-rps", 0, "Unauthenticated requests per second")
+	grpcServeCmd.Flags().Int("rate-limit-unauth-burst", 0, "Unauthenticated burst")
 
 	grpcCmd.AddCommand(grpcServeCmd)
 	rootCmd.AddCommand(grpcCmd)

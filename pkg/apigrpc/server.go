@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+
 	"runtime"
 	"strings"
 	"time"
@@ -19,13 +20,19 @@ import (
 	"ztap/pkg/flow"
 	"ztap/pkg/health"
 	"ztap/pkg/policy"
+	"ztap/pkg/ratelimit"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+
+	errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -34,6 +41,22 @@ type Config struct {
 	Listen      string
 	AuthEnabled bool
 	TLS         TLSConfig
+	RateLimit   RateLimitConfig
+}
+
+type RateLimitConfig struct {
+	Enabled bool
+
+	Unauthenticated RateLimitBucketConfig
+	PerIP           RateLimitBucketConfig
+	PerToken        RateLimitBucketConfig
+
+	ExemptMethods []string
+}
+
+type RateLimitBucketConfig struct {
+	RPS   float64
+	Burst int
 }
 
 type TLSConfig struct {
@@ -62,6 +85,10 @@ type Server struct {
 	alerts    *alert.Manager
 
 	flowReader func() flow.FlowReader
+
+	rateLimiter *ratelimit.Store
+	rlAllowed   *prometheus.CounterVec
+	rlLimited   *prometheus.CounterVec
 }
 
 func NewServer(opts ServerOptions) (*Server, error) {
@@ -96,9 +123,11 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		flowReader: opts.FlowReaderFactory,
 	}
 
+	s.initRateLimiting()
+
 	grpcOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(s.unaryAuthInterceptor),
-		grpc.StreamInterceptor(s.streamAuthInterceptor),
+		grpc.ChainUnaryInterceptor(s.unaryRateLimitInterceptor, s.unaryAuthInterceptor),
+		grpc.ChainStreamInterceptor(s.streamRateLimitInterceptor, s.streamAuthInterceptor),
 	}
 
 	if s.cfg.TLS.Enabled {
@@ -123,6 +152,12 @@ func (s *Server) ListenAddr() string {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
+	defer func() {
+		if s.rateLimiter != nil {
+			s.rateLimiter.Close()
+		}
+	}()
+
 	ln, err := net.Listen("tcp", s.cfg.Listen)
 	if err != nil {
 		return err
@@ -180,6 +215,205 @@ func (s *Server) emitAlert(a alert.Alert) {
 	}
 	_ = s.alerts.Emit(a)
 }
+
+func (s *Server) initRateLimiting() {
+	rcfg := ratelimit.DefaultConfig()
+	rcfg.Enabled = s.cfg.RateLimit.Enabled
+
+	unauth := s.cfg.RateLimit.Unauthenticated
+	if unauth.RPS == 0 {
+		unauth.RPS = rcfg.Unauthenticated.RPS
+	}
+	if unauth.Burst == 0 {
+		unauth.Burst = rcfg.Unauthenticated.Burst
+	}
+	perIP := s.cfg.RateLimit.PerIP
+	if perIP.RPS == 0 {
+		perIP.RPS = rcfg.PerIP.RPS
+	}
+	if perIP.Burst == 0 {
+		perIP.Burst = rcfg.PerIP.Burst
+	}
+	perTok := s.cfg.RateLimit.PerToken
+	if perTok.RPS == 0 {
+		perTok.RPS = rcfg.PerToken.RPS
+	}
+	if perTok.Burst == 0 {
+		perTok.Burst = rcfg.PerToken.Burst
+	}
+
+	rcfg.Unauthenticated = ratelimit.BucketConfig{RPS: unauth.RPS, Burst: unauth.Burst}
+	rcfg.PerIP = ratelimit.BucketConfig{RPS: perIP.RPS, Burst: perIP.Burst}
+	rcfg.PerToken = ratelimit.BucketConfig{RPS: perTok.RPS, Burst: perTok.Burst}
+
+	rcfg.ExemptPaths = nil
+	s.rateLimiter = ratelimit.NewStore(rcfg)
+
+	if !rcfg.Enabled {
+		return
+	}
+
+	s.rlAllowed = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ztap_api_rate_limit_allowed_total",
+		Help: "Total number of API requests allowed by rate limiter",
+	}, []string{"surface", "bucket"})
+	s.rlLimited = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ztap_api_rate_limit_limited_total",
+		Help: "Total number of API requests rejected by rate limiter",
+	}, []string{"surface", "bucket"})
+
+	_ = prometheus.Register(s.rlAllowed)
+	_ = prometheus.Register(s.rlLimited)
+}
+
+func (s *Server) isExemptMethod(fullMethod string) bool {
+	for _, m := range s.cfg.RateLimit.ExemptMethods {
+		if m == fullMethod {
+			return true
+		}
+		if strings.HasSuffix(m, "*") {
+			prefix := strings.TrimSuffix(m, "*")
+			if strings.HasPrefix(fullMethod, prefix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *Server) unaryRateLimitInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	if !s.cfg.RateLimit.Enabled {
+		return handler(ctx, req)
+	}
+	if s.isExemptMethod(info.FullMethod) {
+		return handler(ctx, req)
+	}
+
+	dec := s.decisionForGRPC(ctx)
+	if dec.Allowed {
+		if s.rlAllowed != nil {
+			s.rlAllowed.WithLabelValues("grpc", dec.Bucket).Inc()
+		}
+		return handler(ctx, req)
+	}
+
+	if s.rlLimited != nil {
+		s.rlLimited.WithLabelValues("grpc", dec.Bucket).Inc()
+	}
+	return nil, rateLimitStatus(dec)
+}
+
+func (s *Server) streamRateLimitInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if !s.cfg.RateLimit.Enabled {
+		return handler(srv, ss)
+	}
+	if s.isExemptMethod(info.FullMethod) {
+		return handler(srv, ss)
+	}
+
+	dec := s.decisionForGRPC(ss.Context())
+	if dec.Allowed {
+		if s.rlAllowed != nil {
+			s.rlAllowed.WithLabelValues("grpc", dec.Bucket).Inc()
+		}
+		return handler(srv, ss)
+	}
+
+	if s.rlLimited != nil {
+		s.rlLimited.WithLabelValues("grpc", dec.Bucket).Inc()
+	}
+	return rateLimitStatus(dec)
+}
+
+func rateLimitStatus(dec ratelimit.Decision) error {
+	st := status.New(codes.ResourceExhausted, "rate limited")
+	if dec.RetryAfter > 0 {
+		d := dec.RetryAfter
+		if d < 0 {
+			d = 0
+		}
+		stWith, err := st.WithDetails(&errdetails.RetryInfo{RetryDelay: durationpb.New(d)})
+		if err == nil {
+			return stWith.Err()
+		}
+	}
+	return st.Err()
+}
+
+func (s *Server) decisionForGRPC(ctx context.Context) ratelimit.Decision {
+	if s.rateLimiter == nil {
+		return ratelimit.Decision{Allowed: true, Bucket: "disabled"}
+	}
+
+	// Token bucket first (if auth header provided), then IP bucket.
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		vals := md.Get("authorization")
+		if len(vals) > 0 {
+			if tok, ok := ratelimitBearer(vals[0]); ok {
+				if s.cfg.AuthEnabled {
+					if _, err := s.auth.ValidateSession(tok); err != nil {
+						// Invalid token -> unauthenticated bucket.
+						ip := peerIP(ctx)
+						d := s.rateLimiter.DecisionForKey(ratelimit.KeyUnauthenticated, "ip:"+ip)
+						d.Bucket = "unauthenticated"
+						return d
+					}
+				}
+
+				d := s.rateLimiter.DecisionForKey(ratelimit.KeyToken, "token:"+ratelimit.HashToken(tok))
+				d.Bucket = "per_token"
+				if !d.Allowed {
+					return d
+				}
+
+				ip := peerIP(ctx)
+				d2 := s.rateLimiter.DecisionForKey(ratelimit.KeyIP, "ip:"+ip)
+				d2.Bucket = "per_ip"
+				return d2
+			}
+		}
+	}
+
+	// No token => use unauthenticated bucket.
+	ip := peerIP(ctx)
+	d := s.rateLimiter.DecisionForKey(ratelimit.KeyUnauthenticated, "ip:"+ip)
+	d.Bucket = "unauthenticated"
+	return d
+}
+
+func peerIP(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr == nil {
+		return "0.0.0.0"
+	}
+	host, _, err := net.SplitHostPort(p.Addr.String())
+	if err == nil {
+		if parsed := net.ParseIP(host); parsed != nil {
+			return parsed.String()
+		}
+	}
+	if parsed := net.ParseIP(p.Addr.String()); parsed != nil {
+		return parsed.String()
+	}
+	return "0.0.0.0"
+}
+
+func ratelimitBearer(h string) (string, bool) {
+	parts := strings.SplitN(h, " ", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	if strings.ToLower(strings.TrimSpace(parts[0])) != "bearer" {
+		return "", false
+	}
+	tok := strings.TrimSpace(parts[1])
+	if tok == "" {
+		return "", false
+	}
+	return tok, true
+}
+
+func ratelimitHashToken(tok string) string { return ratelimit.HashToken(tok) }
 
 func (s *Server) unaryAuthInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 	perm, requiresAuth := permissionForMethod(info.FullMethod)
