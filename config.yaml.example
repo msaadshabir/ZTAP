@@ -48,6 +48,8 @@ api:
     enabled: false
     cert_file: ""
     key_file: ""
+    client_auth: false
+    client_ca_file: ""
   rate_limit:
     enabled: false
     trust_proxy_headers: false
@@ -74,6 +76,8 @@ grpc:
     enabled: false
     cert_file: ""
     key_file: ""
+    client_auth: false
+    client_ca_file: ""
   rate_limit:
     enabled: false
     unauthenticated:

@@ -172,6 +172,9 @@ api:
     enabled: true
     cert_file: "/path/to/server.crt"
     key_file: "/path/to/server.key"
+    # Optional mTLS (client certificate auth)
+    client_auth: true
+    client_ca_file: "/path/to/client-ca.pem"
 
 grpc:
   listen: 127.0.0.1:9092
@@ -179,6 +182,9 @@ grpc:
     enabled: true
     cert_file: "/path/to/grpc.crt"
     key_file: "/path/to/grpc.key"
+    # Optional mTLS (client certificate auth)
+    client_auth: true
+    client_ca_file: "/path/to/client-ca.pem"
 ```
 
 **Using CLI flags:**
