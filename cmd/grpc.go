@@ -134,9 +134,11 @@ type grpcConfigFile struct {
 			Enabled *bool `yaml:"enabled"`
 		} `yaml:"auth"`
 		TLS struct {
-			Enabled  *bool  `yaml:"enabled"`
-			CertFile string `yaml:"cert_file"`
-			KeyFile  string `yaml:"key_file"`
+			Enabled      *bool  `yaml:"enabled"`
+			CertFile     string `yaml:"cert_file"`
+			KeyFile      string `yaml:"key_file"`
+			ClientAuth   *bool  `yaml:"client_auth"`
+			ClientCAFile string `yaml:"client_ca_file"`
 		} `yaml:"tls"`
 		RateLimit struct {
 			Enabled *bool `yaml:"enabled"`
@@ -200,6 +202,12 @@ func loadGRPCServerConfig() (apigrpc.Config, error) {
 	}
 	if strings.TrimSpace(fileCfg.GRPC.TLS.KeyFile) != "" {
 		cfg.TLS.KeyFile = fileCfg.GRPC.TLS.KeyFile
+	}
+	if fileCfg.GRPC.TLS.ClientAuth != nil {
+		cfg.TLS.ClientAuth = *fileCfg.GRPC.TLS.ClientAuth
+	}
+	if strings.TrimSpace(fileCfg.GRPC.TLS.ClientCAFile) != "" {
+		cfg.TLS.ClientCAFile = fileCfg.GRPC.TLS.ClientCAFile
 	}
 
 	if fileCfg.GRPC.RateLimit.Enabled != nil {

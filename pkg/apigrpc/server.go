@@ -3,6 +3,8 @@ package apigrpc
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -60,9 +62,11 @@ type RateLimitBucketConfig struct {
 }
 
 type TLSConfig struct {
-	Enabled  bool
-	CertFile string
-	KeyFile  string
+	Enabled      bool
+	CertFile     string
+	KeyFile      string
+	ClientAuth   bool
+	ClientCAFile string
 }
 
 type ServerOptions struct {
@@ -134,10 +138,29 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		if s.cfg.TLS.CertFile == "" || s.cfg.TLS.KeyFile == "" {
 			return nil, fmt.Errorf("gRPC TLS is enabled but certificate or key file is missing")
 		}
-		creds, err := credentials.NewServerTLSFromFile(s.cfg.TLS.CertFile, s.cfg.TLS.KeyFile)
+		// Build tls.Config to support optional client cert verification
+		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		cert, err := tls.LoadX509KeyPair(s.cfg.TLS.CertFile, s.cfg.TLS.KeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load TLS credentials: %w", err)
+			return nil, fmt.Errorf("failed to load server TLS keypair: %w", err)
 		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+		if s.cfg.TLS.ClientAuth {
+			if s.cfg.TLS.ClientCAFile == "" {
+				return nil, fmt.Errorf("gRPC mTLS is enabled but client CA file is missing")
+			}
+			pem, err := os.ReadFile(s.cfg.TLS.ClientCAFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read client CA file: %w", err)
+			}
+			pool := x509.NewCertPool()
+			if !pool.AppendCertsFromPEM(pem) {
+				return nil, fmt.Errorf("no certificates found in gRPC client CA file")
+			}
+			tlsCfg.ClientCAs = pool
+			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+		}
+		creds := credentials.NewTLS(tlsCfg)
 		grpcOpts = append(grpcOpts, grpc.Creds(creds))
 	}
 

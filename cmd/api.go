@@ -146,9 +146,11 @@ type apiConfigFile struct {
 			Enabled *bool `yaml:"enabled"`
 		} `yaml:"auth"`
 		TLS struct {
-			Enabled  *bool  `yaml:"enabled"`
-			CertFile string `yaml:"cert_file"`
-			KeyFile  string `yaml:"key_file"`
+			Enabled      *bool  `yaml:"enabled"`
+			CertFile     string `yaml:"cert_file"`
+			KeyFile      string `yaml:"key_file"`
+			ClientAuth   *bool  `yaml:"client_auth"`
+			ClientCAFile string `yaml:"client_ca_file"`
 		} `yaml:"tls"`
 		RateLimit struct {
 			Enabled           *bool `yaml:"enabled"`
@@ -213,6 +215,12 @@ func loadAPIServerConfig() (apihttp.Config, error) {
 	}
 	if strings.TrimSpace(fileCfg.API.TLS.KeyFile) != "" {
 		cfg.TLS.KeyFile = fileCfg.API.TLS.KeyFile
+	}
+	if fileCfg.API.TLS.ClientAuth != nil {
+		cfg.TLS.ClientAuth = *fileCfg.API.TLS.ClientAuth
+	}
+	if strings.TrimSpace(fileCfg.API.TLS.ClientCAFile) != "" {
+		cfg.TLS.ClientCAFile = fileCfg.API.TLS.ClientCAFile
 	}
 
 	if fileCfg.API.RateLimit.Enabled != nil {

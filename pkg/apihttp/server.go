@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +25,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-)
+}
 
 type Config struct {
 	Listen      string
@@ -50,9 +51,11 @@ type RateLimitBucketConfig struct {
 }
 
 type TLSConfig struct {
-	Enabled  bool
-	CertFile string
-	KeyFile  string
+	Enabled      bool
+	CertFile     string
+	KeyFile      string
+	ClientAuth   bool   // require client certificates (mTLS)
+	ClientCAFile string // PEM bundle of trusted client CAs
 }
 
 type Server struct {
@@ -164,9 +167,29 @@ func (s *Server) Serve(ctx context.Context) error {
 				errCh <- fmt.Errorf("TLS is enabled but certificate or key file is missing")
 				return
 			}
-			httpServer.TLSConfig = &tls.Config{
+			// Build TLS config, optionally requiring client certificates.
+			tlsCfg := &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			}
+			if s.cfg.TLS.ClientAuth {
+				if s.cfg.TLS.ClientCAFile == "" {
+					errCh <- fmt.Errorf("mTLS is enabled but client CA file is missing")
+					return
+				}
+				pem, err := os.ReadFile(s.cfg.TLS.ClientCAFile)
+				if err != nil {
+					errCh <- fmt.Errorf("failed to read client CA file: %w", err)
+					return
+				}
+				pool := x509.NewCertPool()
+				if !pool.AppendCertsFromPEM(pem) {
+					errCh <- fmt.Errorf("no certificates found in client CA file")
+					return
+				}
+				tlsCfg.ClientCAs = pool
+				tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+			}
+			httpServer.TLSConfig = tlsCfg
 			errCh <- httpServer.ListenAndServeTLS(s.cfg.TLS.CertFile, s.cfg.TLS.KeyFile)
 		} else {
 			errCh <- httpServer.ListenAndServe()
