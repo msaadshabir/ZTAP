@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
+
+	"ztap/pkg/logging"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
@@ -103,7 +104,7 @@ func (e *EtcdElection) Start(ctx context.Context) error {
 
 	// Register this node in cluster state
 	if err := e.registerNode(); err != nil {
-		log.Printf("Warning: failed to register node: %v", err)
+		logging.Warnf("failed to register node: %v", err)
 	}
 
 	// Start leader election in background
@@ -113,7 +114,7 @@ func (e *EtcdElection) Start(ctx context.Context) error {
 	go e.monitorNodes()
 
 	safeNodeID := sanitizeForLog(e.config.NodeID)
-	log.Printf("Etcd leader election started for node %s", safeNodeID)
+	logging.Infof("Etcd leader election started for node %s", safeNodeID)
 	return nil
 }
 
@@ -138,31 +139,31 @@ func (e *EtcdElection) Stop() error {
 	// Resign if leader
 	if e.isLeader && e.election != nil {
 		if err := e.election.Resign(context.Background()); err != nil {
-			log.Printf("Error resigning leadership: %v", err)
+			logging.Warnf("Error resigning leadership: %v", err)
 		}
 	}
 
 	// Close session
 	if e.session != nil {
 		if err := e.session.Close(); err != nil {
-			log.Printf("Error closing etcd session: %v", err)
+			logging.Warnf("Error closing etcd session: %v", err)
 		}
 	}
 
 	// Deregister node
 	if err := e.deregisterNode(); err != nil {
-		log.Printf("Error deregistering node: %v", err)
+		logging.Warnf("Error deregistering node: %v", err)
 	}
 
 	// Close client
 	if e.client != nil {
 		if err := e.client.Close(); err != nil {
-			log.Printf("Error closing etcd client: %v", err)
+			logging.Warnf("Error closing etcd client: %v", err)
 		}
 	}
 
 	safeNodeID := sanitizeForLog(e.config.NodeID)
-	log.Printf("Etcd leader election stopped for node %s", safeNodeID)
+	logging.Infof("Etcd leader election stopped for node %s", safeNodeID)
 	return nil
 }
 
@@ -191,14 +192,14 @@ func (e *EtcdElection) GetLeader() *Node {
 		if err == concurrency.ErrElectionNoLeader {
 			return nil
 		}
-		log.Printf("Error getting leader from etcd: %v", err)
+		logging.Warnf("Error getting leader from etcd: %v", err)
 		return nil
 	}
 
 	// Parse leader node from value
 	var node Node
 	if err := json.Unmarshal(resp.Kvs[0].Value, &node); err != nil {
-		log.Printf("Error parsing leader node: %v", err)
+		logging.Warnf("Error parsing leader node: %v", err)
 		return nil
 	}
 
@@ -385,7 +386,7 @@ func (e *EtcdElection) runElectionLoop() {
 
 	nodeData, err := json.Marshal(thisNode)
 	if err != nil {
-		log.Printf("Error marshaling node data: %v", err)
+		logging.Warnf("Error marshaling node data: %v", err)
 		return
 	}
 
@@ -399,12 +400,12 @@ func (e *EtcdElection) runElectionLoop() {
 		}
 
 		// Campaign to become leader
-		log.Printf("Node %s campaigning for leadership", safeNodeID)
+		logging.Infof("Node %s campaigning for leadership", safeNodeID)
 		if err := e.election.Campaign(e.ctx, string(nodeData)); err != nil {
 			if err == context.Canceled {
 				return
 			}
-			log.Printf("Campaign error: %v, retrying...", err)
+			logging.Warnf("Campaign error: %v, retrying...", err)
 			time.Sleep(e.config.HeartbeatInterval)
 			continue
 		}
@@ -415,14 +416,14 @@ func (e *EtcdElection) runElectionLoop() {
 		e.currentState.Leader = thisNode
 		e.mu.Unlock()
 
-		log.Printf("Node %s became leader", safeNodeID)
+		logging.Infof("Node %s became leader", safeNodeID)
 		e.notifyLeaderChange(thisNode)
 
 		// Keep the leadership by keeping the session alive
 		// The session will automatically renew its lease
 		select {
 		case <-e.session.Done():
-			log.Printf("Session expired, node %s lost leadership", safeNodeID)
+			logging.Warnf("Session expired, node %s lost leadership", safeNodeID)
 			e.mu.Lock()
 			e.isLeader = false
 			e.currentState.Leader = nil
@@ -507,7 +508,7 @@ func (e *EtcdElection) monitorNodes() {
 			return
 		case wresp := <-watchChan:
 			if wresp.Err() != nil {
-				log.Printf("Watch error: %v", wresp.Err())
+				logging.Warnf("Watch error: %v", wresp.Err())
 				continue
 			}
 
@@ -523,7 +524,7 @@ func (e *EtcdElection) handleNodeEvent(ev *clientv3.Event) {
 	var node Node
 	if ev.Type == clientv3.EventTypePut {
 		if err := json.Unmarshal(ev.Kv.Value, &node); err != nil {
-			log.Printf("Error unmarshaling node: %v", err)
+			logging.Warnf("Error unmarshaling node: %v", err)
 			return
 		}
 

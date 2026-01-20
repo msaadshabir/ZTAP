@@ -3,13 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"text/tabwriter"
 	"time"
 
 	"ztap/pkg/cluster"
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
 	"github.com/spf13/cobra"
@@ -51,19 +51,19 @@ Only the leader can initiate policy synchronization.`,
 		// Read policy YAML from file
 		policyYAML, err := os.ReadFile(policyFile)
 		if err != nil {
-			log.Fatalf("failed to read policy file: %v", err)
+			logging.Fatalf("failed to read policy file: %v", err)
 		}
 
 		policies, err := policy.LoadFromBytes(policyYAML)
 		if err != nil {
-			log.Fatalf("failed to parse policy file: %v", err)
+			logging.Fatalf("failed to parse policy file: %v", err)
 		}
 		if len(policies) == 0 {
-			log.Fatalf("policy file contains no NetworkPolicy objects")
+			logging.Fatalf("policy file contains no NetworkPolicy objects")
 		}
 		for _, p := range policies {
 			if err := p.Validate(); err != nil {
-				log.Fatalf("invalid policy: %v", err)
+				logging.Fatalf("invalid policy: %v", err)
 			}
 		}
 
@@ -83,7 +83,7 @@ Only the leader can initiate policy synchronization.`,
 
 		// Sync policy to cluster
 		if err := policySync.SyncPolicy(ctx, policyName, policyYAML); err != nil {
-			log.Fatalf("failed to sync policy: %v", err)
+			logging.Fatalf("failed to sync policy: %v", err)
 		}
 
 		version, _ := policySync.GetPolicyVersion(policyName)
@@ -181,7 +181,7 @@ var policyShowCmd = &cobra.Command{
 
 		policy, err := getter.GetPolicy(policyName)
 		if err != nil {
-			log.Fatalf("failed to get policy: %v", err)
+			logging.Fatalf("failed to get policy: %v", err)
 		}
 		if policy == nil {
 			fmt.Printf("policy '%s' not found in cluster\n", policyName)
@@ -221,7 +221,7 @@ var policyHistoryCmd = &cobra.Command{
 
 		revisions, err := store.ListPolicyRevisions(policyName, limit)
 		if err != nil {
-			log.Fatalf("failed to list policy revisions: %v", err)
+			logging.Fatalf("failed to list policy revisions: %v", err)
 		}
 
 		if len(revisions) == 0 {
@@ -286,7 +286,7 @@ var policyRollbackCmd = &cobra.Command{
 
 		rev, err := store.RollbackPolicy(ctx, policyName, targetVersion, reason)
 		if err != nil {
-			log.Fatalf("rollback failed: %v", err)
+			logging.Fatalf("rollback failed: %v", err)
 		}
 
 		rolledBackFrom := targetVersion
@@ -307,16 +307,16 @@ func runPolicyValidate(cmd *cobra.Command, args []string) {
 	// Read policy YAML from file
 	policyYAML, err := os.ReadFile(policyFile)
 	if err != nil {
-		log.Fatalf("failed to read policy file: %v", err)
+		logging.Fatalf("failed to read policy file: %v", err)
 	}
 
 	policies, err := policy.LoadFromBytes(policyYAML)
 	if err != nil {
-		log.Fatalf("failed to parse policy file: %v", err)
+		logging.Fatalf("failed to parse policy file: %v", err)
 	}
 
 	if len(policies) == 0 {
-		log.Fatalf("policy file contains no NetworkPolicy objects")
+		logging.Fatalf("policy file contains no NetworkPolicy objects")
 	}
 
 	hasError := false

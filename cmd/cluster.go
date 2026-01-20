@@ -3,12 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"text/tabwriter"
 	"time"
 
 	"ztap/pkg/cluster"
+	"ztap/pkg/logging"
 
 	"github.com/spf13/cobra"
 )
@@ -97,7 +97,7 @@ var clusterJoinCmd = &cobra.Command{
 		}
 
 		if err := clusterElection.RegisterNode(node); err != nil {
-			log.Fatalf("Failed to join node: %v", err)
+			logging.Fatalf("Failed to join node: %v", err)
 		}
 
 		fmt.Printf("Node %s joined the cluster at %s\n", nodeID, address)
@@ -118,7 +118,7 @@ var clusterLeaveCmd = &cobra.Command{
 		nodeID := args[0]
 
 		if err := clusterElection.DeregisterNode(nodeID); err != nil {
-			log.Fatalf("Failed to remove node: %v", err)
+			logging.Fatalf("Failed to remove node: %v", err)
 		}
 
 		fmt.Printf("Node %s left the cluster\n", nodeID)
@@ -301,9 +301,9 @@ func init() {
 		return
 	}
 	if err := clusterElection.Start(ctx); err != nil {
-		log.Printf("Warning: failed to start cluster election: %v", err)
+		logging.Warnf("failed to start cluster election: %v", err)
 	}
 	if err := policySync.(*cluster.InMemoryPolicySync).Start(ctx); err != nil {
-		log.Printf("Warning: failed to start policy sync: %v", err)
+		logging.Warnf("failed to start policy sync: %v", err)
 	}
 }

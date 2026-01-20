@@ -4,8 +4,9 @@ package enforcer
 
 import (
 	"fmt"
-	"log"
 	"sync"
+
+	"ztap/pkg/logging"
 )
 
 var (
@@ -19,15 +20,15 @@ func EnforceWithWFP(opts EnforcementOptions) error {
 	defer activeWFPMu.Unlock()
 
 	if opts.DryRun {
-		log.Println("[DRY-RUN] WFP: simulating policy translation and transaction")
+		logging.Info("[DRY-RUN] WFP: simulating policy translation and transaction", nil)
 		for _, p := range opts.Policies {
 			safeName := sanitizeForLog(p.Metadata.Name)
 			specs, err := TranslatePolicyToWFP(p)
 			if err != nil {
-				log.Printf("[DRY-RUN] Warning: would skip policy '%s' due to translation error: %v", safeName, err)
+				logging.Warnf("[DRY-RUN] would skip policy '%s' due to translation error: %v", safeName, err)
 				continue
 			}
-			log.Printf("[DRY-RUN] WFP: would add %d filters for policy '%s'", len(specs), safeName)
+			logging.Infof("[DRY-RUN] WFP: would add %d filters for policy '%s'", len(specs), safeName)
 		}
 		wfpActive = true // Mark as active so dry-run Stop works
 		return nil
@@ -56,7 +57,7 @@ func EnforceWithWFP(opts EnforcementOptions) error {
 
 	// Cleanup existing ZTAP filters before applying new ones
 	if err := engine.DeleteFiltersByProvider(&ZTAPProviderGUID); err != nil {
-		log.Printf("Warning: failed to cleanup old WFP filters: %v", err)
+		logging.Warnf("failed to cleanup old WFP filters: %v", err)
 	}
 
 	// Translate and add filters
@@ -64,7 +65,7 @@ func EnforceWithWFP(opts EnforcementOptions) error {
 		safeName := sanitizeForLog(p.Metadata.Name)
 		specs, err := TranslatePolicyToWFP(p)
 		if err != nil {
-			log.Printf("Warning: skipping policy '%s' due to translation error: %v", safeName, err)
+			logging.Warnf("skipping policy '%s' due to translation error: %v", safeName, err)
 			continue
 		}
 

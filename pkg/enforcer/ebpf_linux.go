@@ -7,7 +7,6 @@ package enforcer
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"net"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
 	"github.com/cilium/ebpf"
@@ -92,7 +92,7 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	if p := os.Getenv("ZTAP_BPF_OBJECT"); p != "" {
 		safeP := strings.ReplaceAll(p, "\n", "")
 		safeP = strings.ReplaceAll(safeP, "\r", "")
-		log.Printf("Loading eBPF object from override: %s", safeP)
+		logging.Infof("Loading eBPF object from override: %s", safeP)
 		spec, err := ebpf.LoadCollectionSpec(p)
 		if err != nil {
 			return fmt.Errorf("failed to load eBPF object from %s: %w", safeP, err)
@@ -115,7 +115,7 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 			safeName = strings.ReplaceAll(safeName, "\r", "")
 			safeErr := strings.ReplaceAll(err.Error(), "\n", "")
 			safeErr = strings.ReplaceAll(safeErr, "\r", "")
-			log.Printf("Warning: Failed to add policy '%s': %s", safeName, safeErr)
+			logging.Warnf("Failed to add policy '%s': %s", safeName, safeErr)
 		}
 	}
 
@@ -196,14 +196,14 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			safeDest = strings.ReplaceAll(safeDest, "\r", "")
 			safePort := strings.ReplaceAll(fmt.Sprint(port.Port), "\n", "")
 			safePort = strings.ReplaceAll(safePort, "\r", "")
-			log.Printf("Added eBPF egress rule: %s -> %s:%s (ALLOW)",
+			logging.Debugf("Added eBPF egress rule: %s -> %s:%s (ALLOW)",
 				safePolicyName, safeDest, safePort)
 		}
 	}
 
 	// Handle label-based rules (requires resolution)
 	if len(egress.To.PodSelector.MatchLabels) > 0 {
-		log.Printf("Warning: Label-based egress rules require IP resolution for policy '%s'",
+		logging.Warnf("Label-based egress rules require IP resolution for policy '%s'",
 			strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", ""))
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
@@ -268,14 +268,14 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 			safePortStr := fmt.Sprintf("%d", port.Port)
 			safePortStr = strings.ReplaceAll(safePortStr, "\n", "")
 			safePortStr = strings.ReplaceAll(safePortStr, "\r", "")
-			log.Printf("Added eBPF ingress rule: %s <- %s:%s (ALLOW)",
+			logging.Debugf("Added eBPF ingress rule: %s <- %s:%s (ALLOW)",
 				safePolicyName, safeSrc, safePortStr)
 		}
 	}
 
 	// Handle label-based rules (requires resolution)
 	if len(ingress.From.PodSelector.MatchLabels) > 0 {
-		log.Printf("Warning: Label-based ingress rules require IP resolution for policy '%s'",
+		logging.Warnf("Label-based ingress rules require IP resolution for policy '%s'",
 			strings.ReplaceAll(strings.ReplaceAll(policyName, "\n", ""), "\r", ""))
 		// In production: resolve labels to IPs via service discovery, then add to map
 	}
@@ -310,7 +310,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach egress filter to cgroup: %w", err)
 		}
 		e.egressLink = l
-		log.Printf("eBPF egress filter attached to cgroup: %s", safeCgroupPath)
+		logging.Infof("eBPF egress filter attached to cgroup: %s", safeCgroupPath)
 	}
 
 	// Attach ingress filter to cgroup
@@ -324,7 +324,7 @@ func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 			return fmt.Errorf("failed to attach ingress filter to cgroup: %w", err)
 		}
 		e.ingressLink = l
-		log.Printf("eBPF ingress filter attached to cgroup: %s", safeCgroupPath)
+		logging.Infof("eBPF ingress filter attached to cgroup: %s", safeCgroupPath)
 	}
 
 	return nil
@@ -344,7 +344,7 @@ func (e *eBPFEnforcer) UpdateFrom(old *eBPFEnforcer) error {
 		}
 		e.egressLink = old.egressLink
 		old.egressLink = nil // Steal ownership
-		log.Println("eBPF egress link updated atomically")
+		logging.Info("eBPF egress link updated atomically", nil)
 	}
 
 	// Update Ingress Link
@@ -354,7 +354,7 @@ func (e *eBPFEnforcer) UpdateFrom(old *eBPFEnforcer) error {
 		}
 		e.ingressLink = old.ingressLink
 		old.ingressLink = nil // Steal ownership
-		log.Println("eBPF ingress link updated atomically")
+		logging.Info("eBPF ingress link updated atomically", nil)
 	}
 
 	return nil
@@ -365,13 +365,13 @@ func (e *eBPFEnforcer) Close() error {
 	// Detach programs
 	if e.egressLink != nil {
 		if err := e.egressLink.Close(); err != nil {
-			log.Printf("Warning: Failed to close egress link: %v", err)
+			logging.Warnf("Failed to close egress link: %v", err)
 		}
 		e.egressLink = nil
 	}
 	if e.ingressLink != nil {
 		if err := e.ingressLink.Close(); err != nil {
-			log.Printf("Warning: Failed to close ingress link: %v", err)
+			logging.Warnf("Failed to close ingress link: %v", err)
 		}
 		e.ingressLink = nil
 	}
@@ -380,29 +380,29 @@ func (e *eBPFEnforcer) Close() error {
 	if e.objs != nil {
 		if e.objs.PolicyMap != nil {
 			if err := e.objs.PolicyMap.Close(); err != nil {
-				log.Printf("Warning: Failed to close policy map: %v", err)
+				logging.Warnf("Failed to close policy map: %v", err)
 			}
 		}
 		if e.objs.FlowEvents != nil {
 			if err := e.objs.FlowEvents.Close(); err != nil {
-				log.Printf("Warning: Failed to close flow_events map: %v", err)
+				logging.Warnf("Failed to close flow_events map: %v", err)
 			}
 		}
 		if e.objs.FilterEgress != nil {
 			if err := e.objs.FilterEgress.Close(); err != nil {
-				log.Printf("Warning: Failed to close egress program: %v", err)
+				logging.Warnf("Failed to close egress program: %v", err)
 			}
 		}
 		if e.objs.FilterIngress != nil {
 			if err := e.objs.FilterIngress.Close(); err != nil {
-				log.Printf("Warning: Failed to close ingress program: %v", err)
+				logging.Warnf("Failed to close ingress program: %v", err)
 			}
 		}
 	}
 
 	if e.flowEventsPinPath != "" {
 		if err := os.Remove(e.flowEventsPinPath); err != nil && !os.IsNotExist(err) {
-			log.Printf("Warning: Failed to remove pinned flow_events map: %v", err)
+			logging.Warnf("Failed to remove pinned flow_events map: %v", err)
 		}
 		e.flowEventsPinPath = ""
 	}
@@ -491,7 +491,7 @@ func EnforceWithEBPFReal(opts EnforcementOptions) error {
 	}
 
 	if opts.DryRun {
-		log.Printf("[DRY-RUN] eBPF: Validated %d policies, skipping attachment and pinning", len(opts.Policies))
+		logging.Infof("[DRY-RUN] eBPF: Validated %d policies, skipping attachment and pinning", len(opts.Policies))
 		_ = newEnforcer.Close()
 		return nil
 	}
@@ -502,7 +502,7 @@ func EnforceWithEBPFReal(opts EnforcementOptions) error {
 	if activeEBPFEnforcer != nil {
 		// Graceful reload: update existing links
 		if err := newEnforcer.UpdateFrom(activeEBPFEnforcer); err != nil {
-			log.Printf("Warning: Atomic update failed, falling back to full re-attach: %v", err)
+			logging.Warnf("Atomic update failed, falling back to full re-attach: %v", err)
 			// Fallback: stop old and start new (non-graceful)
 			_ = activeEBPFEnforcer.Close()
 			if err := newEnforcer.Attach(opts.CgroupPath); err != nil {
@@ -524,10 +524,10 @@ func EnforceWithEBPFReal(opts EnforcementOptions) error {
 	}
 
 	if err := newEnforcer.PinFlowEventsMap(DefaultFlowEventsPinPath); err != nil {
-		log.Printf("Warning: Failed to pin flow_events map (ztap flows may not work): %v", err)
+		logging.Warnf("Failed to pin flow_events map (ztap flows may not work): %v", err)
 	}
 
-	log.Printf("Successfully enforced %d policies via eBPF", len(opts.Policies))
+	logging.Infof("Successfully enforced %d policies via eBPF", len(opts.Policies))
 	activeEBPFEnforcer = newEnforcer
 	return nil
 }

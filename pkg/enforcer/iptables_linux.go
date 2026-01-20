@@ -6,10 +6,11 @@ package enforcer
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os/exec"
 	"strings"
 	"sync"
+
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 )
 
@@ -60,7 +61,7 @@ func (e *IptablesEnforcer) Init() error {
 	defer e.mu.Unlock()
 
 	if e.dryRun {
-		log.Println("[DRY-RUN] iptables: would create chains ZTAP-INGRESS and ZTAP-EGRESS and hook them into INPUT/OUTPUT")
+		logging.Infof("[DRY-RUN] iptables: would create chains ZTAP-INGRESS and ZTAP-EGRESS and hook them into INPUT/OUTPUT")
 		return nil
 	}
 
@@ -72,13 +73,13 @@ func (e *IptablesEnforcer) Init() error {
 		// Hook into INPUT and OUTPUT if not already hooked
 		if !e.isHooked(bin, "INPUT", "ZTAP-INGRESS") {
 			if err := e.runner.Run(bin, "-I", "INPUT", "1", "-j", "ZTAP-INGRESS"); err != nil {
-				log.Printf("Warning: failed to hook %s ZTAP-INGRESS into INPUT: %v", bin, err)
+				logging.Warnf("failed to hook %s ZTAP-INGRESS into INPUT: %v", bin, err)
 			}
 		}
 
 		if !e.isHooked(bin, "OUTPUT", "ZTAP-EGRESS") {
 			if err := e.runner.Run(bin, "-I", "OUTPUT", "1", "-j", "ZTAP-EGRESS"); err != nil {
-				log.Printf("Warning: failed to hook %s ZTAP-EGRESS into OUTPUT: %v", bin, err)
+				logging.Warnf("failed to hook %s ZTAP-EGRESS into OUTPUT: %v", bin, err)
 			}
 		}
 	}
@@ -98,7 +99,7 @@ func (e *IptablesEnforcer) Cleanup() error {
 	defer e.mu.Unlock()
 
 	if e.dryRun {
-		log.Println("[DRY-RUN] iptables: would cleanup ZTAP chains and hooks")
+		logging.Infof("[DRY-RUN] iptables: would cleanup ZTAP chains and hooks")
 		return nil
 	}
 
@@ -125,7 +126,7 @@ func (e *IptablesEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	v4Rules, v6Rules := e.generateRestoreInput(policies)
 
 	if e.dryRun {
-		log.Printf("[DRY-RUN] iptables: would apply v4 and v6 rules via iptables-restore")
+		logging.Infof("[DRY-RUN] iptables: would apply v4 and v6 rules via iptables-restore")
 		return nil
 	}
 
@@ -136,11 +137,11 @@ func (e *IptablesEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	// Only apply v6 rules if ip6tables is available/enabled
 	if v6Rules != "" {
 		if err := e.runner.RunWithStdin(v6Rules, "ip6tables-restore", "--noflush"); err != nil {
-			log.Printf("Warning: ip6tables-restore failed: %v", err)
+			logging.Warnf("ip6tables-restore failed: %v", err)
 		}
 	}
 
-	log.Printf("Applied %d policies via iptables/ip6tables", len(policies))
+	logging.Infof("Applied %d policies via iptables/ip6tables", len(policies))
 	return nil
 }
 

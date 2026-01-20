@@ -2,9 +2,10 @@ package flow
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
+
+	"ztap/pkg/logging"
 )
 
 // Monitor implements FlowMonitor with subscriber management.
@@ -58,14 +59,14 @@ func (m *Monitor) Start(ctx context.Context) error {
 	// Start the platform-specific reader
 	go func() {
 		if err := m.reader.Start(ctx, rawEvents); err != nil {
-			log.Printf("Flow reader error: %v", err)
+			logging.Warnf("Flow reader error: %v", err)
 		}
 	}()
 
 	// Process events and distribute to subscribers
 	go m.processEvents(ctx, rawEvents, bootTime, stopCh)
 
-	log.Println("Flow monitor started")
+	logging.Info("Flow monitor started", nil)
 	return nil
 }
 
@@ -104,7 +105,7 @@ func (m *Monitor) Stop() error {
 		return err
 	}
 
-	log.Println("Flow monitor stopped")
+	logging.Info("Flow monitor stopped", nil)
 	return nil
 }
 

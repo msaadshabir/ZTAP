@@ -3,11 +3,11 @@ package cloud
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"sort"
 	"strings"
 
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
 	compute "cloud.google.com/go/compute/apiv1"
@@ -165,7 +165,7 @@ func (c *GCPClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, proj
 // SyncPolicyWithOptions reconciles firewall rules with optional dry-run behavior.
 func (c *GCPClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkPolicy, projectID, network string, opts GCPPolicySyncOptions) error {
 	safeName := sanitizePolicyName(p.Metadata.Name)
-	log.Printf("Syncing policy '%s' to GCP network %s/%s", safeName, projectID, network)
+	logging.Infof("Syncing policy '%s' to GCP network %s/%s", safeName, projectID, network)
 
 	networkURL := networkSelfLink(projectID, network)
 
@@ -210,12 +210,11 @@ func (c *GCPClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkP
 	if opts.DryRun {
 		for _, spec := range desired {
 			ruleName := c.rulePrefix + spec.name
-			log.Printf("[dry-run] would upsert rule %s with priority %d", ruleName, priority)
-			delete(managedExisting, ruleName)
+			logging.Infof("[dry-run] would upsert rule %s with priority %d", ruleName, priority)
 			priority++
 		}
 		for stale := range managedExisting {
-			log.Printf("[dry-run] would delete stale rule %s", stale)
+			logging.Infof("[dry-run] would delete stale rule %s", stale)
 		}
 		return nil
 	}

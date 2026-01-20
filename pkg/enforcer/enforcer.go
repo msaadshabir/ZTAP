@@ -3,11 +3,12 @@ package enforcer
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 )
 
@@ -94,17 +95,17 @@ func EnforceWithPF(opts EnforcementOptions) {
 	fmt.Printf("Applying %d pf-based policies on macOS\n", len(opts.Policies))
 
 	if os.Getenv("ZTAP_SKIP_PF") == "1" {
-		log.Println("Skipping pf enforcement due to ZTAP_SKIP_PF environment override")
+		logging.Warn("Skipping pf enforcement due to ZTAP_SKIP_PF environment override", nil)
 		return
 	}
 
 	if os.Geteuid() != 0 {
-		log.Println("pf enforcement requires root privileges; skipping rule application")
+		logging.Warn("pf enforcement requires root privileges; skipping rule application", nil)
 		return
 	}
 
 	if opts.DryRun {
-		log.Println("[DRY-RUN] Mode: Skipping pfctl execution")
+		logging.Info("[DRY-RUN] Mode: Skipping pfctl execution", nil)
 	}
 
 	// Create anchor file content
@@ -152,11 +153,11 @@ func EnforceWithPF(opts EnforcementOptions) {
 
 	anchorFile := "/etc/pf.anchors/ztap"
 	if err := os.MkdirAll(filepath.Dir(anchorFile), 0o750); err != nil {
-		log.Printf("Warning: failed to create pf anchors directory: %v", err)
+		logging.Warnf("failed to create pf anchors directory: %v", err)
 		return
 	}
 	if err := os.WriteFile(anchorFile, []byte(anchorContent), 0o600); err != nil {
-		log.Printf("Warning: failed to write pf anchor file: %v", err)
+		logging.Warnf("failed to write pf anchor file: %v", err)
 		return
 	}
 

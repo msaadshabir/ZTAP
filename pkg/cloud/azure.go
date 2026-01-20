@@ -3,10 +3,10 @@ package cloud
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -115,7 +115,7 @@ func NewAzureClientWithOptions(ctx context.Context, subscriptionID string, opts 
 // SyncPolicy converts a ZTAP policy into NSG security rules and reconciles them on the target NSG.
 func (c *AzureClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, resourceGroup, nsgName string) error {
 	safeName := sanitizePolicyName(p.Metadata.Name)
-	log.Printf("Syncing policy '%s' to NSG %s/%s", safeName, resourceGroup, nsgName)
+	logging.Infof("Syncing policy '%s' to NSG %s/%s", safeName, resourceGroup, nsgName)
 
 	desired, err := c.buildRules(p)
 	if err != nil {

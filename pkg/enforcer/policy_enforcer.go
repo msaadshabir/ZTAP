@@ -3,7 +3,6 @@ package enforcer
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,6 +11,7 @@ import (
 	"ztap/pkg/alert"
 	"ztap/pkg/audit"
 	"ztap/pkg/cluster"
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 )
 
@@ -49,7 +49,7 @@ func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
 	logPath := filepath.Join(homeDir, ".ztap", "audit.log")
 	auditLogger, err := audit.NewAuditLogger(logPath)
 	if err != nil {
-		log.Printf("Warning: failed to initialize audit logger: %v", err)
+		logging.Warnf("failed to initialize audit logger: %v", err)
 	}
 
 	return &PolicyEnforcer{
@@ -82,9 +82,9 @@ func (pe *PolicyEnforcer) Start(ctx context.Context) error {
 	}
 
 	if pe.dryRun {
-		log.Println("Policy enforcer started in DRY-RUN mode, watching for policy updates...")
+		logging.Info("Policy enforcer started in DRY-RUN mode, watching for policy updates...", nil)
 	} else {
-		log.Println("Policy enforcer started, watching for policy updates...")
+		logging.Info("Policy enforcer started, watching for policy updates...", nil)
 	}
 
 	// Subscribe to policy updates
@@ -111,7 +111,7 @@ func (pe *PolicyEnforcer) Stop() error {
 		pe.alerts.Close()
 	}
 
-	log.Println("Policy enforcer stopped")
+	logging.Info("Policy enforcer stopped", nil)
 	return nil
 }
 
@@ -128,11 +128,11 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 		case <-ctx.Done():
 			return
 		case <-pe.retriggerCh:
-			log.Println("Retriggering enforcement due to discovery update")
+			logging.Info("Retriggering enforcement due to discovery update", nil)
 			pe.reapplyAllPolicies()
 		case update, ok := <-updates:
 			if !ok {
-				log.Println("Policy update channel closed, stopping enforcement loop")
+				logging.Warn("Policy update channel closed, stopping enforcement loop", nil)
 				return
 			}
 
@@ -142,7 +142,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 			pe.mu.RUnlock()
 
 			if update.Version <= currentVersion {
-				log.Printf("Skipping policy %s v%d (already enforced v%d)",
+				logging.Debugf("Skipping policy %s v%d (already enforced v%d)",
 					sanitizeForLog(update.PolicyName), update.Version, currentVersion)
 				continue
 			}
@@ -150,7 +150,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 			// Apply the policy
 			startTime := time.Now()
 			if err := pe.applyPolicy(update); err != nil {
-				log.Printf("Failed to enforce policy %s v%d: %v",
+				logging.Warnf("Failed to enforce policy %s v%d: %v",
 					sanitizeForLog(update.PolicyName), update.Version, err)
 				cluster.RecordPolicyEnforcementError(update.PolicyName, "local-node")
 				pe.emitAlert(alert.Alert{
@@ -214,7 +214,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 					update.PolicyName, "enforce", details)
 			}
 
-			log.Printf("Successfully enforced policy %s v%d from %s",
+			logging.Infof("Successfully enforced policy %s v%d from %s",
 				sanitizeForLog(update.PolicyName), update.Version, sanitizeForLog(update.Source))
 		}
 	}
@@ -234,7 +234,7 @@ func (pe *PolicyEnforcer) reapplyAllPolicies() {
 	for _, update := range policies {
 		parsed, err := policy.LoadFromBytes(update.YAML)
 		if err != nil {
-			log.Printf("Error parsing policy %s during re-apply: %v", sanitizeForLog(update.PolicyName), err)
+			logging.Warnf("Error parsing policy %s during re-apply: %v", sanitizeForLog(update.PolicyName), err)
 			continue
 		}
 		allPolicies = append(allPolicies, parsed...)
@@ -244,7 +244,7 @@ func (pe *PolicyEnforcer) reapplyAllPolicies() {
 		resolver := policy.NewPolicyResolver(pe.discovery)
 		resolved, err := resolver.ResolvePodSelectorsToIPBlocks(allPolicies)
 		if err != nil {
-			log.Printf("Error resolving labels during re-apply: %v", err)
+			logging.Warnf("Error resolving labels during re-apply: %v", err)
 			return
 		}
 		allPolicies = resolved
@@ -305,7 +305,7 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 					activeWatches[key] = cancel
 					ch, err := pe.discovery.Watch(watchCtx, labels)
 					if err != nil {
-						log.Printf("Warning: failed to start watch for %v: %v", labels, err)
+						logging.Warnf("failed to start watch for %v: %v", labels, err)
 						continue
 					}
 					go func(labels map[string]string, ch <-chan []string) {
@@ -340,7 +340,7 @@ func (pe *PolicyEnforcer) applyPolicy(update cluster.PolicyUpdate) error {
 	}
 
 	if len(policies) == 0 {
-		log.Printf("Warning: policy %s contains no NetworkPolicy objects", sanitizeForLog(update.PolicyName))
+		logging.Warnf("policy %s contains no NetworkPolicy objects", sanitizeForLog(update.PolicyName))
 		return nil
 	}
 

@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
 	"ztap/pkg/enforcer"
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
 	"github.com/spf13/cobra"
@@ -25,19 +25,19 @@ var enforceCmd = &cobra.Command{
 
 		policies, err := policy.LoadFromFile(policyFile)
 		if err != nil {
-			log.Fatalf("Failed to load policy: %v", err)
+			logging.Fatalf("Failed to load policy: %v", err)
 		}
 
 		// Resolve labels if requested
 		if resolveLabels {
 			disc, err := getDiscoveryBackend()
 			if err != nil {
-				log.Fatalf("Failed to load discovery backend for label resolution: %v", err)
+				logging.Fatalf("Failed to load discovery backend for label resolution: %v", err)
 			}
 			resolver := policy.NewPolicyResolver(disc)
 			resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
 			if err != nil {
-				log.Fatalf("Failed to resolve pod selectors: %v", err)
+				logging.Fatalf("Failed to resolve pod selectors: %v", err)
 			}
 			policies = resolved
 			fmt.Printf("Resolved label selectors to %d concrete rule(s)\n", len(policies))
@@ -47,13 +47,13 @@ var enforceCmd = &cobra.Command{
 		named := make([]policy.NamedPolicy, 0, len(policies))
 		for _, p := range policies {
 			if err := p.Validate(); err != nil {
-				log.Fatalf("Invalid policy: %v", err)
+				logging.Fatalf("Invalid policy: %v", err)
 			}
 			named = append(named, policy.NamedPolicy{PolicyName: policyName, Policy: p})
 		}
 		for i, np := range named {
 			if err := policy.CheckConflicts(named[:i], np); err != nil {
-				log.Fatalf("Policy conflict: %v", err)
+				logging.Fatalf("Policy conflict: %v", err)
 			}
 		}
 
@@ -62,17 +62,17 @@ var enforceCmd = &cobra.Command{
 		// Detect OS and choose enforcer
 		if enforcer.IsLinux() {
 			if os.Geteuid() != 0 {
-				log.Fatalf("eBPF enforcement requires root privileges")
+				logging.Fatalf("eBPF enforcement requires root privileges")
 			}
 			if cgroupPath == "" {
 				cgroupPath = "/sys/fs/cgroup"
 			}
 			if _, err := os.Stat(cgroupPath); err != nil {
-				log.Fatalf("Invalid cgroup path %s: %v", cgroupPath, err)
+				logging.Fatalf("Invalid cgroup path %s: %v", cgroupPath, err)
 			}
 			if bpfObject != "" {
 				if _, err := os.Stat(bpfObject); err != nil {
-					log.Fatalf("Invalid --bpf-object %s: %v", bpfObject, err)
+					logging.Fatalf("Invalid --bpf-object %s: %v", bpfObject, err)
 				}
 				_ = os.Setenv("ZTAP_BPF_OBJECT", bpfObject)
 			}
@@ -80,7 +80,7 @@ var enforceCmd = &cobra.Command{
 				_ = os.Setenv("ZTAP_DEBUG_EBPF", "1")
 			}
 			if err := enforcer.ValidatePoliciesForLinux(policies); err != nil {
-				log.Fatalf("Policy is not supported by enforcer yet: %v", err)
+				logging.Fatalf("Policy is not supported by enforcer yet: %v", err)
 			}
 
 			opts := enforcer.EnforcementOptions{
@@ -90,7 +90,7 @@ var enforceCmd = &cobra.Command{
 			}
 
 			if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
-				log.Fatalf("Failed to enforce: %v", err)
+				logging.Fatalf("Failed to enforce: %v", err)
 			}
 
 			if dryRun {
@@ -104,7 +104,7 @@ var enforceCmd = &cobra.Command{
 			<-sigCh
 			stopStopSignals(sigCh)
 			if err := enforcer.StopLinuxEnforcement(); err != nil {
-				log.Printf("Warning: failed to stop enforcement cleanly: %v", err)
+				logging.Warnf("failed to stop enforcement cleanly: %v", err)
 			}
 			fmt.Println("Enforcement stopped.")
 			return
@@ -115,7 +115,7 @@ var enforceCmd = &cobra.Command{
 				DryRun:   dryRun,
 			}
 			if err := enforcer.EnforceWithWFP(opts); err != nil {
-				log.Fatalf("Failed to enforce via WFP: %v", err)
+				logging.Fatalf("Failed to enforce via WFP: %v", err)
 			}
 
 			if dryRun {
@@ -129,7 +129,7 @@ var enforceCmd = &cobra.Command{
 			<-sigCh
 			stopStopSignals(sigCh)
 			if err := enforcer.StopWFPEnforcement(); err != nil {
-				log.Printf("Warning: failed to stop WFP enforcement cleanly: %v", err)
+				logging.Warnf("failed to stop WFP enforcement cleanly: %v", err)
 			}
 			fmt.Println("Enforcement stopped.")
 			return

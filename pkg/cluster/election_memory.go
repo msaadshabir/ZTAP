@@ -3,9 +3,10 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
+
+	"ztap/pkg/logging"
 )
 
 // InMemoryElection implements a simple in-memory leader election for development and testing.
@@ -89,7 +90,7 @@ func (e *InMemoryElection) Start(ctx context.Context) error {
 
 	go e.runElectionLoop(ctx)
 	safeNodeID := sanitizeForLog(e.config.NodeID)
-	log.Printf("In-memory leader election started for node %s", safeNodeID)
+	logging.Infof("In-memory leader election started for node %s", safeNodeID)
 
 	return nil
 }
@@ -338,7 +339,7 @@ func (e *InMemoryElection) checkAndElect() {
 
 	// Check for leader timeout
 	if time.Since(e.leader.LastSeen) > e.config.ElectionTimeout {
-		log.Printf("Leader %s timed out; triggering election", sanitizeForLog(e.leader.ID))
+		logging.Warnf("Leader %s timed out; triggering election", sanitizeForLog(e.leader.ID))
 		e.triggerElection()
 	}
 }
@@ -365,7 +366,7 @@ func (e *InMemoryElection) triggerElection() {
 		e.lastElection = time.Now()
 
 		safeLeaderID := sanitizeForLog(e.leader.ID)
-		log.Printf("New leader elected: %s (this node leader=%v)", safeLeaderID, e.isLeader)
+		logging.Infof("New leader elected: %s (this node leader=%v)", safeLeaderID, e.isLeader)
 
 		// Notify leader change watchers
 		e.broadcastLeaderChange(e.leader)
@@ -386,7 +387,7 @@ func (e *InMemoryElection) broadcastChange(change ClusterStateChange) {
 		select {
 		case ch <- change:
 		default:
-			log.Printf("Warning: node change channel full, dropping event")
+			logging.Warn("node change channel full, dropping event", nil)
 		}
 	}
 }
@@ -398,7 +399,7 @@ func (e *InMemoryElection) broadcastLeaderChange(leader *Node) {
 		select {
 		case ch <- leader:
 		default:
-			log.Printf("Warning: leader change channel full, dropping event")
+			logging.Warn("leader change channel full, dropping event", nil)
 		}
 	}
 }

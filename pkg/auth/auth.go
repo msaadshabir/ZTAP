@@ -7,12 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"ztap/pkg/logging"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -185,7 +186,7 @@ func (am *AuthManager) createDefaultAdmin() error {
 	}
 
 	if fromEnv {
-		log.Println("WARNING: Created default admin user 'admin'. Change the password immediately using 'ztap user change-password'.")
+		logging.Warn("Created default admin user 'admin'. Change the password immediately using 'ztap user change-password'.", nil)
 		return nil
 	}
 
@@ -193,7 +194,7 @@ func (am *AuthManager) createDefaultAdmin() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("WARNING: Created default admin user 'admin'. Bootstrap password written to %s (delete after use).", path)
+	logging.Warnf("Created default admin user 'admin'. Bootstrap password written to %s (delete after use).", path)
 	return nil
 }
 

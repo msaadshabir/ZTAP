@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
 
 	"ztap/pkg/cloud"
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
 	"github.com/spf13/cobra"
@@ -108,7 +108,7 @@ var azureNSGSyncCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := loadAzureConfig()
 		if err != nil {
-			log.Fatalf("Failed to load config: %v", err)
+			logging.Fatalf("Failed to load config: %v", err)
 		}
 
 		flagSub, _ := cmd.Flags().GetString("subscription-id")
@@ -127,19 +127,19 @@ var azureNSGSyncCmd = &cobra.Command{
 		}
 
 		if subscriptionID == "" || resourceGroup == "" || nsgName == "" {
-			log.Fatalf("subscription-id, resource-group, and nsg are required")
+			logging.Fatalf("subscription-id, resource-group, and nsg are required")
 		}
 
 		policies, err := policy.LoadFromFile(args[0])
 		if err != nil {
-			log.Fatalf("Failed to read policy: %v", err)
+			logging.Fatalf("Failed to read policy: %v", err)
 		}
 		if len(policies) == 0 {
-			log.Fatalf("Policy file contains no NetworkPolicy objects")
+			logging.Fatalf("Policy file contains no NetworkPolicy objects")
 		}
 		for _, p := range policies {
 			if err := p.Validate(); err != nil {
-				log.Fatalf("Invalid policy: %v", err)
+				logging.Fatalf("Invalid policy: %v", err)
 			}
 		}
 
@@ -154,12 +154,12 @@ var azureNSGSyncCmd = &cobra.Command{
 		ctx := context.Background()
 		client, err := cloud.NewAzureClientWithOptions(ctx, subscriptionID, opts)
 		if err != nil {
-			log.Fatalf("Failed to initialize Azure client: %v", err)
+			logging.Fatalf("Failed to initialize Azure client: %v", err)
 		}
 
 		for _, p := range policies {
 			if err := client.SyncPolicy(ctx, p, resourceGroup, nsgName); err != nil {
-				log.Fatalf("Failed to sync policy %s: %v", p.Metadata.Name, err)
+				logging.Fatalf("Failed to sync policy %s: %v", p.Metadata.Name, err)
 			}
 		}
 

@@ -3,9 +3,9 @@ package cloud
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -108,7 +108,7 @@ func (c *AWSClient) DiscoverResources(ctx context.Context) ([]Resource, error) {
 func (c *AWSClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, sgID string) error {
 	safeName := strings.ReplaceAll(p.Metadata.Name, "\n", "")
 	safeName = strings.ReplaceAll(safeName, "\r", "")
-	log.Printf("Syncing policy '%s' to Security Group %s", safeName, sgID)
+	logging.Infof("Syncing policy '%s' to Security Group %s", safeName, sgID)
 
 	// For each egress rule in policy
 	for _, egress := range p.Spec.Egress {
@@ -124,7 +124,7 @@ func (c *AWSClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, sgID
 
 		// Handle label-based rules (resolve labels to IPs first)
 		if len(egress.To.PodSelector.MatchLabels) > 0 {
-			log.Printf("Note: Label-based rules require IP resolution from inventory")
+			logging.Warn("Label-based rules require IP resolution from inventory", nil)
 			// In production: query discovered resources, match labels, extract IPs
 			// For now: log as warning
 		}
@@ -164,13 +164,13 @@ func (c *AWSClient) authorizeEgress(ctx context.Context, sgID, cidr, protocol st
 	if err != nil {
 		// Ignore "duplicate rule" errors
 		if strings.Contains(err.Error(), "already exists") {
-			log.Printf("Rule already exists: %s:%d -> %s", protocol, port, cidr)
+			logging.Infof("Rule already exists: %s:%d -> %s", protocol, port, cidr)
 			return nil
 		}
 		return err
 	}
 
-	log.Printf("Authorized egress: %s:%d -> %s in %s", protocol, port, cidr, sgID)
+	logging.Infof("Authorized egress: %s:%d -> %s in %s", protocol, port, cidr, sgID)
 	return nil
 }
 
@@ -204,7 +204,7 @@ func (c *AWSClient) RevokeAllEgress(ctx context.Context, sgID string) error {
 		return fmt.Errorf("failed to revoke egress rules: %w", err)
 	}
 
-	log.Printf("Revoked all egress rules from %s", sgID)
+	logging.Infof("Revoked all egress rules from %s", sgID)
 	return nil
 }
 

@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
 
 	"ztap/pkg/cloud"
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
 	"github.com/spf13/cobra"
@@ -94,7 +94,7 @@ var gcpFirewallSyncCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := loadGCPConfig()
 		if err != nil {
-			log.Fatalf("Failed to load config: %v", err)
+			logging.Fatalf("Failed to load config: %v", err)
 		}
 
 		flagProject, _ := cmd.Flags().GetString("project-id")
@@ -114,7 +114,7 @@ var gcpFirewallSyncCmd = &cobra.Command{
 		}
 
 		if projectID == "" || network == "" {
-			log.Fatalf("project-id and network are required")
+			logging.Fatalf("project-id and network are required")
 		}
 
 		cloudOpts := cloud.GCPOptions{}
@@ -128,26 +128,26 @@ var gcpFirewallSyncCmd = &cobra.Command{
 		ctx := context.Background()
 		client, err := cloud.NewGCPClient(ctx, cloudOpts)
 		if err != nil {
-			log.Fatalf("Failed to initialize GCP client: %v", err)
+			logging.Fatalf("Failed to initialize GCP client: %v", err)
 		}
 
 		runOnce := func() {
 			policies, err := policy.LoadFromFile(args[0])
 			if err != nil {
-				log.Fatalf("Failed to read policy: %v", err)
+				logging.Fatalf("Failed to read policy: %v", err)
 			}
 			if len(policies) == 0 {
-				log.Fatalf("Policy file contains no NetworkPolicy objects")
+				logging.Fatalf("Policy file contains no NetworkPolicy objects")
 			}
 			for _, p := range policies {
 				if err := p.Validate(); err != nil {
-					log.Fatalf("Invalid policy: %v", err)
+					logging.Fatalf("Invalid policy: %v", err)
 				}
 			}
 
 			for _, p := range policies {
 				if err := client.SyncPolicyWithOptions(ctx, p, projectID, network, cloud.GCPPolicySyncOptions{DryRun: dryRun}); err != nil {
-					log.Fatalf("Failed to sync policy %s: %v", p.Metadata.Name, err)
+					logging.Fatalf("Failed to sync policy %s: %v", p.Metadata.Name, err)
 				}
 			}
 
@@ -173,7 +173,7 @@ var gcpFirewallSyncCmd = &cobra.Command{
 		for {
 			info, err := os.Stat(args[0])
 			if err != nil {
-				log.Fatalf("stat policy file: %v", err)
+				logging.Fatalf("stat policy file: %v", err)
 			}
 			mod := info.ModTime()
 			if lastMod.IsZero() || mod.After(lastMod) {

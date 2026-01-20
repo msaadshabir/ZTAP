@@ -3,12 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"text/tabwriter"
 
 	"ztap/pkg/cloud"
+	"ztap/pkg/logging"
 
 	"github.com/spf13/cobra"
 )
@@ -42,14 +42,14 @@ var statusCmd = &cobra.Command{
 			ctx := context.Background()
 			client, err := cloud.NewAWSClient(ctx, region)
 			if err != nil {
-				log.Printf("Warning: Failed to initialize AWS client: %v", err)
-				log.Println("  Make sure AWS credentials are configured (aws configure)")
+				logging.Warnf("Failed to initialize AWS client: %v", err)
+				logging.Warnf("Make sure AWS credentials are configured (aws configure)")
 				return
 			}
 
 			resources, err := client.DiscoverResources(ctx)
 			if err != nil {
-				log.Printf("Warning: Failed to discover AWS resources: %v", err)
+				logging.Warnf("Failed to discover AWS resources: %v", err)
 				return
 			}
 

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +10,7 @@ import (
 	"ztap/pkg/cluster"
 	"ztap/pkg/discovery"
 	"ztap/pkg/enforcer"
+	"ztap/pkg/logging"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
@@ -34,19 +34,19 @@ var agentCmd = &cobra.Command{
 
 		config, err := rest.InClusterConfig()
 		if err != nil {
-			log.Fatalf("Failed to get in-cluster config: %v", err)
+			logging.Fatalf("Failed to get in-cluster config: %v", err)
 		}
 
 		clientset, err := kubernetes.NewForConfig(config)
 		if err != nil {
-			log.Fatalf("Failed to create kubernetes client: %v", err)
+			logging.Fatalf("Failed to create kubernetes client: %v", err)
 		}
 
 		policySync := cluster.NewK8sPolicySync(clientset, namespace)
 
 		disc, err := discovery.NewK8sDiscovery(clientset, namespace)
 		if err != nil {
-			log.Fatalf("Failed to create kubernetes discovery: %v", err)
+			logging.Fatalf("Failed to create kubernetes discovery: %v", err)
 		}
 
 		pe := enforcer.NewPolicyEnforcer(enforcer.PolicyEnforcerConfig{
@@ -61,15 +61,15 @@ var agentCmd = &cobra.Command{
 		defer cancel()
 
 		if err := disc.Start(ctx); err != nil {
-			log.Fatalf("Failed to start discovery: %v", err)
+			logging.Fatalf("Failed to start discovery: %v", err)
 		}
 
 		if err := policySync.Start(ctx); err != nil {
-			log.Fatalf("Failed to start policy sync: %v", err)
+			logging.Fatalf("Failed to start policy sync: %v", err)
 		}
 
 		if err := pe.Start(ctx); err != nil {
-			log.Fatalf("Failed to start policy enforcer: %v", err)
+			logging.Fatalf("Failed to start policy enforcer: %v", err)
 		}
 
 		fmt.Printf("ZTAP Agent started in namespace %s. Watching for policies...\n", namespace)
@@ -81,13 +81,13 @@ var agentCmd = &cobra.Command{
 		fmt.Println("Shutting down agent...")
 		cancel()
 		if err := disc.Stop(); err != nil {
-			log.Printf("Warning: failed to stop discovery: %v", err)
+			logging.Warnf("failed to stop discovery: %v", err)
 		}
 		if err := pe.Stop(); err != nil {
-			log.Printf("Warning: failed to stop policy enforcer: %v", err)
+			logging.Warnf("failed to stop policy enforcer: %v", err)
 		}
 		if err := policySync.Stop(); err != nil {
-			log.Printf("Warning: failed to stop policy sync: %v", err)
+			logging.Warnf("failed to stop policy sync: %v", err)
 		}
 	},
 }

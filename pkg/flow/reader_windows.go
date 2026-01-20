@@ -4,9 +4,10 @@ package flow
 
 import (
 	"context"
-	"log"
 	"sync"
 	"syscall"
+
+	"ztap/pkg/logging"
 
 	"golang.org/x/sys/windows"
 )
@@ -50,7 +51,7 @@ func (r *WindowsReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent) 
 	r.running = true
 	r.mu.Unlock()
 
-	log.Println("Windows flow reader started (WFP NetEvents)")
+	logging.Info("Windows flow reader started (WFP NetEvents)", nil)
 
 	// For now, we'll simulate events or wait for stop
 	// Real implementation requires complex callback handling with syscall.NewCallback

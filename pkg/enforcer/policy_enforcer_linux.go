@@ -3,8 +3,9 @@
 package enforcer
 
 import (
-	"log"
 	"os"
+
+	"ztap/pkg/logging"
 )
 
 var activeIptablesEnforcer *IptablesEnforcer
@@ -13,17 +14,17 @@ var activeIptablesEnforcer *IptablesEnforcer
 func EnforceWithEBPFIfAvailable(opts EnforcementOptions) error {
 	if CanUseEBPF() {
 		if opts.DryRun {
-			log.Println("[DRY-RUN] Enforcing via eBPF (Linux)...")
+			logging.Info("[DRY-RUN] Enforcing via eBPF (Linux)...", nil)
 		} else {
-			log.Println("Enforcing via eBPF (Linux)...")
+			logging.Info("Enforcing via eBPF (Linux)...", nil)
 		}
 		return EnforceWithEBPFReal(opts)
 	}
 
 	if opts.DryRun {
-		log.Println("[DRY-RUN] Enforcing via iptables fallback (Linux)...")
+		logging.Info("[DRY-RUN] Enforcing via iptables fallback (Linux)...", nil)
 	} else {
-		log.Println("Enforcing via iptables fallback (Linux)...")
+		logging.Info("Enforcing via iptables fallback (Linux)...", nil)
 	}
 	activeIptablesEnforcer = NewIptablesEnforcer()
 	if err := activeIptablesEnforcer.Init(); err != nil {
@@ -46,7 +47,7 @@ func StopLinuxEnforcement() error {
 // CanUseEBPF returns true if the current environment supports eBPF enforcement.
 func CanUseEBPF() bool {
 	if os.Getenv("ZTAP_FORCE_IPTABLES") == "1" {
-		log.Println("ZTAP_FORCE_IPTABLES is set, forcing iptables fallback")
+		logging.Warn("ZTAP_FORCE_IPTABLES is set, forcing iptables fallback", nil)
 		return false
 	}
 
