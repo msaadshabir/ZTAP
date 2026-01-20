@@ -106,6 +106,8 @@ Configure ZTAP via environment variables in `docker-compose.yml`:
 ```yaml
 environment:
   - ZTAP_LOG_LEVEL=info
+  - ZTAP_LOG_FORMAT=json
+  - ZTAP_LOG_FILE=/var/log/ztap/ztap.log
   - ZTAP_METRICS_PORT=9090
   - ZTAP_AUTH_DB=/var/lib/ztap/auth.db
 ```
@@ -115,7 +117,7 @@ environment:
 Persistent data is stored in Docker volumes:
 
 - `ztap-data`: Policy state and authentication database
-- `ztap-logs`: Enforcement logs
+- `ztap-logs`: ZTAP logs
 - `prometheus-data`: Metrics time-series data
 - `grafana-data`: Dashboards and configuration
 - `anomaly-data`: ML training data
@@ -283,7 +285,10 @@ docker-compose run --rm anomaly-detector python -m pytest test_service.py -v
 
 ```bash
 # Run with debug logging
-docker-compose run --rm ztap ztap --debug status
+docker-compose run --rm ztap ztap --log-level debug status
+
+# Or via environment variable
+docker-compose run --rm ztap env ZTAP_LOG_LEVEL=debug ztap status
 
 # Interactive shell
 docker-compose run --rm ztap sh

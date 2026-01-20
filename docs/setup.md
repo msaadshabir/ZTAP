@@ -395,11 +395,25 @@ sudo ztap enforce -f policy.yaml
 # View all logs
 ztap logs
 
+# Only show warnings/errors
+ztap logs --level warn
+
 # Filter by policy
 ztap logs --policy web-to-db
 
 # Follow logs in real-time
 ztap logs --follow
+```
+
+You can control log verbosity globally with:
+
+```bash
+ztap --log-level debug status
+
+# Or via environment variables
+export ZTAP_LOG_LEVEL=debug
+export ZTAP_LOG_FORMAT=json
+export ZTAP_LOG_FILE=~/.ztap/ztap.log
 ```
 
 ### 3. Check Status

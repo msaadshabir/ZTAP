@@ -17,7 +17,7 @@ discovery:
 # Logging settings
 logging:
   level: info # debug, info, warn, error
-  file: ~/.ztap/enforcement.log
+  file: ~/.ztap/ztap.log # newline-delimited logs (json or text)
   format: json # json or text
 
 # Alerting settings

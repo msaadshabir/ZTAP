@@ -571,13 +571,14 @@ curl http://localhost:2379/metrics
 
 ### Logging
 
-Enable verbose logging:
+Enable verbose logging via the ZTAP logger:
 
-```go
-import "log"
+```bash
+# Global env override
+ZTAP_LOG_LEVEL=debug ztap cluster status
 
-// Set log level to debug
-log.SetFlags(log.LstdFlags | log.Lshortfile)
+# Or via global CLI flag
+ztap --log-level debug cluster status
 ```
 
 ---

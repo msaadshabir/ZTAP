@@ -245,7 +245,7 @@ Commands:
   cluster     Manage cluster coordination (status, join, leave, list)
   policy      Distributed policy management (sync, list, watch, show, history, rollback)
   flows       Real-time flow event monitoring (--follow, --action, --protocol)
-  logs        View enforcement logs (with --follow and --policy filters)
+  logs        View ZTAP logs (with --follow, --level, --policy filters)
   metrics     Start Prometheus metrics server
   user        Manage users (create, login, list, change-password)
   discovery   Service discovery (register, resolve, list)
