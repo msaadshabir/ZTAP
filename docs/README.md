@@ -60,6 +60,14 @@ Core endpoints:
 - `GET /v1/flows/stream` (SSE stream)
 - `GET /metrics`
 
+Config backup/restore notes:
+
+- `POST /v1/config/backup` accepts an optional JSON body with include flags. Defaults (Option B) include only stable/implemented exports: users, sessions, config stub.
+- Export is best-effort; skipped components are recorded in `manifest.warnings` inside the bundle.
+- `POST /v1/config/restore` supports `dry_run=1` (plan only) and `force=1` (apply even if files will be overwritten). Without `force=1`, destructive restores return `409`.
+- Restore uploads are size-capped (default: 100 MiB); oversized uploads return `413`.
+- A restart is required after applying a restore.
+
 Notes:
 
 - `/healthz` and `/readyz` are unauthenticated and intended for Kubernetes probes.

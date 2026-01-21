@@ -29,6 +29,7 @@
 - Real-time flow event monitoring (`ztap flows` with `--follow` streaming)
 - Policy conflict detection (structural + overlap)
 - REST API server (basic v1 endpoints via `ztap api serve`)
+- Configuration backup/restore via REST (`POST /v1/config/backup`, `POST /v1/config/restore`) with `backup_restore` permission (auth users + sessions (SQLite) + config stub; optional policy snapshot; discovery export not implemented yet)
 - gRPC interface (basic v1 RPCs via `ztap grpc serve`)
 - TLS/HTTPS support for API and gRPC servers
 - Alerting with webhook integrations (Slack, PagerDuty)
@@ -47,7 +48,6 @@
 
 ### Operational Readiness
 
-- **Configuration backup/restore** - Export/import config bundles via REST (`POST /v1/config/backup`, `POST /v1/config/restore`) with `backup_restore` permission; current scope: auth users + sessions (SQLite), policy current snapshot (optional), config stub, discovery export not implemented yet
 - **Windows flow monitoring** - Complete WFP flow event capture
 
 ### Compliance and Enterprise

@@ -23,6 +23,9 @@ type APIProvider struct {
 
 	// Optional: current policy YAML snapshot. If empty, policy is skipped.
 	PolicyCurrentYAML []byte
+
+	// Optional: if PolicyCurrentYAML is empty, include this warning detail.
+	PolicyCurrentWarning string
 }
 
 func (p *APIProvider) Export(ctx context.Context, w *Writer, opts BackupOptions) (FeatureFlags, []string, error) {
@@ -74,7 +77,11 @@ func (p *APIProvider) Export(ctx context.Context, w *Writer, opts BackupOptions)
 
 	if opts.IncludePolicyCurrent {
 		if len(p.PolicyCurrentYAML) == 0 {
-			warnings = append(warnings, "policy current yaml not available; skipping policy")
+			if strings.TrimSpace(p.PolicyCurrentWarning) != "" {
+				warnings = append(warnings, p.PolicyCurrentWarning)
+			} else {
+				warnings = append(warnings, "policy current yaml not available; skipping policy")
+			}
 		} else {
 			if _, err := w.WriteFile("policy/current.yaml", "text/yaml", p.PolicyCurrentYAML, 0600); err != nil {
 				return FeatureFlags{}, nil, err
@@ -134,6 +141,21 @@ func (p *APIProvider) PlanRestore(ctx context.Context, extractedDir string) (Res
 				plan.RequiresForce = true
 			}
 		}
+	}
+
+	// Detect non-restorable items present in the bundle so operators understand
+	// why certain bundle contents won't be applied.
+	if _, err := os.Stat(filepath.Join(extractedDir, "policy", "current.yaml")); err == nil {
+		plan.Warnings = append(plan.Warnings, "policy restore not implemented yet; skipping policy/current.yaml")
+	}
+	if _, err := os.Stat(filepath.Join(extractedDir, "config", "effective.json")); err == nil {
+		plan.Warnings = append(plan.Warnings, "config restore not implemented yet; skipping config/effective.json")
+	}
+	if _, err := os.Stat(filepath.Join(extractedDir, "discovery", "snapshot.json")); err == nil {
+		plan.Warnings = append(plan.Warnings, "discovery snapshot restore not implemented yet; skipping discovery/snapshot.json")
+	}
+	if _, err := os.Stat(filepath.Join(extractedDir, "policy", "revisions.json")); err == nil {
+		plan.Warnings = append(plan.Warnings, "policy revisions restore not implemented yet; skipping policy/revisions.json")
 	}
 
 	// Policy/discovery/config restore is backend-dependent; report best-effort.

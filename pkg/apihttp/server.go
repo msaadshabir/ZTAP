@@ -32,6 +32,10 @@ type Config struct {
 	AuthEnabled bool
 	TLS         TLSConfig
 	RateLimit   RateLimitConfig
+
+	// MaxRestoreBytes is the maximum allowed size (in bytes) for the request body
+	// of POST /v1/config/restore. If 0, a default is used.
+	MaxRestoreBytes int64
 }
 
 type RateLimitConfig struct {
@@ -69,6 +73,7 @@ type Server struct {
 	flowReader         func() flow.FlowReader
 	alerts             *alert.Manager
 	sessionsSQLitePath string
+	policyCurrentYAML  func(context.Context) ([]byte, error)
 
 	rateLimiter *ratelimit.Store
 	rlAllowed   *prometheus.CounterVec
@@ -84,12 +89,19 @@ type ServerOptions struct {
 
 	SessionsSQLitePath string
 
+	// PolicyCurrentYAMLFunc returns a YAML snapshot of the current effective
+	// policy. It is used only when a backup request includes policy current.
+	PolicyCurrentYAMLFunc func(context.Context) ([]byte, error)
+
 	FlowReaderFactory func() flow.FlowReader
 }
 
 func NewServer(opts ServerOptions) (*Server, error) {
 	if strings.TrimSpace(opts.Config.Listen) == "" {
 		opts.Config.Listen = "127.0.0.1:8080"
+	}
+	if opts.Config.MaxRestoreBytes == 0 {
+		opts.Config.MaxRestoreBytes = 100 << 20 // 100 MiB
 	}
 	if opts.AuthManager == nil {
 		am, err := defaultAuthManager()
@@ -119,6 +131,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		flowReader:         opts.FlowReaderFactory,
 		alerts:             opts.Alerts,
 		sessionsSQLitePath: opts.SessionsSQLitePath,
+		policyCurrentYAML:  opts.PolicyCurrentYAMLFunc,
 	}
 
 	s.initRateLimiting()

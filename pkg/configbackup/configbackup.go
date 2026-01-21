@@ -32,11 +32,12 @@ type BackupOptions struct {
 
 func DefaultBackupOptions() BackupOptions {
 	return BackupOptions{
+		// Option B defaults: only stable, implemented exports by default.
 		IncludeUsers:           true,
 		IncludeSessions:        true,
-		IncludePolicyCurrent:   true,
-		IncludePolicyRevisions: true,
-		IncludeDiscovery:       true,
+		IncludePolicyCurrent:   false,
+		IncludePolicyRevisions: false,
+		IncludeDiscovery:       false,
 		IncludeConfig:          true,
 	}
 }
@@ -67,6 +68,7 @@ type Manifest struct {
 	CreatedAt     string         `json:"created_at"`
 	Host          HostInfo       `json:"host"`
 	Features      FeatureFlags   `json:"features"`
+	Warnings      []string       `json:"warnings,omitempty"`
 	Items         []ManifestItem `json:"items"`
 }
 
@@ -127,6 +129,7 @@ func (s *Service) Backup(ctx context.Context, dst io.Writer, opts BackupOptions,
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 		Host:          host,
 		Features:      features,
+		Warnings:      append([]string(nil), warnings...),
 		Items:         items,
 	}
 
@@ -150,8 +153,6 @@ func (s *Service) Backup(ctx context.Context, dst io.Writer, opts BackupOptions,
 			return Manifest{}, err
 		}
 	}
-
-	_ = warnings
 
 	return m, nil
 }

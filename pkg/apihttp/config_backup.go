@@ -58,6 +58,14 @@ func (s *Server) handleConfigBackup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	provider := &configbackup.APIProvider{Auth: s.auth, SessionsSQLitePath: s.sessionsSQLitePath}
+	if opts.IncludePolicyCurrent && s.policyCurrentYAML != nil {
+		yamlBytes, err := s.policyCurrentYAML(r.Context())
+		if err != nil {
+			provider.PolicyCurrentWarning = "failed to snapshot current policy; skipping: " + err.Error()
+		} else {
+			provider.PolicyCurrentYAML = yamlBytes
+		}
+	}
 	svc := configbackup.NewService(provider)
 
 	w.Header().Set("Content-Type", "application/gzip")
@@ -89,8 +97,14 @@ func (s *Server) handleConfigRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	manifest, plan, report, err := svc.Restore(r.Context(), r.Body, tmpDir, configbackup.RestoreOptions{DryRun: dryRun, Force: force})
+	body := http.MaxBytesReader(w, r.Body, s.cfg.MaxRestoreBytes)
+	manifest, plan, report, err := svc.Restore(r.Context(), body, tmpDir, configbackup.RestoreOptions{DryRun: dryRun, Force: force})
 	if err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeError(w, http.StatusRequestEntityTooLarge, errors.New("bundle too large"))
+			return
+		}
 		if errors.Is(err, context.Canceled) {
 			writeError(w, http.StatusRequestTimeout, err)
 			return

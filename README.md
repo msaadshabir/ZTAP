@@ -297,6 +297,14 @@ Rate limiting:
 - `GET /v1/flows/stream` (SSE)
 - `GET /metrics`
 
+Config backup/restore notes:
+
+- Backup request body is optional JSON; implemented flags: `include_users`, `include_sessions`, `include_config` (defaults: true). Optional: `include_policy_current` (defaults: false).
+- Export is best-effort: unavailable items are skipped and recorded in `manifest.warnings` inside the bundle.
+- Restore supports `dry_run=1` to preview changes and `force=1` to apply; without `force=1`, destructive restores return `409`.
+- Restore request body is capped (default: 100 MiB); oversized uploads return `413`.
+- Restore writes files atomically but requires a process restart to take effect.
+
 gRPC services (v1):
 
 - `ztap.api.v1.AuthService` (`Login`, `WhoAmI`)

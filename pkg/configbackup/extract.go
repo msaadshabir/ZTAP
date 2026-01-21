@@ -55,6 +55,9 @@ func (s *Service) Restore(ctx context.Context, src io.Reader, extractedDir strin
 	if err != nil {
 		return Manifest{}, RestorePlan{}, RestoreReport{}, err
 	}
+	if len(plan.Warnings) > 0 {
+		rep.Warnings = append(append([]string(nil), plan.Warnings...), rep.Warnings...)
+	}
 	rep.RestartRequired = true
 	return manifest, plan, rep, nil
 }
