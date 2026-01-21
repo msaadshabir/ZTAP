@@ -21,10 +21,10 @@ var flowsCmd = &cobra.Command{
 	Short: "View real-time network flow events",
 	Long: `Display real-time network flow events captured by the eBPF enforcer.
 
-This command requires:
-  - Linux with kernel 5.7+ and eBPF support
-  - Root privileges or CAP_BPF capability
-  - Active policy enforcement via 'ztap enforce'
+	This command requires:
+	  - Linux: kernel 5.7+ with eBPF support (best fidelity)
+	  - Windows: WFP NetEvents subscription (best effort; requires admin/BFE access)
+	  - Active policy enforcement via 'ztap enforce' to see block/allow decisions
 
 Examples:
   ztap flows                    # Show recent flows
@@ -63,7 +63,7 @@ func runFlows(cmd *cobra.Command, args []string) {
 
 	// Check platform
 	if !isFlowMonitoringAvailable() {
-		fmt.Println("Flow monitoring requires Linux with eBPF support.")
+		fmt.Println("Flow monitoring is not available on this platform.")
 		fmt.Println("On macOS, flow events are simulated for demonstration.")
 		fmt.Println()
 	}
@@ -76,7 +76,8 @@ func runFlows(cmd *cobra.Command, args []string) {
 }
 
 func isFlowMonitoringAvailable() bool {
-	return runtime.GOOS == "linux" || fileExists("/proc/version")
+	// Linux: eBPF ring buffer; Windows: WFP NetEvents subscription.
+	return runtime.GOOS == "linux" || runtime.GOOS == "windows" || fileExists("/proc/version")
 }
 
 func fileExists(path string) bool {
