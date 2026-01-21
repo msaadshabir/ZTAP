@@ -301,9 +301,24 @@ func (s *Server) initRateLimiting() {
 		perTok.Burst = rcfg.PerToken.Burst
 	}
 	rcfg.PerToken = ratelimit.BucketConfig{RPS: perTok.RPS, Burst: perTok.Burst}
+	exemptPaths := append([]string(nil), rcfg.ExemptPaths...)
 	if len(s.cfg.RateLimit.ExemptPaths) > 0 {
-		rcfg.ExemptPaths = append([]string(nil), s.cfg.RateLimit.ExemptPaths...)
+		seen := make(map[string]struct{}, len(exemptPaths))
+		for _, path := range exemptPaths {
+			seen[path] = struct{}{}
+		}
+		for _, path := range s.cfg.RateLimit.ExemptPaths {
+			if path == "" {
+				continue
+			}
+			if _, ok := seen[path]; ok {
+				continue
+			}
+			exemptPaths = append(exemptPaths, path)
+			seen[path] = struct{}{}
+		}
 	}
+	rcfg.ExemptPaths = exemptPaths
 
 	s.rateLimiter = ratelimit.NewStore(rcfg)
 

@@ -60,12 +60,21 @@ Core endpoints:
 - `GET /v1/flows/stream` (SSE stream)
 - `GET /metrics`
 
+Notes:
+
+- `/healthz` and `/readyz` are unauthenticated and intended for Kubernetes probes.
+- `/readyz` returns `503` when dependencies (auth store, audit logger) are not ready.
+
 gRPC services (v1):
 
 - `ztap.api.v1.AuthService` (`Login`, `WhoAmI`)
 - `ztap.api.v1.StatusService` (`GetStatus`)
 - `ztap.api.v1.EnforcementService` (`GetStatus`, `Start`, `Stop`)
 - `ztap.api.v1.FlowsService` (`Stream` server-streaming)
+
+gRPC health:
+
+- Standard `grpc.health.v1.Health` is exposed (`Check`, `Watch`) and does not require auth metadata.
 
 Auth: send `authorization: Bearer <token>` as gRPC metadata.
 

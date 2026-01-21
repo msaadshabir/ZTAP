@@ -82,7 +82,7 @@ Windows enforcement constraints (WFP):
 - Command: `ztap grpc serve` (implemented in `cmd/grpc.go` and `pkg/apigrpc/`)
 - Probes:
   - REST: `GET /healthz` (liveness) and `GET /readyz` (readiness)
-  - gRPC: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch`) and these health RPCs are unauthenticated
+  - gRPC: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch`) and these health RPCs are unauthenticated and never rate-limited
 - Auth: bearer tokens via `Authorization: Bearer <token>`; sessions are persistent by default (SQLite at `~/.ztap/sessions.db`)
 - mTLS (optional): when enabled, API/gRPC servers require a client certificate signed by `client_ca_file`; this is a transport-level gate and does not replace bearer-token RBAC
 - Config backup/restore (REST): `POST /v1/config/backup` downloads a `tar.gz` bundle; `POST /v1/config/restore?dry_run=1&force=1` uploads a bundle; both require `auth.PermBackupRestore` (`backup_restore`)

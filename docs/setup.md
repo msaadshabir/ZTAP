@@ -173,6 +173,8 @@ ztap grpc serve --rate-limit \
 Notes:
 
 - If auth is enabled, invalid/expired bearer tokens are treated as unauthenticated for rate limiting.
+- REST probes (`/healthz`, `/readyz`) are always exempt from rate limiting (safe for kubelet probes), even if not listed in `api.rate_limit.exempt_paths`.
+- gRPC health RPCs (`/grpc.health.v1.Health/Check`, `/grpc.health.v1.Health/Watch`) are always exempt from rate limiting, even if not listed in `grpc.rate_limit.exempt_methods`.
 
 **Using `config.yaml`:**
 
@@ -489,7 +491,7 @@ ZTAP also includes a minimal gRPC API server.
 Health checks:
 
 - REST probes: `GET /healthz` (liveness) and `GET /readyz` (readiness)
-- gRPC probe: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check`)
+- gRPC probe: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check`, `/grpc.health.v1.Health/Watch`)
 
 ```bash
 # Starts gRPC server (defaults come from config.yaml.example)

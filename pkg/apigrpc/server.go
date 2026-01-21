@@ -290,6 +290,10 @@ func (s *Server) initRateLimiting() {
 }
 
 func (s *Server) isExemptMethod(fullMethod string) bool {
+	switch fullMethod {
+	case "/grpc.health.v1.Health/Check", "/grpc.health.v1.Health/Watch":
+		return true
+	}
 	for _, m := range s.cfg.RateLimit.ExemptMethods {
 		if m == fullMethod {
 			return true

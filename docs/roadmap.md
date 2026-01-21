@@ -37,6 +37,7 @@
 - Windows enforcement via Windows Filtering Platform (WFP) (experimental; Windows flow monitoring is WIP)
 - iptables fallback for older Linux kernels
 - Pre-compiled eBPF binaries (built with bpf2go)
+- **Health/readiness probes** - REST `GET /healthz` (liveness) and `GET /readyz` (readiness); gRPC exposes standard `grpc.health.v1.Health` (`Check`, `Watch`)
 - **Policy dry-run mode** - `ztap enforce --dry-run` to preview rules without applying
 - **IPv6 support** - Extend eBPF and iptables enforcers to handle IPv6 CIDRs
 - **Graceful policy reload** - Update eBPF policies without dropping active connections via atomic `bpf_link` updates
@@ -46,7 +47,6 @@
 
 ### Operational Readiness
 
-- **Health/readiness probes** - `/healthz` and `/readyz` endpoints for Kubernetes deployments (implemented in REST API; gRPC also exposes standard `grpc.health.v1.Health`)
 - **Configuration backup/restore** - Export/import config bundles via REST (`POST /v1/config/backup`, `POST /v1/config/restore`) with `backup_restore` permission; current scope: auth users + sessions (SQLite), policy current snapshot (optional), config stub, discovery export not implemented yet
 - **Windows flow monitoring** - Complete WFP flow event capture
 

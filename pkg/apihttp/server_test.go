@@ -8,8 +8,33 @@ import (
 	"path/filepath"
 	"testing"
 
+	"ztap/pkg/audit"
 	"ztap/pkg/auth"
+	"ztap/pkg/health"
 )
+
+func newTestServer(t *testing.T, authEnabled bool) *Server {
+	t.Helper()
+
+	dir := t.TempDir()
+	am, err := auth.NewAuthManager(filepath.Join(dir, "users.json"))
+	if err != nil {
+		t.Fatalf("NewAuthManager: %v", err)
+	}
+	al, err := audit.NewAuditLogger(filepath.Join(dir, "audit.log"))
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+	server, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: authEnabled}, AuthManager: am, AuditLogger: al})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = am.Close()
+		_ = al.Close()
+	})
+	return server
+}
 
 func TestAuthLoginAndWhoAmI(t *testing.T) {
 	dir := t.TempDir()
@@ -86,11 +111,30 @@ func TestStatusWorksWhenAuthDisabled(t *testing.T) {
 	}
 }
 
-func TestReadyz_MethodNotAllowed(t *testing.T) {
-	srv, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: false}})
-	if err != nil {
-		t.Fatalf("NewServer: %v", err)
+func TestHealthz_Ready(t *testing.T) {
+	srv := newTestServer(t, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
+}
+
+func TestHealthz_MethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t, false)
+
+	req := httptest.NewRequest(http.MethodPost, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestReadyz_MethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t, false)
 
 	req := httptest.NewRequest(http.MethodPost, "/readyz", nil)
 	rr := httptest.NewRecorder()
@@ -102,15 +146,42 @@ func TestReadyz_MethodNotAllowed(t *testing.T) {
 
 func TestReadyz_Ready(t *testing.T) {
 	// Auth disabled: readiness should succeed even without auth setup.
-	srv, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: false}})
-	if err != nil {
-		t.Fatalf("NewServer: %v", err)
-	}
+	srv := newTestServer(t, false)
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestReadyz_DoesNotRequireAuth(t *testing.T) {
+	srv := newTestServer(t, true)
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestReadyz_NotReady(t *testing.T) {
+	srv := newTestServer(t, false)
+	srv.readiness.Audit = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var res health.Result
+	if err := json.NewDecoder(rr.Body).Decode(&res); err != nil {
+		t.Fatalf("decode readyz response: %v", err)
+	}
+	if res.Ready {
+		t.Fatalf("expected not ready")
 	}
 }

@@ -18,6 +18,50 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+func newGRPCHealthTestServer(t *testing.T) (*Server, *grpc.ClientConn) {
+	t.Helper()
+
+	tmp := t.TempDir()
+	am, err := auth.NewAuthManager(tmp + "/users.json")
+	if err != nil {
+		t.Fatalf("NewAuthManager: %v", err)
+	}
+	al, err := audit.NewAuditLogger(tmp + "/audit.log")
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+
+	srv, err := NewServer(ServerOptions{Config: Config{Listen: "bufnet", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	lis := bufconn.Listen(1024 * 1024)
+	gs := grpc.NewServer(grpc.UnaryInterceptor(srv.unaryAuthInterceptor), grpc.StreamInterceptor(srv.streamAuthInterceptor))
+	srv.grpc = gs
+	srv.registerServices()
+
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(func() {
+		gs.Stop()
+		_ = am.Close()
+		_ = al.Close()
+	})
+
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	conn, err := grpc.DialContext(dialCtx, "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return lis.Dial()
+	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return srv, conn
+}
+
 func TestGRPCAuthLoginAndWhoAmI(t *testing.T) {
 	t.Parallel()
 
@@ -82,42 +126,49 @@ func TestGRPCAuthLoginAndWhoAmI(t *testing.T) {
 
 func TestGRPCHealthCheck_Unauthenticated(t *testing.T) {
 	t.Parallel()
-
-	tmp := t.TempDir()
-	am, err := auth.NewAuthManager(tmp + "/users.json")
-	if err != nil {
-		t.Fatalf("NewAuthManager: %v", err)
-	}
-	al, err := audit.NewAuditLogger(tmp + "/audit.log")
-	if err != nil {
-		t.Fatalf("NewAuditLogger: %v", err)
-	}
-
-	srv, err := NewServer(ServerOptions{Config: Config{Listen: "bufnet", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
-	if err != nil {
-		t.Fatalf("NewServer: %v", err)
-	}
-
-	lis := bufconn.Listen(1024 * 1024)
-	gs := grpc.NewServer(grpc.UnaryInterceptor(srv.unaryAuthInterceptor), grpc.StreamInterceptor(srv.streamAuthInterceptor))
-	srv.grpc = gs
-	srv.registerServices()
-
-	go func() { _ = gs.Serve(lis) }()
-	t.Cleanup(func() { gs.Stop() })
-
-	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-		return lis.Dial()
-	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatalf("DialContext: %v", err)
-	}
-	defer conn.Close()
+	_, conn := newGRPCHealthTestServer(t)
 
 	hc := grpc_health_v1.NewHealthClient(conn)
 	resp, err := hc.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
 	if err != nil {
 		t.Fatalf("Health Check: %v", err)
+	}
+	if resp.GetStatus() != grpc_health_v1.HealthCheckResponse_SERVING {
+		t.Fatalf("expected SERVING, got %v", resp.GetStatus())
+	}
+}
+
+func TestGRPCHealthCheck_NotReady(t *testing.T) {
+	t.Parallel()
+
+	srv, conn := newGRPCHealthTestServer(t)
+	srv.readiness.Audit = nil
+
+	hc := grpc_health_v1.NewHealthClient(conn)
+	resp, err := hc.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
+	if err != nil {
+		t.Fatalf("Health Check: %v", err)
+	}
+	if resp.GetStatus() != grpc_health_v1.HealthCheckResponse_NOT_SERVING {
+		t.Fatalf("expected NOT_SERVING, got %v", resp.GetStatus())
+	}
+}
+
+func TestGRPCHealthWatch_Unauthenticated(t *testing.T) {
+	t.Parallel()
+
+	_, conn := newGRPCHealthTestServer(t)
+
+	hc := grpc_health_v1.NewHealthClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := hc.Watch(ctx, &grpc_health_v1.HealthCheckRequest{})
+	if err != nil {
+		t.Fatalf("Health Watch: %v", err)
+	}
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Health Watch recv: %v", err)
 	}
 	if resp.GetStatus() != grpc_health_v1.HealthCheckResponse_SERVING {
 		t.Fatalf("expected SERVING, got %v", resp.GetStatus())

@@ -287,7 +287,9 @@ Rate limiting:
 - Config (default: disabled): `api.rate_limit`, `grpc.rate_limit` in `config.yaml`
 - CLI flags: `ztap api serve --rate-limit ...`, `ztap grpc serve --rate-limit ...`
 - REST: invalid/expired `Authorization` tokens fall back to unauthenticated bucket
+- REST: probe endpoints (`/healthz`, `/readyz`) are always exempt from rate limiting
 - gRPC: rate-limited calls return `RESOURCE_EXHAUSTED` and include `RetryInfo` (retry delay)
+- gRPC: health RPCs (`/grpc.health.v1.Health/Check`, `/grpc.health.v1.Health/Watch`) are always exempt from rate limiting
 - `POST /v1/config/backup` (download bundle; requires `backup_restore`)
 - `POST /v1/config/restore?dry_run=1&force=1` (upload bundle; requires `backup_restore`)
 - `GET /v1/status`
