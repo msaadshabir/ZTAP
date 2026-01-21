@@ -169,16 +169,16 @@ type fwpmNetEventSubscription0 struct {
 
 // Common prefix across FWPM_NET_EVENT_HEADER0/2/3.
 type fwpmNetEventHeaderPrefix struct {
-	TimeStamp windows.Filetime
-	Flags     uint32
-	IPVersion uint32
-	IPProto   uint8
-	_         [3]byte
-	LocalAddr [16]byte
+	TimeStamp  windows.Filetime
+	Flags      uint32
+	IPVersion  uint32
+	IPProto    uint8
+	_          [3]byte
+	LocalAddr  [16]byte
 	RemoteAddr [16]byte
-	LocalPort uint16
+	LocalPort  uint16
 	RemotePort uint16
-	ScopeId   uint32
+	ScopeId    uint32
 }
 
 type fwpmNetEventHeader2 struct {
@@ -205,9 +205,9 @@ type fwpmNetEvent0 struct {
 }
 
 type fwpmNetEventHeader3 struct {
-	Header2      fwpmNetEventHeader2
-	EnterpriseId uintptr
-	PolicyFlags  uint64
+	Header2       fwpmNetEventHeader2
+	EnterpriseId  uintptr
+	PolicyFlags   uint64
 	EffectiveName fwpByteBlob
 }
 
@@ -615,7 +615,7 @@ func wfpHeaderAndTypeToRaw(prefix *fwpmNetEventHeaderPrefix, typ uint32, data ui
 	}, true
 }
 
-type hasMsDirection interface{
+type hasMsDirection interface {
 	msDir() uint32
 }
 

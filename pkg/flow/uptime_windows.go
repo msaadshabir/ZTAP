@@ -5,8 +5,8 @@ package flow
 import "syscall"
 
 var (
-	modkernel32         = syscall.NewLazyDLL("kernel32.dll")
-	procGetTickCount64  = modkernel32.NewProc("GetTickCount64")
+	modkernel32        = syscall.NewLazyDLL("kernel32.dll")
+	procGetTickCount64 = modkernel32.NewProc("GetTickCount64")
 )
 
 func getTickCount64() uint64 {
