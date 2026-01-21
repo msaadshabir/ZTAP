@@ -44,6 +44,11 @@ func (s *K8sPolicySync) Start(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
+	if err := s.syncExisting(ctx); err != nil {
+		k8sPolicySyncLogger.Error(err, "error listing existing policies")
+		return err
+	}
+
 	go s.watchLoop(ctx)
 	return nil
 }
@@ -131,12 +136,30 @@ func (s *K8sPolicySync) watchLoop(ctx context.Context) {
 	}
 }
 
+func (s *K8sPolicySync) syncExisting(ctx context.Context) error {
+	configMaps, err := s.client.CoreV1().ConfigMaps(s.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "app=ztap,component=policy-store",
+	})
+	if err != nil {
+		return err
+	}
+
+	for i := range configMaps.Items {
+		s.handleUpdate(&configMaps.Items[i])
+	}
+
+	return nil
+}
+
 func (s *K8sPolicySync) handleUpdate(cm *corev1.ConfigMap) {
 	policyYAML, ok := cm.Data["policy.yaml"]
 	if !ok {
 		return
 	}
 	policyName := cm.Annotations["ztap.io/policyName"]
+	if policyName == "" {
+		policyName = fmt.Sprintf("%s/%s", cm.Namespace, cm.Name)
+	}
 	versionStr := cm.Annotations["ztap.io/version"]
 
 	var version int64

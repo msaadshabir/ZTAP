@@ -66,7 +66,7 @@ func (r *ZtapNetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// 2. Validate
 	if err := internalPolicy.Validate(); err != nil {
 		l.Error(err, "Validation failed for policy")
-		return r.updateStatus(ctx, &ztnp, false, fmt.Sprintf("Validation failed: %v", err))
+		return r.updateStatus(ctx, &ztnp, metav1.ConditionFalse, "ValidationFailed", fmt.Sprintf("Validation failed: %v", err))
 	}
 
 	// 3. Serialize to YAML
@@ -79,10 +79,10 @@ func (r *ZtapNetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// 4. Publish to ConfigMap store
 	if err := r.publishPolicy(ctx, &ztnp, policyYAML); err != nil {
 		l.Error(err, "Failed to publish policy to ConfigMap store")
-		return r.updateStatus(ctx, &ztnp, false, fmt.Sprintf("Publish failed: %v", err))
+		return r.updateStatus(ctx, &ztnp, metav1.ConditionFalse, "PublishFailed", fmt.Sprintf("Publish failed: %v", err))
 	}
 
-	return r.updateStatus(ctx, &ztnp, true, "Policy published successfully")
+	return r.updateStatus(ctx, &ztnp, metav1.ConditionTrue, "PolicyPublished", "Policy published successfully")
 }
 
 func (r *ZtapNetworkPolicyReconciler) reconcileDelete(ctx context.Context, ztnp *ztapv1alpha1.ZtapNetworkPolicy) (ctrl.Result, error) {
@@ -146,7 +146,7 @@ func (r *ZtapNetworkPolicyReconciler) publishPolicy(ctx context.Context, ztnp *z
 		return err
 	}
 
-	if !equality.Semantic.DeepEqual(cm.Data, existingCM.Data) || !equality.Semantic.DeepEqual(cm.Labels, existingCM.Labels) {
+	if !equality.Semantic.DeepEqual(cm.Data, existingCM.Data) || !equality.Semantic.DeepEqual(cm.Labels, existingCM.Labels) || !equality.Semantic.DeepEqual(cm.Annotations, existingCM.Annotations) {
 		existingCM.Data = cm.Data
 		existingCM.Labels = cm.Labels
 		existingCM.Annotations = cm.Annotations
@@ -156,14 +156,7 @@ func (r *ZtapNetworkPolicyReconciler) publishPolicy(ctx context.Context, ztnp *z
 	return nil
 }
 
-func (r *ZtapNetworkPolicyReconciler) updateStatus(ctx context.Context, ztnp *ztapv1alpha1.ZtapNetworkPolicy, success bool, message string) (ctrl.Result, error) {
-	status := metav1.ConditionTrue
-	reason := "PolicyValidated"
-	if !success {
-		status = metav1.ConditionFalse
-		reason = "ValidationFailed"
-	}
-
+func (r *ZtapNetworkPolicyReconciler) updateStatus(ctx context.Context, ztnp *ztapv1alpha1.ZtapNetworkPolicy, status metav1.ConditionStatus, reason, message string) (ctrl.Result, error) {
 	condition := metav1.Condition{
 		Type:               "Validated",
 		Status:             status,
@@ -174,7 +167,7 @@ func (r *ZtapNetworkPolicyReconciler) updateStatus(ctx context.Context, ztnp *zt
 
 	meta.SetStatusCondition(&ztnp.Status.Conditions, condition)
 	ztnp.Status.ObservedGeneration = ztnp.Generation
-	if success {
+	if status == metav1.ConditionTrue {
 		ztnp.Status.LastPublishedVersion = ztnp.Generation
 	}
 

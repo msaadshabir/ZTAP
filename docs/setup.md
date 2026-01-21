@@ -34,7 +34,7 @@ go mod download
 # Build binary
 go build -o ztap
 
-# Build operator binary (WIP)
+# Build operator binary
 go build -o ztap-operator ./cmd/ztap-operator
 
 # Install (optional)
@@ -60,9 +60,20 @@ docker-compose up -d
 
 See [Deployment Guide](deployment.md) for detailed Docker deployment.
 
-## Kubernetes (Operator + Agent) (WIP)
+## Kubernetes (Operator + Agent)
 
 ZTAP includes a Kubernetes operator and an in-cluster node agent path that publishes policies from a CRD and enforces them on nodes.
+
+Install the CRD and operator:
+
+```bash
+# Build and push an operator image
+docker build -f Dockerfile.operator -t ztap-operator:latest .
+
+# Apply the CRD and operator deployment
+kubectl apply -f deployments/kubernetes/ztapnetworkpolicy-crd.yaml
+kubectl apply -f deployments/kubernetes/ztap-operator.yaml
+```
 
 - Entry points:
   - Operator binary: `ztap-operator`
