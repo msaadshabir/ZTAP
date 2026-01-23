@@ -8,6 +8,7 @@ import (
 
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
+	"ztap/pkg/flow"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -195,7 +196,10 @@ func TestGRPCFlowsStream(t *testing.T) {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
 
-	srv, err := NewServer(ServerOptions{Config: Config{Listen: "bufnet", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
+	flowReaderFactory := func() flow.FlowReader {
+		return flow.NewSimulatedReader(demoRawFlows(), 10*time.Millisecond)
+	}
+	srv, err := NewServer(ServerOptions{Config: Config{Listen: "bufnet", AuthEnabled: true}, AuthManager: am, AuditLogger: al, FlowReaderFactory: flowReaderFactory})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -214,7 +218,10 @@ func TestGRPCFlowsStream(t *testing.T) {
 		_ = al.Close()
 	})
 
-	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(dialCtx, "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -229,7 +236,9 @@ func TestGRPCFlowsStream(t *testing.T) {
 	}
 	tok := loginResp.Fields["token"].GetStringValue()
 
-	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tok))
+	streamCtx, streamCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer streamCancel()
+	ctx := metadata.NewOutgoingContext(streamCtx, metadata.Pairs("authorization", "Bearer "+tok))
 	stream, err := conn.NewStream(ctx, &flowsServiceDesc.Streams[0], "/ztap.api.v1.FlowsService/Stream")
 	if err != nil {
 		t.Fatalf("NewStream: %v", err)
