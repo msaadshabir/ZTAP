@@ -51,7 +51,11 @@ func TestGRPCRateLimit_UnauthBucketBlocks(t *testing.T) {
 	srv.registerServices()
 
 	go func() { _ = gs.Serve(lis) }()
-	t.Cleanup(func() { gs.Stop() })
+	t.Cleanup(func() {
+		gs.Stop()
+		_ = am.Close()
+		_ = al.Close()
+	})
 
 	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
