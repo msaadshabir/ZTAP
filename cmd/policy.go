@@ -151,7 +151,7 @@ var policyWatchCmd = &cobra.Command{
 		for update := range updates {
 			fmt.Printf("[%s] Policy: %s | Version: %d | Source: %s\n",
 				update.Timestamp.Format("15:04:05"),
-				update.PolicyName,
+				update.PolicyKeyString(),
 				update.Version,
 				update.Source)
 		}

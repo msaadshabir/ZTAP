@@ -18,6 +18,7 @@ import (
 	"ztap/pkg/alert"
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
+	"ztap/pkg/cluster"
 	"ztap/pkg/enforcer"
 	"ztap/pkg/flow"
 	"ztap/pkg/health"
@@ -680,6 +681,14 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 	if policyName == "" {
 		policyName = "api"
 	}
+	policyTenant := cluster.DefaultTenant
+	policyShortName := policyName
+	policyKey := cluster.PolicyKey{Tenant: policyTenant, Name: policyShortName}.String()
+	if parsed, err := cluster.ParsePolicyKey(policyName); err == nil {
+		policyTenant = parsed.Tenant
+		policyShortName = parsed.Name
+		policyKey = parsed.String()
+	}
 
 	policies, err := policy.LoadFromBytes([]byte(policyYAML))
 	if err != nil {
@@ -694,7 +703,7 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 		if err := p.Validate(); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		named = append(named, policy.NamedPolicy{PolicyName: policyName, Policy: p})
+		named = append(named, policy.NamedPolicy{Tenant: policyTenant, PolicyName: policyShortName, Policy: p})
 	}
 	for i, np := range named {
 		if err := policy.CheckConflicts(named[:i], np); err != nil {
@@ -780,19 +789,19 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 				Severity: alert.SeverityError,
 				Title:    "policy enforcement failed",
 				Message:  err.Error(),
-				DedupKey: fmt.Sprintf("%s:%s:error", policyName, platform),
+				DedupKey: fmt.Sprintf("%s:%s:error", policyKey, platform),
 				Details:  map[string]any{"platform": platform, "count": len(policies)},
 			})
 			return nil, status.Error(codes.Internal, fmt.Errorf("failed to enforce via eBPF: %w", err).Error())
 		}
 
-		_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": "linux", "count": len(policies)})
+		_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": "linux", "count": len(policies)})
 		e.srv.emitAlert(alert.Alert{
 			Source:   "api-grpc",
 			Severity: alert.SeverityInfo,
 			Title:    "policy enforced",
-			Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
-			DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+			Message:  fmt.Sprintf("%s enforced on %s", policyKey, platform),
+			DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
 			Details:  map[string]any{"platform": platform, "count": len(policies)},
 		})
 		resp, err := structpb.NewStruct(map[string]any{"enforced": true, "platform": platform})
@@ -806,13 +815,13 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 		Policies: policies,
 		Context:  ctx,
 	})
-	_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
+	_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
 	e.srv.emitAlert(alert.Alert{
 		Source:   "api-grpc",
 		Severity: alert.SeverityInfo,
 		Title:    "policy enforced",
-		Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
-		DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+		Message:  fmt.Sprintf("%s enforced on %s", policyKey, platform),
+		DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
 		Details:  map[string]any{"platform": platform, "count": len(policies)},
 	})
 	resp, err := structpb.NewStruct(map[string]any{"enforced": true, "platform": platform})

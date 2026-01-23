@@ -663,3 +663,90 @@ func TestRollbackPolicyCreatesNewVersion(t *testing.T) {
 		t.Fatalf("expected current version 3, got %d", currentVersion)
 	}
 }
+
+func TestTenantScopedVersioning(t *testing.T) {
+	election := newMockElection("node-1", true)
+	ps := NewInMemoryPolicySync(election, "node-1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := ps.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = ps.Stop() }()
+
+	// Same policy name in different tenants should version independently.
+	if err := ps.SyncPolicy(ctx, "tenant-a/shared", makePolicyYAML("shared", "10.20.0.0/24", 80)); err != nil {
+		t.Fatalf("SyncPolicy tenant-a failed: %v", err)
+	}
+	if err := ps.SyncPolicy(ctx, "tenant-b/shared", makePolicyYAML("shared", "10.21.0.0/24", 80)); err != nil {
+		t.Fatalf("SyncPolicy tenant-b failed: %v", err)
+	}
+
+	va, err := ps.GetPolicyVersion("tenant-a/shared")
+	if err != nil {
+		t.Fatalf("GetPolicyVersion tenant-a failed: %v", err)
+	}
+	vb, err := ps.GetPolicyVersion("tenant-b/shared")
+	if err != nil {
+		t.Fatalf("GetPolicyVersion tenant-b failed: %v", err)
+	}
+	if va != 1 || vb != 1 {
+		t.Fatalf("expected both versions to start at 1, got tenant-a=%d tenant-b=%d", va, vb)
+	}
+
+	// Update tenant-a only.
+	if err := ps.SyncPolicy(ctx, "tenant-a/shared", makePolicyYAML("shared", "10.22.0.0/24", 80)); err != nil {
+		t.Fatalf("SyncPolicy tenant-a update failed: %v", err)
+	}
+	va, _ = ps.GetPolicyVersion("tenant-a/shared")
+	vb, _ = ps.GetPolicyVersion("tenant-b/shared")
+	if va != 2 {
+		t.Fatalf("expected tenant-a version 2, got %d", va)
+	}
+	if vb != 1 {
+		t.Fatalf("expected tenant-b version to remain 1, got %d", vb)
+	}
+
+	// Validate stored tenant metadata.
+	pa, err := ps.GetPolicy("tenant-a/shared")
+	if err != nil {
+		t.Fatalf("GetPolicy tenant-a failed: %v", err)
+	}
+	if pa == nil || pa.Tenant != "tenant-a" || pa.Name != "shared" {
+		t.Fatalf("unexpected policy state for tenant-a: %+v", pa)
+	}
+}
+
+func TestInMemoryPolicySync_DefaultTenantBackwardCompat(t *testing.T) {
+	election := newMockElection("node-1", true)
+	ps := NewInMemoryPolicySync(election, "node-1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := ps.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = ps.Stop() }()
+
+	// No-tenant name should map to default/<name>.
+	if err := ps.SyncPolicy(ctx, "legacy", makePolicyYAML("legacy", "10.30.0.0/24", 80)); err != nil {
+		t.Fatalf("SyncPolicy legacy failed: %v", err)
+	}
+	if v, err := ps.GetPolicyVersion("legacy"); err != nil || v != 1 {
+		t.Fatalf("GetPolicyVersion legacy expected v1, got v=%d err=%v", v, err)
+	}
+	if v, err := ps.GetPolicyVersion("default/legacy"); err != nil || v != 1 {
+		t.Fatalf("GetPolicyVersion default/legacy expected v1, got v=%d err=%v", v, err)
+	}
+
+	// Updating via fully-qualified key should increment the same stream.
+	if err := ps.SyncPolicy(ctx, "default/legacy", makePolicyYAML("legacy", "10.31.0.0/24", 80)); err != nil {
+		t.Fatalf("SyncPolicy default/legacy failed: %v", err)
+	}
+	if v, _ := ps.GetPolicyVersion("legacy"); v != 2 {
+		t.Fatalf("expected legacy version 2, got %d", v)
+	}
+}

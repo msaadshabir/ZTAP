@@ -214,6 +214,73 @@ spec:
 	}
 }
 
+func TestPolicyEnforcerVersionsAreTenantScoped(t *testing.T) {
+	mockSync := newMockPolicySync()
+
+	enforcer := NewPolicyEnforcer(PolicyEnforcerConfig{
+		PolicySync: mockSync,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := enforcer.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = enforcer.Stop() }()
+
+	policyYAML := []byte(`apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: test-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  egress:
+  - to:
+      ipBlock:
+        cidr: 10.0.0.0/8
+    ports:
+    - protocol: TCP
+      port: 80`)
+
+	// tenant-a/shared v1
+	mockSync.sendUpdate(cluster.PolicyUpdate{Tenant: "tenant-a", PolicyName: "shared", YAML: policyYAML, Version: 1, Source: "node-1", Timestamp: time.Now()})
+	// tenant-b/shared v1
+	mockSync.sendUpdate(cluster.PolicyUpdate{Tenant: "tenant-b", PolicyName: "shared", YAML: policyYAML, Version: 1, Source: "node-1", Timestamp: time.Now()})
+
+	deadline := time.Now().Add(1 * time.Second)
+	for {
+		if enforcer.GetEnforcedVersion("tenant-a/shared") == 1 && enforcer.GetEnforcedVersion("tenant-b/shared") == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for tenant-scoped versions; got tenant-a=%d tenant-b=%d",
+				enforcer.GetEnforcedVersion("tenant-a/shared"), enforcer.GetEnforcedVersion("tenant-b/shared"))
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	// Update tenant-a to v2; tenant-b should remain v1.
+	mockSync.sendUpdate(cluster.PolicyUpdate{Tenant: "tenant-a", PolicyName: "shared", YAML: policyYAML, Version: 2, Source: "node-1", Timestamp: time.Now()})
+	time.Sleep(200 * time.Millisecond)
+
+	if enforcer.GetEnforcedVersion("tenant-a/shared") != 2 {
+		t.Fatalf("expected tenant-a/shared version 2, got %d", enforcer.GetEnforcedVersion("tenant-a/shared"))
+	}
+	if enforcer.GetEnforcedVersion("tenant-b/shared") != 1 {
+		t.Fatalf("expected tenant-b/shared version 1, got %d", enforcer.GetEnforcedVersion("tenant-b/shared"))
+	}
+
+	// Send an older version for tenant-a; should be skipped and remain v2.
+	mockSync.sendUpdate(cluster.PolicyUpdate{Tenant: "tenant-a", PolicyName: "shared", YAML: policyYAML, Version: 1, Source: "node-1", Timestamp: time.Now()})
+	time.Sleep(200 * time.Millisecond)
+	if enforcer.GetEnforcedVersion("tenant-a/shared") != 2 {
+		t.Fatalf("expected tenant-a/shared version to remain 2, got %d", enforcer.GetEnforcedVersion("tenant-a/shared"))
+	}
+}
+
 func TestPolicyEnforcerGetEnforcedVersions(t *testing.T) {
 	mockSync := newMockPolicySync()
 

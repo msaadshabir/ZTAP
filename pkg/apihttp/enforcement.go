@@ -12,6 +12,7 @@ import (
 
 	"ztap/pkg/alert"
 	"ztap/pkg/audit"
+	"ztap/pkg/cluster"
 	"ztap/pkg/enforcer"
 	"ztap/pkg/policy"
 )
@@ -47,6 +48,14 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 	if policyName == "" {
 		policyName = "api"
 	}
+	policyTenant := cluster.DefaultTenant
+	policyShortName := policyName
+	policyKey := cluster.PolicyKey{Tenant: policyTenant, Name: policyShortName}.String()
+	if parsed, err := cluster.ParsePolicyKey(policyName); err == nil {
+		policyTenant = parsed.Tenant
+		policyShortName = parsed.Name
+		policyKey = parsed.String()
+	}
 
 	policies, err := policy.LoadFromBytes([]byte(req.PolicyYAML))
 	if err != nil {
@@ -64,7 +73,7 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		named = append(named, policy.NamedPolicy{PolicyName: policyName, Policy: p})
+		named = append(named, policy.NamedPolicy{Tenant: policyTenant, PolicyName: policyShortName, Policy: p})
 	}
 	for i, np := range named {
 		if err := policy.CheckConflicts(named[:i], np); err != nil {
@@ -168,20 +177,20 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 				Severity: alert.SeverityError,
 				Title:    "policy enforcement failed",
 				Message:  err.Error(),
-				DedupKey: fmt.Sprintf("%s:%s:error", policyName, platform),
+				DedupKey: fmt.Sprintf("%s:%s:error", policyKey, platform),
 				Details:  map[string]any{"platform": platform, "count": len(policies)},
 			})
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to enforce via eBPF: %w", err))
 			return
 		}
 
-		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": platform, "count": len(policies)})
+		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": platform, "count": len(policies)})
 		s.emitAlert(alert.Alert{
 			Source:   "api-http",
 			Severity: alert.SeverityInfo,
 			Title:    "policy enforced",
-			Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
-			DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+			Message:  fmt.Sprintf("%s enforced on %s", policyKey, platform),
+			DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
 			Details:  map[string]any{"platform": platform, "count": len(policies)},
 		})
 		writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: platform})
@@ -200,20 +209,20 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 				Severity: alert.SeverityError,
 				Title:    "policy enforcement failed",
 				Message:  err.Error(),
-				DedupKey: fmt.Sprintf("%s:%s:error", policyName, platform),
+				DedupKey: fmt.Sprintf("%s:%s:error", policyKey, platform),
 				Details:  map[string]any{"platform": platform, "count": len(policies)},
 			})
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to enforce via WFP: %w", err))
 			return
 		}
 
-		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": platform, "count": len(policies)})
+		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": platform, "count": len(policies)})
 		s.emitAlert(alert.Alert{
 			Source:   "api-http",
 			Severity: alert.SeverityInfo,
 			Title:    "policy enforced",
-			Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
-			DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+			Message:  fmt.Sprintf("%s enforced on %s", policyKey, platform),
+			DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
 			Details:  map[string]any{"platform": platform, "count": len(policies)},
 		})
 		writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: platform})
@@ -225,13 +234,13 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 		Policies: policies,
 		Context:  r.Context(),
 	})
-	_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", map[string]any{"platform": platform, "count": len(policies)})
+	_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": platform, "count": len(policies)})
 	s.emitAlert(alert.Alert{
 		Source:   "api-http",
 		Severity: alert.SeverityInfo,
 		Title:    "policy enforced",
-		Message:  fmt.Sprintf("%s enforced on %s", policyName, platform),
-		DedupKey: fmt.Sprintf("%s:%s:success", policyName, platform),
+		Message:  fmt.Sprintf("%s enforced on %s", policyKey, platform),
+		DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
 		Details:  map[string]any{"platform": platform, "count": len(policies)},
 	})
 	writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: platform})

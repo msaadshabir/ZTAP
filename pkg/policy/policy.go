@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"strings"
 
 	yaml "gopkg.in/yaml.v2"
 )
@@ -20,6 +21,14 @@ type ServiceDiscovery interface {
 	DeregisterService(name string) error
 	Watch(ctx context.Context, labels map[string]string) (<-chan []string, error)
 	Stop() error
+}
+
+// ScopedServiceDiscovery is an optional extension for multi-tenant environments.
+//
+// Scope is typically a Kubernetes namespace.
+type ScopedServiceDiscovery interface {
+	ResolveLabelsScoped(scope string, labels map[string]string) ([]string, error)
+	WatchScoped(ctx context.Context, scope string, labels map[string]string) (<-chan []string, error)
 }
 
 // PortSpec defines a protocol and port combination for network rules.
@@ -84,8 +93,24 @@ type NetworkPolicy struct {
 
 // NamedPolicy couples a policy with its source identifier (e.g., sync name).
 type NamedPolicy struct {
+	// Tenant is an optional isolation scope.
+	//
+	// When empty, it is treated as "default" for conflict scoping.
+	Tenant     string
 	PolicyName string
 	Policy     NetworkPolicy
+}
+
+func (np NamedPolicy) KeyString() string {
+	tenant := strings.TrimSpace(np.Tenant)
+	if tenant == "" {
+		tenant = "default"
+	}
+	name := strings.TrimSpace(np.PolicyName)
+	if name == "" {
+		return tenant
+	}
+	return tenant + "/" + name
 }
 
 // LoadFromFile reads policies from a YAML file
@@ -502,8 +527,22 @@ func overlapsIngress(rule IngressRule, port PortSpec, other NetworkPolicy) bool 
 
 // CheckConflicts verifies that a candidate policy does not overlap existing policies on identical peers/ports.
 func CheckConflicts(existing []NamedPolicy, candidate NamedPolicy) error {
+	canonTenant := func(t string) string {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			return "default"
+		}
+		return t
+	}
+
+	candidateTenant := canonTenant(candidate.Tenant)
+	candidateName := strings.TrimSpace(candidate.PolicyName)
+
 	for _, np := range existing {
-		if np.PolicyName == candidate.PolicyName {
+		if canonTenant(np.Tenant) != candidateTenant {
+			continue
+		}
+		if strings.TrimSpace(np.PolicyName) == candidateName {
 			continue
 		}
 		for _, egress := range candidate.Policy.Spec.Egress {
@@ -512,7 +551,7 @@ func CheckConflicts(existing []NamedPolicy, candidate NamedPolicy) error {
 					return ValidationError{
 						PolicyName: candidate.Policy.Metadata.Name,
 						Field:      "conflict",
-						Message:    fmt.Sprintf("conflicts with policy %s on %s/%d", np.PolicyName, port.Protocol, port.Port),
+						Message:    fmt.Sprintf("conflicts with policy %s on %s/%d", np.KeyString(), port.Protocol, port.Port),
 					}
 				}
 			}
@@ -524,7 +563,7 @@ func CheckConflicts(existing []NamedPolicy, candidate NamedPolicy) error {
 					return ValidationError{
 						PolicyName: candidate.Policy.Metadata.Name,
 						Field:      "conflict",
-						Message:    fmt.Sprintf("conflicts with policy %s on %s/%d", np.PolicyName, port.Protocol, port.Port),
+						Message:    fmt.Sprintf("conflicts with policy %s on %s/%d", np.KeyString(), port.Protocol, port.Port),
 					}
 				}
 			}
@@ -552,6 +591,21 @@ func (r *PolicyResolver) ResolveLabels(labels map[string]string) ([]string, erro
 	return r.discovery.ResolveLabels(labels)
 }
 
+func (r *PolicyResolver) ResolveLabelsScoped(scope string, labels map[string]string) ([]string, error) {
+	if r.discovery == nil {
+		return nil, fmt.Errorf("no service discovery backend configured")
+	}
+
+	scope = strings.TrimSpace(scope)
+	if scope != "" {
+		if scoped, ok := r.discovery.(ScopedServiceDiscovery); ok {
+			return scoped.ResolveLabelsScoped(scope, labels)
+		}
+	}
+
+	return r.discovery.ResolveLabels(labels)
+}
+
 // ResolveLabels (standalone) is deprecated, use PolicyResolver instead
 // Kept for backward compatibility
 func ResolveLabels(labels map[string]string) ([]string, error) {
@@ -561,6 +615,14 @@ func ResolveLabels(labels map[string]string) ([]string, error) {
 // ResolvePodSelectorsToIPBlocks translates all podSelector targets in the given policies
 // into concrete /32 ipBlock targets using the resolver's discovery backend.
 func (r *PolicyResolver) ResolvePodSelectorsToIPBlocks(policies []NetworkPolicy) ([]NetworkPolicy, error) {
+	return r.ResolvePodSelectorsToIPBlocksScoped("", policies)
+}
+
+// ResolvePodSelectorsToIPBlocksScoped is the tenant/scope-aware variant of ResolvePodSelectorsToIPBlocks.
+//
+// If the underlying discovery backend does not implement ScopedServiceDiscovery (or scope is empty),
+// this falls back to the legacy non-scoped ResolveLabels behavior.
+func (r *PolicyResolver) ResolvePodSelectorsToIPBlocksScoped(scope string, policies []NetworkPolicy) ([]NetworkPolicy, error) {
 	if r.discovery == nil {
 		return nil, fmt.Errorf("no service discovery backend configured")
 	}
@@ -575,7 +637,7 @@ func (r *PolicyResolver) ResolvePodSelectorsToIPBlocks(policies []NetworkPolicy)
 		// Resolve Egress
 		for _, egress := range p.Spec.Egress {
 			if len(egress.To.PodSelector.MatchLabels) > 0 {
-				ips, err := r.discovery.ResolveLabels(egress.To.PodSelector.MatchLabels)
+				ips, err := r.ResolveLabelsScoped(scope, egress.To.PodSelector.MatchLabels)
 				if err != nil {
 					return nil, fmt.Errorf("policy %s: failed to resolve egress podSelector %v: %w",
 						p.Metadata.Name, egress.To.PodSelector.MatchLabels, err)
@@ -602,7 +664,7 @@ func (r *PolicyResolver) ResolvePodSelectorsToIPBlocks(policies []NetworkPolicy)
 		// Resolve Ingress
 		for _, ingress := range p.Spec.Ingress {
 			if len(ingress.From.PodSelector.MatchLabels) > 0 {
-				ips, err := r.discovery.ResolveLabels(ingress.From.PodSelector.MatchLabels)
+				ips, err := r.ResolveLabelsScoped(scope, ingress.From.PodSelector.MatchLabels)
 				if err != nil {
 					return nil, fmt.Errorf("policy %s: failed to resolve ingress podSelector %v: %w",
 						p.Metadata.Name, ingress.From.PodSelector.MatchLabels, err)

@@ -3,7 +3,7 @@
 
 package enforcer
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -target bpfeb -cc clang bpf ../../bpf/filter.c -- -I../../bpf
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -no-strip -target bpfel -target bpfeb -cc clang bpf ../../bpf/filter.c -- -I../../bpf
 
 import (
 	"fmt"
@@ -33,6 +33,10 @@ type eBPFEnforcer struct {
 	egressLink  link.Link
 	ingressLink link.Link
 	policies    []policy.NetworkPolicy
+	// enforcedCgroups is a set of cgroup IDs selected by at least one policy.
+	enforcedCgroups *ebpf.Map
+	// enforcementConfigMap stores runtime flags for the BPF program.
+	enforcementConfigMap *ebpf.Map
 	// flowEventsPinPath is the bpffs pin path for the flow_events map (if pinned).
 	flowEventsPinPath string
 }
@@ -81,12 +85,48 @@ func NewEBPFEnforcer() (*eBPFEnforcer, error) {
 	return &eBPFEnforcer{}, nil
 }
 
-// LoadPolicies loads policies into eBPF maps
+// LoadPolicies loads policies into eBPF maps.
+//
+// This is the legacy mode: all rules are programmed with CgroupID=0 (global).
 func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
-	e.policies = policies
+	scoped := make([]ScopedPolicy, 0, len(policies))
+	for _, p := range policies {
+		scoped = append(scoped, ScopedPolicy{Policy: p, SubjectCgroupIDs: []uint64{0}})
+	}
+	return e.LoadPoliciesScoped(scoped)
+}
+
+// LoadPoliciesScoped loads policies into eBPF maps, optionally scoped to subject cgroups.
+//
+// If SubjectCgroupIDs is empty for a policy, it is programmed as global (CgroupID=0).
+func (e *eBPFEnforcer) LoadPoliciesScoped(policies []ScopedPolicy) error {
+	// Keep a flattened view for status/debug.
+	e.policies = make([]policy.NetworkPolicy, 0, len(policies))
+	for _, sp := range policies {
+		e.policies = append(e.policies, sp.Policy)
+	}
+
+	sawZero := false
+	sawNonZero := false
+	cgroupSet := make(map[uint64]struct{})
+	for _, sp := range policies {
+		for _, id := range sp.SubjectCgroupIDs {
+			if id == 0 {
+				sawZero = true
+				continue
+			}
+			sawNonZero = true
+			cgroupSet[id] = struct{}{}
+		}
+	}
+	if sawZero && sawNonZero {
+		return fmt.Errorf("mixed global (cgroup_id=0) and per-cgroup policies are not supported")
+	}
+	// If we don't see any explicit cgroup_id=0 entries, treat this as scoped enforcement
+	// even if the subject set is currently empty.
+	scopedMode := !sawZero
 
 	var objs bpfObjects
-	var err error
 
 	// Allow explicit override via environment variable (useful for development)
 	if p := os.Getenv("ZTAP_BPF_OBJECT"); p != "" {
@@ -97,20 +137,61 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 		if err != nil {
 			return fmt.Errorf("failed to load eBPF object from %s: %w", safeP, err)
 		}
-		if err := spec.LoadAndAssign(&objs, nil); err != nil {
-			return fmt.Errorf("failed to load eBPF objects from %s: %w", safeP, err)
+		loaded, err := loadBpfObjectsWithTenantSemantics(spec)
+		if err == nil {
+			e.objs = &loaded.objs
+			e.enforcedCgroups = loaded.enforcedCgroups
+			e.enforcementConfigMap = loaded.enforcementConfigMap
+		} else {
+			if scopedMode {
+				return fmt.Errorf("eBPF object missing tenant isolation maps; rebuild BPF program or set ZTAP_BPF_OBJECT: %w", err)
+			}
+			if err := spec.LoadAndAssign(&objs, nil); err != nil {
+				return fmt.Errorf("failed to load eBPF objects from %s: %w", safeP, err)
+			}
+			e.objs = &objs
 		}
 	} else {
 		// Load embedded eBPF objects
-		if err = loadBpfObjects(&objs, nil); err != nil {
-			return fmt.Errorf("failed to load embedded eBPF objects: %w", err)
+		spec, err := loadBpf()
+		if err != nil {
+			return fmt.Errorf("failed to load embedded eBPF spec: %w", err)
+		}
+		loaded, err := loadBpfObjectsWithTenantSemantics(spec)
+		if err == nil {
+			e.objs = &loaded.objs
+			e.enforcedCgroups = loaded.enforcedCgroups
+			e.enforcementConfigMap = loaded.enforcementConfigMap
+		} else {
+			if scopedMode {
+				return fmt.Errorf("embedded eBPF object missing tenant isolation maps; rebuild BPF program or set ZTAP_BPF_OBJECT: %w", err)
+			}
+			if err = loadBpfObjects(&objs, nil); err != nil {
+				return fmt.Errorf("failed to load embedded eBPF objects: %w", err)
+			}
+			e.objs = &objs
 		}
 	}
-	e.objs = &objs
+
+	if scopedMode {
+		if e.enforcedCgroups == nil || e.enforcementConfigMap == nil {
+			return fmt.Errorf("tenant semantics requested but enforced_cgroups/enforcement_config_map not available")
+		}
+		if err := e.setSelectedOnlyMode(true); err != nil {
+			return err
+		}
+		if err := e.populateEnforcedCgroups(cgroupSet); err != nil {
+			return err
+		}
+	} else {
+		// Legacy behavior: selected_only = 0 if config map exists.
+		_ = e.setSelectedOnlyMode(false)
+	}
 
 	// Populate policy map
-	for _, p := range policies {
-		if err := e.addPolicyToMap(p); err != nil {
+	for _, sp := range policies {
+		p := sp.Policy
+		if err := e.addPolicyToMapScoped(p, sp.SubjectCgroupIDs); err != nil {
 			safeName := strings.ReplaceAll(p.Metadata.Name, "\n", "")
 			safeName = strings.ReplaceAll(safeName, "\r", "")
 			safeErr := strings.ReplaceAll(err.Error(), "\n", "")
@@ -122,18 +203,92 @@ func (e *eBPFEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	return nil
 }
 
-// addPolicyToMap adds a policy to the eBPF map
-func (e *eBPFEnforcer) addPolicyToMap(p policy.NetworkPolicy) error {
+type tenantSemanticsLoad struct {
+	objs                 bpfObjects
+	enforcedCgroups      *ebpf.Map
+	enforcementConfigMap *ebpf.Map
+}
+
+func loadBpfObjectsWithTenantSemantics(spec *ebpf.CollectionSpec) (*tenantSemanticsLoad, error) {
+	// Use a composite struct so we can access additional maps without regenerating bpf2go bindings.
+	var out struct {
+		bpfObjects
+		EnforcedCgroups      *ebpf.Map `ebpf:"enforced_cgroups"`
+		EnforcementConfigMap *ebpf.Map `ebpf:"enforcement_config_map"`
+	}
+	if err := spec.LoadAndAssign(&out, nil); err != nil {
+		return nil, err
+	}
+	return &tenantSemanticsLoad{objs: out.bpfObjects, enforcedCgroups: out.EnforcedCgroups, enforcementConfigMap: out.EnforcementConfigMap}, nil
+}
+
+type enforcementConfig struct {
+	SelectedOnly uint8
+	_            [3]uint8
+}
+
+func (e *eBPFEnforcer) setSelectedOnlyMode(enabled bool) error {
+	if e.enforcementConfigMap == nil {
+		return nil
+	}
+	var k uint32
+	val := enforcementConfig{}
+	if enabled {
+		val.SelectedOnly = 1
+	}
+	if err := e.enforcementConfigMap.Put(&k, &val); err != nil {
+		return fmt.Errorf("updating enforcement_config_map: %w", err)
+	}
+	return nil
+}
+
+func (e *eBPFEnforcer) populateEnforcedCgroups(cgroupSet map[uint64]struct{}) error {
+	if e.enforcedCgroups == nil {
+		return nil
+	}
+	value := uint8(1)
+	for id := range cgroupSet {
+		k := id
+		if err := e.enforcedCgroups.Put(&k, &value); err != nil {
+			return fmt.Errorf("updating enforced_cgroups map: %w", err)
+		}
+	}
+	return nil
+}
+
+func normalizeCgroupIDs(ids []uint64) []uint64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[uint64]struct{}, len(ids))
+	out := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// addPolicyToMapScoped adds a policy to the eBPF map for a set of subject cgroups.
+func (e *eBPFEnforcer) addPolicyToMapScoped(p policy.NetworkPolicy, subjectCgroupIDs []uint64) error {
+	subjectCgroupIDs = normalizeCgroupIDs(subjectCgroupIDs)
+	if len(subjectCgroupIDs) == 0 {
+		return nil
+	}
+
 	// Handle egress rules
 	for _, egress := range p.Spec.Egress {
-		if err := e.addEgressRule(p.Metadata.Name, egress); err != nil {
+		if err := e.addEgressRule(p.Metadata.Name, egress, subjectCgroupIDs); err != nil {
 			return err
 		}
 	}
 
 	// Handle ingress rules
 	for _, ingress := range p.Spec.Ingress {
-		if err := e.addIngressRule(p.Metadata.Name, ingress); err != nil {
+		if err := e.addIngressRule(p.Metadata.Name, ingress, subjectCgroupIDs); err != nil {
 			return err
 		}
 	}
@@ -141,8 +296,8 @@ func (e *eBPFEnforcer) addPolicyToMap(p policy.NetworkPolicy) error {
 	return nil
 }
 
-// addEgressRule adds an egress rule to the eBPF map
-func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule) error {
+// addEgressRule adds an egress rule to the eBPF map.
+func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule, subjectCgroupIDs []uint64) error {
 	safePolicyName := strings.ReplaceAll(policyName, "\n", "")
 	safePolicyName = strings.ReplaceAll(safePolicyName, "\r", "")
 
@@ -163,32 +318,36 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 			}
 			protocol := protocolToNum(port.Protocol)
 
-			if isIPv6 {
-				// Remap ICMP (1) to ICMPv6 (58) for IPv6 rules
-				if protocol == 1 {
-					protocol = 58
-				}
+			for _, cgid := range subjectCgroupIDs {
+				if isIPv6 {
+					// Remap ICMP (1) to ICMPv6 (58) for IPv6 rules
+					if protocol == 1 {
+						protocol = 58
+					}
 
-				key := policyKeyV6{
-					IP:        ipToUint32Array(ip),
-					Port:      portValue,
-					Protocol:  protocol,
-					Direction: DirectionEgress,
-				}
-				value := policyValue{Action: 1}
-				if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
-					return fmt.Errorf("failed to update IPv6 policy map: %w", err)
-				}
-			} else {
-				key := policyKey{
-					IP:        ipToUint32(ip.To4()),
-					Port:      portValue,
-					Protocol:  protocol,
-					Direction: DirectionEgress,
-				}
-				value := policyValue{Action: 1}
-				if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
-					return fmt.Errorf("failed to update policy map: %w", err)
+					key := policyKeyV6{
+						CgroupID:  cgid,
+						IP:        ipToUint32Array(ip),
+						Port:      portValue,
+						Protocol:  protocol,
+						Direction: DirectionEgress,
+					}
+					value := policyValue{Action: 1}
+					if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
+						return fmt.Errorf("failed to update IPv6 policy map: %w", err)
+					}
+				} else {
+					key := policyKey{
+						CgroupID:  cgid,
+						IP:        ipToUint32(ip.To4()),
+						Port:      portValue,
+						Protocol:  protocol,
+						Direction: DirectionEgress,
+					}
+					value := policyValue{Action: 1}
+					if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+						return fmt.Errorf("failed to update policy map: %w", err)
+					}
 				}
 			}
 
@@ -211,8 +370,8 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 	return nil
 }
 
-// addIngressRule adds an ingress rule to the eBPF map
-func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressRule) error {
+// addIngressRule adds an ingress rule to the eBPF map.
+func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressRule, subjectCgroupIDs []uint64) error {
 	safePolicyName := strings.ReplaceAll(policyName, "\n", "")
 	safePolicyName = strings.ReplaceAll(safePolicyName, "\r", "")
 
@@ -233,32 +392,36 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 			}
 			protocol := protocolToNum(port.Protocol)
 
-			if isIPv6 {
-				// Remap ICMP (1) to ICMPv6 (58) for IPv6 rules
-				if protocol == 1 {
-					protocol = 58
-				}
+			for _, cgid := range subjectCgroupIDs {
+				if isIPv6 {
+					// Remap ICMP (1) to ICMPv6 (58) for IPv6 rules
+					if protocol == 1 {
+						protocol = 58
+					}
 
-				key := policyKeyV6{
-					IP:        ipToUint32Array(ip),
-					Port:      portValue,
-					Protocol:  protocol,
-					Direction: DirectionIngress,
-				}
-				value := policyValue{Action: 1}
-				if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
-					return fmt.Errorf("failed to update IPv6 policy map: %w", err)
-				}
-			} else {
-				key := policyKey{
-					IP:        ipToUint32(ip.To4()),
-					Port:      portValue,
-					Protocol:  protocol,
-					Direction: DirectionIngress,
-				}
-				value := policyValue{Action: 1}
-				if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
-					return fmt.Errorf("failed to update policy map: %w", err)
+					key := policyKeyV6{
+						CgroupID:  cgid,
+						IP:        ipToUint32Array(ip),
+						Port:      portValue,
+						Protocol:  protocol,
+						Direction: DirectionIngress,
+					}
+					value := policyValue{Action: 1}
+					if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
+						return fmt.Errorf("failed to update IPv6 policy map: %w", err)
+					}
+				} else {
+					key := policyKey{
+						CgroupID:  cgid,
+						IP:        ipToUint32(ip.To4()),
+						Port:      portValue,
+						Protocol:  protocol,
+						Direction: DirectionIngress,
+					}
+					value := policyValue{Action: 1}
+					if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+						return fmt.Errorf("failed to update policy map: %w", err)
+					}
 				}
 			}
 
@@ -378,26 +541,22 @@ func (e *eBPFEnforcer) Close() error {
 
 	// Close maps and programs
 	if e.objs != nil {
-		if e.objs.PolicyMap != nil {
-			if err := e.objs.PolicyMap.Close(); err != nil {
-				logging.Warnf("Failed to close policy map: %v", err)
-			}
+		if err := e.objs.Close(); err != nil {
+			logging.Warnf("Failed to close bpf objects: %v", err)
 		}
-		if e.objs.FlowEvents != nil {
-			if err := e.objs.FlowEvents.Close(); err != nil {
-				logging.Warnf("Failed to close flow_events map: %v", err)
-			}
+		e.objs = nil
+	}
+	if e.enforcedCgroups != nil {
+		if err := e.enforcedCgroups.Close(); err != nil {
+			logging.Warnf("Failed to close enforced_cgroups map: %v", err)
 		}
-		if e.objs.FilterEgress != nil {
-			if err := e.objs.FilterEgress.Close(); err != nil {
-				logging.Warnf("Failed to close egress program: %v", err)
-			}
+		e.enforcedCgroups = nil
+	}
+	if e.enforcementConfigMap != nil {
+		if err := e.enforcementConfigMap.Close(); err != nil {
+			logging.Warnf("Failed to close enforcement_config_map: %v", err)
 		}
-		if e.objs.FilterIngress != nil {
-			if err := e.objs.FilterIngress.Close(); err != nil {
-				logging.Warnf("Failed to close ingress program: %v", err)
-			}
-		}
+		e.enforcementConfigMap = nil
 	}
 
 	if e.flowEventsPinPath != "" {
@@ -528,6 +687,57 @@ func EnforceWithEBPFReal(opts EnforcementOptions) error {
 	}
 
 	logging.Infof("Successfully enforced %d policies via eBPF", len(opts.Policies))
+	activeEBPFEnforcer = newEnforcer
+	return nil
+}
+
+// EnforceWithEBPFRealScoped is the tenant-aware variant of EnforceWithEBPFReal.
+//
+// Policies can be programmed for specific subject cgroups via SubjectCgroupIDs.
+func EnforceWithEBPFRealScoped(opts ScopedEnforcementOptions) error {
+	newEnforcer, err := NewEBPFEnforcer()
+	if err != nil {
+		return fmt.Errorf("failed to create eBPF enforcer: %w", err)
+	}
+
+	if err := newEnforcer.LoadPoliciesScoped(opts.Policies); err != nil {
+		_ = newEnforcer.Close()
+		return fmt.Errorf("failed to load policies: %w", err)
+	}
+
+	if opts.DryRun {
+		logging.Infof("[DRY-RUN] eBPF: Validated %d scoped policies, skipping attachment and pinning", len(opts.Policies))
+		_ = newEnforcer.Close()
+		return nil
+	}
+
+	activeEBPFMu.Lock()
+	defer activeEBPFMu.Unlock()
+
+	if activeEBPFEnforcer != nil {
+		if err := newEnforcer.UpdateFrom(activeEBPFEnforcer); err != nil {
+			logging.Warnf("Atomic update failed, falling back to full re-attach: %v", err)
+			_ = activeEBPFEnforcer.Close()
+			if err := newEnforcer.Attach(opts.CgroupPath); err != nil {
+				_ = newEnforcer.Close()
+				activeEBPFEnforcer = nil
+				return fmt.Errorf("failed to attach eBPF program: %w", err)
+			}
+		} else {
+			_ = activeEBPFEnforcer.Close()
+		}
+	} else {
+		if err := newEnforcer.Attach(opts.CgroupPath); err != nil {
+			_ = newEnforcer.Close()
+			return fmt.Errorf("failed to attach eBPF program: %w", err)
+		}
+	}
+
+	if err := newEnforcer.PinFlowEventsMap(DefaultFlowEventsPinPath); err != nil {
+		logging.Warnf("Failed to pin flow_events map (ztap flows may not work): %v", err)
+	}
+
+	logging.Infof("Successfully enforced %d scoped policies via eBPF", len(opts.Policies))
 	activeEBPFEnforcer = newEnforcer
 	return nil
 }

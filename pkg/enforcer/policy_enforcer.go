@@ -20,6 +20,7 @@ type PolicyEnforcer struct {
 	mu              sync.RWMutex
 	policySync      cluster.PolicySync
 	discovery       policy.ServiceDiscovery
+	subjectResolver SubjectResolver
 	enforcedVersion map[string]int64 // Track which version of each policy is enforced
 	activePolicies  map[string]cluster.PolicyUpdate
 	running         bool
@@ -34,12 +35,13 @@ type PolicyEnforcer struct {
 
 // PolicyEnforcerConfig holds configuration for the policy enforcer.
 type PolicyEnforcerConfig struct {
-	PolicySync    cluster.PolicySync      // Policy synchronization backend
-	Discovery     policy.ServiceDiscovery // Service discovery for label resolution
-	CgroupPath    string                  // Cgroup path for eBPF attachment (Linux only)
-	Alerts        *alert.Manager
-	ResolveLabels bool
-	DryRun        bool
+	PolicySync      cluster.PolicySync      // Policy synchronization backend
+	Discovery       policy.ServiceDiscovery // Service discovery for label resolution
+	SubjectResolver SubjectResolver         // Optional subject->cgroup resolver (Linux eBPF isolation)
+	CgroupPath      string                  // Cgroup path for eBPF attachment (Linux only)
+	Alerts          *alert.Manager
+	ResolveLabels   bool
+	DryRun          bool
 }
 
 // NewPolicyEnforcer creates a new policy enforcer that watches for policy updates.
@@ -55,6 +57,7 @@ func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
 	return &PolicyEnforcer{
 		policySync:      config.PolicySync,
 		discovery:       config.Discovery,
+		subjectResolver: config.SubjectResolver,
 		enforcedVersion: make(map[string]int64),
 		activePolicies:  make(map[string]cluster.PolicyUpdate),
 		stopCh:          make(chan struct{}),
@@ -129,36 +132,40 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 			return
 		case <-pe.retriggerCh:
 			logging.Info("Retriggering enforcement due to discovery update", nil)
-			pe.reapplyAllPolicies()
+			if err := pe.reapplyAllPolicies(ctx); err != nil {
+				logging.Warnf("Re-apply all policies failed: %v", err)
+			}
 		case update, ok := <-updates:
 			if !ok {
 				logging.Warn("Policy update channel closed, stopping enforcement loop", nil)
 				return
 			}
 
+			policyKey := update.PolicyKeyString()
+
 			// Check if we've already enforced this version
 			pe.mu.RLock()
-			currentVersion := pe.enforcedVersion[update.PolicyName]
+			currentVersion := pe.enforcedVersion[policyKey]
 			pe.mu.RUnlock()
 
 			if update.Version <= currentVersion {
 				logging.Debugf("Skipping policy %s v%d (already enforced v%d)",
-					sanitizeForLog(update.PolicyName), update.Version, currentVersion)
+					sanitizeForLog(policyKey), update.Version, currentVersion)
 				continue
 			}
 
 			// Apply the policy
 			startTime := time.Now()
-			if err := pe.applyPolicy(update); err != nil {
+			if err := pe.applyUpdate(ctx, update); err != nil {
 				logging.Warnf("Failed to enforce policy %s v%d: %v",
-					sanitizeForLog(update.PolicyName), update.Version, err)
-				cluster.RecordPolicyEnforcementError(update.PolicyName, "local-node")
+					sanitizeForLog(policyKey), update.Version, err)
+				cluster.RecordPolicyEnforcementError(policyKey, "local-node")
 				pe.emitAlert(alert.Alert{
 					Source:   "policy-enforcer",
 					Severity: alert.SeverityError,
-					Title:    fmt.Sprintf("policy %s enforcement failed", sanitizeForLog(update.PolicyName)),
+					Title:    fmt.Sprintf("policy %s enforcement failed", sanitizeForLog(policyKey)),
 					Message:  err.Error(),
-					DedupKey: fmt.Sprintf("%s:%d:enforce:error", update.PolicyName, update.Version),
+					DedupKey: fmt.Sprintf("%s:%d:enforce:error", policyKey, update.Version),
 					Details: map[string]any{
 						"version": update.Version,
 						"source":  update.Source,
@@ -173,27 +180,21 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 						"dry_run": pe.dryRun,
 					}
 					_ = pe.auditLogger.LogFailure(audit.EventPolicyEnforced, "system",
-						update.PolicyName, "enforce", err.Error(), details)
+						policyKey, "enforce", err.Error(), details)
 				}
 				continue
 			}
 
-			// Update enforced version and active policies
-			pe.mu.Lock()
-			pe.enforcedVersion[update.PolicyName] = update.Version
-			pe.activePolicies[update.PolicyName] = update
-			pe.mu.Unlock()
-
 			// Record metrics
 			duration := time.Since(startTime).Seconds()
-			cluster.RecordPolicyEnforcementDuration(update.PolicyName, duration)
-			cluster.RecordPolicyEnforced(update.PolicyName, "local-node")
+			cluster.RecordPolicyEnforcementDuration(policyKey, duration)
+			cluster.RecordPolicyEnforced(policyKey, "local-node")
 			pe.emitAlert(alert.Alert{
 				Source:   "policy-enforcer",
 				Severity: alert.SeverityInfo,
-				Title:    fmt.Sprintf("policy %s enforced", sanitizeForLog(update.PolicyName)),
+				Title:    fmt.Sprintf("policy %s enforced", sanitizeForLog(policyKey)),
 				Message:  fmt.Sprintf("version %d from %s", update.Version, sanitizeForLog(update.Source)),
-				DedupKey: fmt.Sprintf("%s:%d:enforce:success", update.PolicyName, update.Version),
+				DedupKey: fmt.Sprintf("%s:%d:enforce:success", policyKey, update.Version),
 				Details: map[string]any{
 					"version":     update.Version,
 					"source":      update.Source,
@@ -211,51 +212,133 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 					"dry_run":     pe.dryRun,
 				}
 				_ = pe.auditLogger.Log(audit.EventPolicyEnforced, "system",
-					update.PolicyName, "enforce", details)
+					policyKey, "enforce", details)
 			}
 
 			logging.Infof("Successfully enforced policy %s v%d from %s",
-				sanitizeForLog(update.PolicyName), update.Version, sanitizeForLog(update.Source))
+				sanitizeForLog(policyKey), update.Version, sanitizeForLog(update.Source))
 		}
 	}
 }
 
-func (pe *PolicyEnforcer) reapplyAllPolicies() {
+func (pe *PolicyEnforcer) reapplyAllPolicies(ctx context.Context) error {
 	pe.mu.RLock()
-	policies := make([]cluster.PolicyUpdate, 0, len(pe.activePolicies))
+	updates := make([]cluster.PolicyUpdate, 0, len(pe.activePolicies))
 	for _, p := range pe.activePolicies {
-		policies = append(policies, p)
+		updates = append(updates, p)
 	}
 	pe.mu.RUnlock()
+	if err := pe.enforceUpdates(ctx, updates); err != nil {
+		return err
+	}
 
-	// For simplicity, we just re-apply all of them.
-	// In a more optimized version, we'd only re-apply the ones affected by the change.
-	allPolicies := make([]policy.NetworkPolicy, 0)
-	for _, update := range policies {
-		parsed, err := policy.LoadFromBytes(update.YAML)
-		if err != nil {
-			logging.Warnf("Error parsing policy %s during re-apply: %v", sanitizeForLog(update.PolicyName), err)
+	pe.mu.Lock()
+	for k, u := range pe.activePolicies {
+		pe.enforcedVersion[k] = u.Version
+	}
+	pe.mu.Unlock()
+	return nil
+}
+
+func (pe *PolicyEnforcer) applyUpdate(ctx context.Context, update cluster.PolicyUpdate) error {
+	key := update.PolicyKeyString()
+
+	pe.mu.RLock()
+	updates := make([]cluster.PolicyUpdate, 0, len(pe.activePolicies)+1)
+	for k, p := range pe.activePolicies {
+		if k == key {
 			continue
 		}
-		allPolicies = append(allPolicies, parsed...)
+		updates = append(updates, p)
+	}
+	pe.mu.RUnlock()
+	updates = append(updates, update)
+
+	if err := pe.enforceUpdates(ctx, updates); err != nil {
+		return err
 	}
 
-	if pe.resolveLabels && pe.discovery != nil {
-		resolver := policy.NewPolicyResolver(pe.discovery)
-		resolved, err := resolver.ResolvePodSelectorsToIPBlocks(allPolicies)
-		if err != nil {
-			logging.Warnf("Error resolving labels during re-apply: %v", err)
-			return
-		}
-		allPolicies = resolved
+	pe.mu.Lock()
+	pe.enforcedVersion[key] = update.Version
+	pe.activePolicies[key] = update
+	pe.mu.Unlock()
+	return nil
+}
+
+func (pe *PolicyEnforcer) enforceUpdates(ctx context.Context, updates []cluster.PolicyUpdate) error {
+	flat, scoped, err := pe.compilePolicies(ctx, updates)
+	if err != nil {
+		return err
 	}
 
-	// Enforce
 	if IsLinux() {
-		_ = pe.enforceLinux(allPolicies)
-	} else {
-		_ = pe.enforceMacOS(allPolicies)
+		if pe.cgroupPath == "" {
+			EnforceWithEBPF(EnforcementOptions{Policies: flat, DryRun: pe.dryRun, CgroupPath: pe.cgroupPath, Context: ctx})
+			return nil
+		}
+
+		if pe.subjectResolver != nil {
+			return EnforceWithEBPFIfAvailableScoped(ScopedEnforcementOptions{Policies: scoped, DryRun: pe.dryRun, CgroupPath: pe.cgroupPath, Context: ctx})
+		}
+		return EnforceWithEBPFIfAvailable(EnforcementOptions{Policies: flat, DryRun: pe.dryRun, CgroupPath: pe.cgroupPath, Context: ctx})
 	}
+
+	return pe.enforceMacOS(flat)
+}
+
+func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster.PolicyUpdate) ([]policy.NetworkPolicy, []ScopedPolicy, error) {
+	flat := make([]policy.NetworkPolicy, 0)
+	scopedOut := make([]ScopedPolicy, 0)
+
+	resolver := policy.NewPolicyResolver(pe.discovery)
+	_, discoveryScoped := pe.discovery.(policy.ScopedServiceDiscovery)
+
+	for _, update := range updates {
+		tenant := cluster.NormalizeTenant(update.Tenant)
+		policies, err := policy.LoadFromBytes(update.YAML)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(policies) == 0 {
+			continue
+		}
+
+		if pe.resolveLabels && pe.discovery != nil {
+			if discoveryScoped {
+				resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(tenant, policies)
+				if err != nil {
+					return nil, nil, fmt.Errorf("resolving pod selectors (tenant %s): %w", tenant, err)
+				}
+				policies = resolved
+			} else {
+				resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+				if err != nil {
+					return nil, nil, fmt.Errorf("resolving pod selectors: %w", err)
+				}
+				policies = resolved
+			}
+		}
+
+		for _, p := range policies {
+			if err := p.Validate(); err != nil {
+				return nil, nil, err
+			}
+
+			flat = append(flat, p)
+
+			var subjectIDs []uint64
+			if pe.subjectResolver != nil {
+				ids, err := pe.subjectResolver.ResolveCgroupIDs(ctx, tenant, p.Spec.PodSelector.MatchLabels)
+				if err != nil {
+					return nil, nil, err
+				}
+				subjectIDs = ids
+			}
+			scopedOut = append(scopedOut, ScopedPolicy{Tenant: tenant, Policy: p, SubjectCgroupIDs: subjectIDs})
+		}
+	}
+
+	return flat, scopedOut, nil
 }
 
 func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
@@ -278,20 +361,37 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 		case <-ticker.C:
 			// Check for new selectors in active policies
 			pe.mu.RLock()
-			selectors := make(map[string]map[string]string)
+			selectors := make(map[string]struct {
+				tenant string
+				labels map[string]string
+			})
 			for _, update := range pe.activePolicies {
+				tenant := cluster.NormalizeTenant(update.Tenant)
 				policies, _ := policy.LoadFromBytes(update.YAML)
 				for _, p := range policies {
+					if len(p.Spec.PodSelector.MatchLabels) > 0 {
+						key := fmt.Sprintf("%s|subject|%v", tenant, p.Spec.PodSelector.MatchLabels)
+						selectors[key] = struct {
+							tenant string
+							labels map[string]string
+						}{tenant: tenant, labels: p.Spec.PodSelector.MatchLabels}
+					}
 					for _, egress := range p.Spec.Egress {
 						if len(egress.To.PodSelector.MatchLabels) > 0 {
-							key := fmt.Sprintf("%v", egress.To.PodSelector.MatchLabels)
-							selectors[key] = egress.To.PodSelector.MatchLabels
+							key := fmt.Sprintf("%s|egress|%v", tenant, egress.To.PodSelector.MatchLabels)
+							selectors[key] = struct {
+								tenant string
+								labels map[string]string
+							}{tenant: tenant, labels: egress.To.PodSelector.MatchLabels}
 						}
 					}
 					for _, ingress := range p.Spec.Ingress {
 						if len(ingress.From.PodSelector.MatchLabels) > 0 {
-							key := fmt.Sprintf("%v", ingress.From.PodSelector.MatchLabels)
-							selectors[key] = ingress.From.PodSelector.MatchLabels
+							key := fmt.Sprintf("%s|ingress|%v", tenant, ingress.From.PodSelector.MatchLabels)
+							selectors[key] = struct {
+								tenant string
+								labels map[string]string
+							}{tenant: tenant, labels: ingress.From.PodSelector.MatchLabels}
 						}
 					}
 				}
@@ -299,13 +399,20 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 			pe.mu.RUnlock()
 
 			// Start new watches
-			for key, labels := range selectors {
+			scopedDisc, isScoped := pe.discovery.(policy.ScopedServiceDiscovery)
+			for key, sel := range selectors {
 				if _, ok := activeWatches[key]; !ok {
 					watchCtx, cancel := context.WithCancel(ctx)
 					activeWatches[key] = cancel
-					ch, err := pe.discovery.Watch(watchCtx, labels)
+					var ch <-chan []string
+					var err error
+					if isScoped {
+						ch, err = scopedDisc.WatchScoped(watchCtx, sel.tenant, sel.labels)
+					} else {
+						ch, err = pe.discovery.Watch(watchCtx, sel.labels)
+					}
 					if err != nil {
-						logging.Warnf("failed to start watch for %v: %v", labels, err)
+						logging.Warnf("failed to start watch for %s %v: %v", sel.tenant, sel.labels, err)
 						continue
 					}
 					go func(labels map[string]string, ch <-chan []string) {
@@ -316,7 +423,7 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 							default:
 							}
 						}
-					}(labels, ch)
+					}(sel.labels, ch)
 				}
 			}
 
@@ -329,63 +436,6 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 			}
 		}
 	}
-}
-
-// applyPolicy parses and enforces a single policy update.
-func (pe *PolicyEnforcer) applyPolicy(update cluster.PolicyUpdate) error {
-	// Parse the policy YAML
-	policies, err := policy.LoadFromBytes(update.YAML)
-	if err != nil {
-		return err
-	}
-
-	if len(policies) == 0 {
-		logging.Warnf("policy %s contains no NetworkPolicy objects", sanitizeForLog(update.PolicyName))
-		return nil
-	}
-
-	// Resolve pod selectors to IP blocks if enabled
-	if pe.resolveLabels && pe.discovery != nil {
-		resolver := policy.NewPolicyResolver(pe.discovery)
-		resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
-		if err != nil {
-			return fmt.Errorf("resolving pod selectors: %w", err)
-		}
-		policies = resolved
-	}
-
-	// Validate all policies
-	for _, p := range policies {
-		if err := p.Validate(); err != nil {
-			return err
-		}
-	}
-
-	// Enforce based on platform
-	if IsLinux() {
-		return pe.enforceLinux(policies)
-	}
-	return pe.enforceMacOS(policies)
-}
-
-// enforceLinux applies policies using eBPF on Linux.
-func (pe *PolicyEnforcer) enforceLinux(policies []policy.NetworkPolicy) error {
-	opts := EnforcementOptions{
-		Policies:   policies,
-		DryRun:     pe.dryRun,
-		CgroupPath: pe.cgroupPath,
-	}
-
-	// Use the real eBPF enforcer if available and on Linux
-	if pe.cgroupPath != "" && IsLinux() {
-		// EnforceWithEBPFReal is only available on Linux (ebpf_linux.go)
-		// Call it through the generic enforcement function
-		return EnforceWithEBPFIfAvailable(opts)
-	}
-
-	// Fallback to simulation
-	EnforceWithEBPF(opts)
-	return nil
 }
 
 // enforceMacOS applies policies using pf on macOS.
@@ -414,7 +464,11 @@ func (pe *PolicyEnforcer) GetEnforcedVersions() map[string]int64 {
 func (pe *PolicyEnforcer) GetEnforcedVersion(policyName string) int64 {
 	pe.mu.RLock()
 	defer pe.mu.RUnlock()
-	return pe.enforcedVersion[policyName]
+	key, err := cluster.ParsePolicyKey(policyName)
+	if err != nil {
+		key = cluster.PolicyKey{Tenant: cluster.DefaultTenant, Name: policyName}
+	}
+	return pe.enforcedVersion[key.String()]
 }
 
 func (pe *PolicyEnforcer) emitAlert(a alert.Alert) {

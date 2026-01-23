@@ -678,6 +678,22 @@ func TestCheckConflicts(t *testing.T) {
 		t.Fatal("expected conflict but got none")
 	}
 
+	// Same rules but different tenants should not conflict.
+	if err := CheckConflicts(
+		[]NamedPolicy{{Tenant: "tenant-a", PolicyName: "existing", Policy: existing[0]}},
+		NamedPolicy{Tenant: "tenant-b", PolicyName: "new-policy", Policy: candidate},
+	); err != nil {
+		t.Fatalf("expected no cross-tenant conflict, got %v", err)
+	}
+
+	// Same tenant should conflict.
+	if err := CheckConflicts(
+		[]NamedPolicy{{Tenant: "tenant-a", PolicyName: "existing", Policy: existing[0]}},
+		NamedPolicy{Tenant: "tenant-a", PolicyName: "new-policy", Policy: candidate},
+	); err == nil {
+		t.Fatal("expected same-tenant conflict but got none")
+	}
+
 	nonConflict := NetworkPolicy{
 		APIVersion: "ztap/v1",
 		Kind:       "NetworkPolicy",

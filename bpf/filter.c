@@ -10,6 +10,7 @@ typedef unsigned long long __u64;
 
 // BPF map types
 #define BPF_MAP_TYPE_HASH 1
+#define BPF_MAP_TYPE_ARRAY 2
 #define BPF_MAP_TYPE_RINGBUF 27
 
 // BPF constants
@@ -147,6 +148,15 @@ struct policy_value
     __u8 _padding[3];
 };
 
+// enforcement_config controls optional runtime behaviors.
+struct enforcement_config
+{
+    // If set, enforce policies only for cgroups present in enforced_cgroups.
+    // If not set, use legacy behavior (default deny on miss).
+    __u8 selected_only;
+    __u8 _padding[3];
+};
+
 // BPF map definition using BTF-based approach (required by cilium/ebpf v0.19+)
 // Modern cilium/ebpf expects map definitions in .maps section with BTF type info
 struct
@@ -164,6 +174,27 @@ struct
     __type(key, struct policy_key_v6);
     __type(value, struct policy_value);
 } policy_map_v6 SEC(".maps");
+
+// enforced_cgroups is a set of cgroup IDs that have at least one policy selecting them.
+//
+// When enforcement_config.selected_only=1, packets originating from cgroups not
+// in this set are allowed (Kubernetes NetworkPolicy semantics).
+struct
+{
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 200000);
+    __type(key, __u64);
+    __type(value, __u8);
+} enforced_cgroups SEC(".maps");
+
+// enforcement_config_map is a single-element array map storing enforcement_config.
+struct
+{
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct enforcement_config);
+} enforcement_config_map SEC(".maps");
 
 // Flow event structure for real-time monitoring (must match Go struct in pkg/flow/types.go)
 struct flow_event
@@ -366,9 +397,23 @@ int filter_egress(struct __sk_buff *skb)
 
     if (family == 4)
     {
+        __u32 cfg_k = 0;
+        struct enforcement_config *cfg = bpf_map_lookup_elem(&enforcement_config_map, &cfg_k);
+        __u8 selected_only = cfg ? cfg->selected_only : 0;
+        __u64 cgid = bpf_get_current_cgroup_id();
+        if (selected_only)
+        {
+            __u8 *present = bpf_map_lookup_elem(&enforced_cgroups, &cgid);
+            if (!present)
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 1, 4);
+                return 1;
+            }
+        }
+
         // Lookup policy in map (egress uses destination IP/port)
         struct policy_key key = {
-            .cgroup_id = bpf_get_current_cgroup_id(),
+            .cgroup_id = cgid,
             .ip = dest_ip[0],
             .port = dest_port,
             .protocol = protocol,
@@ -378,9 +423,12 @@ int filter_egress(struct __sk_buff *skb)
         struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
         if (!value)
         {
-            // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
-            key.cgroup_id = 0;
-            value = bpf_map_lookup_elem(&policy_map, &key);
+            if (!selected_only)
+            {
+                // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
+                key.cgroup_id = 0;
+                value = bpf_map_lookup_elem(&policy_map, &key);
+            }
         }
         if (value)
         {
@@ -398,8 +446,22 @@ int filter_egress(struct __sk_buff *skb)
     }
     else if (family == 6)
     {
+        __u32 cfg_k = 0;
+        struct enforcement_config *cfg = bpf_map_lookup_elem(&enforcement_config_map, &cfg_k);
+        __u8 selected_only = cfg ? cfg->selected_only : 0;
+        __u64 cgid = bpf_get_current_cgroup_id();
+        if (selected_only)
+        {
+            __u8 *present = bpf_map_lookup_elem(&enforced_cgroups, &cgid);
+            if (!present)
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_EGRESS, 1, 6);
+                return 1;
+            }
+        }
+
         struct policy_key_v6 key = {
-            .cgroup_id = bpf_get_current_cgroup_id(),
+            .cgroup_id = cgid,
             .port = dest_port,
             .protocol = protocol,
             .direction = DIRECTION_EGRESS,
@@ -410,8 +472,11 @@ int filter_egress(struct __sk_buff *skb)
         struct policy_value *value = bpf_map_lookup_elem(&policy_map_v6, &key);
         if (!value)
         {
-            key.cgroup_id = 0;
-            value = bpf_map_lookup_elem(&policy_map_v6, &key);
+            if (!selected_only)
+            {
+                key.cgroup_id = 0;
+                value = bpf_map_lookup_elem(&policy_map_v6, &key);
+            }
         }
         if (value)
         {
@@ -459,9 +524,23 @@ int filter_ingress(struct __sk_buff *skb)
 
     if (family == 4)
     {
+        __u32 cfg_k = 0;
+        struct enforcement_config *cfg = bpf_map_lookup_elem(&enforcement_config_map, &cfg_k);
+        __u8 selected_only = cfg ? cfg->selected_only : 0;
+        __u64 cgid = bpf_get_current_cgroup_id();
+        if (selected_only)
+        {
+            __u8 *present = bpf_map_lookup_elem(&enforced_cgroups, &cgid);
+            if (!present)
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 1, 4);
+                return 1;
+            }
+        }
+
         // Lookup policy in map (ingress uses source IP and destination port)
         struct policy_key key = {
-            .cgroup_id = bpf_get_current_cgroup_id(),
+            .cgroup_id = cgid,
             .ip = src_ip[0],
             .port = dest_port,
             .protocol = protocol,
@@ -471,9 +550,12 @@ int filter_ingress(struct __sk_buff *skb)
         struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
         if (!value)
         {
-            // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
-            key.cgroup_id = 0;
-            value = bpf_map_lookup_elem(&policy_map, &key);
+            if (!selected_only)
+            {
+                // Backward-compatible fallback: treat cgroup_id=0 as "global" policy.
+                key.cgroup_id = 0;
+                value = bpf_map_lookup_elem(&policy_map, &key);
+            }
         }
         if (value)
         {
@@ -491,8 +573,22 @@ int filter_ingress(struct __sk_buff *skb)
     }
     else if (family == 6)
     {
+        __u32 cfg_k = 0;
+        struct enforcement_config *cfg = bpf_map_lookup_elem(&enforcement_config_map, &cfg_k);
+        __u8 selected_only = cfg ? cfg->selected_only : 0;
+        __u64 cgid = bpf_get_current_cgroup_id();
+        if (selected_only)
+        {
+            __u8 *present = bpf_map_lookup_elem(&enforced_cgroups, &cgid);
+            if (!present)
+            {
+                emit_flow_event(src_ip, dest_ip, src_port, dest_port, protocol, DIRECTION_INGRESS, 1, 6);
+                return 1;
+            }
+        }
+
         struct policy_key_v6 key = {
-            .cgroup_id = bpf_get_current_cgroup_id(),
+            .cgroup_id = cgid,
             .port = dest_port,
             .protocol = protocol,
             .direction = DIRECTION_INGRESS,
@@ -503,8 +599,11 @@ int filter_ingress(struct __sk_buff *skb)
         struct policy_value *value = bpf_map_lookup_elem(&policy_map_v6, &key);
         if (!value)
         {
-            key.cgroup_id = 0;
-            value = bpf_map_lookup_elem(&policy_map_v6, &key);
+            if (!selected_only)
+            {
+                key.cgroup_id = 0;
+                value = bpf_map_lookup_elem(&policy_map_v6, &key);
+            }
         }
         if (value)
         {

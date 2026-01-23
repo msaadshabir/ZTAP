@@ -29,6 +29,24 @@ type EnforcementOptions struct {
 	Context    context.Context
 }
 
+// ScopedPolicy is a network policy paired with subject cgroups.
+//
+// SubjectCgroupIDs are Linux cgroup IDs (inode numbers on cgroup v2) for the
+// workloads selected by the policy's spec.podSelector in the given tenant.
+type ScopedPolicy struct {
+	Tenant           string
+	Policy           policy.NetworkPolicy
+	SubjectCgroupIDs []uint64
+}
+
+// ScopedEnforcementOptions is the tenant-aware enforcement request.
+type ScopedEnforcementOptions struct {
+	Policies   []ScopedPolicy
+	DryRun     bool
+	CgroupPath string // Used for Linux eBPF
+	Context    context.Context
+}
+
 // IsLinux returns true if running on Linux
 func IsLinux() bool {
 	return runtime.GOOS == "linux"

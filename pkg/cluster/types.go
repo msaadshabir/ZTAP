@@ -111,6 +111,7 @@ type PolicySync interface {
 
 // PolicyUpdate represents a distributed policy change.
 type PolicyUpdate struct {
+	Tenant     string    // Tenant scope (Kubernetes namespace in k8s deployments)
 	PolicyName string    // Name of the policy
 	YAML       []byte    // Policy YAML content
 	Version    int64     // Version number for ordering
@@ -118,8 +119,17 @@ type PolicyUpdate struct {
 	Timestamp  time.Time // When the update occurred
 }
 
+func (u PolicyUpdate) Key() PolicyKey {
+	return PolicyKey{Tenant: u.Tenant, Name: u.PolicyName}.Normalized()
+}
+
+func (u PolicyUpdate) PolicyKeyString() string {
+	return u.Key().String()
+}
+
 // PolicyRevision is an immutable record of a policy version.
 type PolicyRevision struct {
+	Tenant              string    // Tenant scope (Kubernetes namespace in k8s deployments)
 	PolicyName          string    // Policy name
 	Version             int64     // Monotonically increasing version
 	YAML                []byte    // Full policy YAML
@@ -127,6 +137,14 @@ type PolicyRevision struct {
 	Timestamp           time.Time // Creation timestamp
 	Reason              string    // Optional human note for the change
 	RollbackFromVersion *int64    // Set when this revision was created by a rollback
+}
+
+func (r PolicyRevision) Key() PolicyKey {
+	return PolicyKey{Tenant: r.Tenant, Name: r.PolicyName}.Normalized()
+}
+
+func (r PolicyRevision) PolicyKeyString() string {
+	return r.Key().String()
 }
 
 // PolicyRevisionStore exposes policy history and rollback operations.
