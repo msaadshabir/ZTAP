@@ -54,6 +54,9 @@ ztap enforce -f policy.yaml
 # Policies that use `podSelector.matchLabels` can be enforced by resolving selectors into `/32` rules first:
 # - In-cluster: run `ztap agent`
 # - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s`
+# In multi-namespace Kubernetes deployments:
+# - `ztap agent --namespaces ns-a,ns-b` or `ztap agent --all-namespaces`
+# - Tenant isolation requires Linux eBPF (iptables fallback can't guarantee isolation)
 sudo ztap enforce -f policy.yaml
 
 # Dry-run mode (all platforms)
@@ -476,7 +479,7 @@ go build
 go test ./...
 
 # eBPF integration test (Linux + root required)
-sudo go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
+sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v
 
 # Coverage
 go test ./... -cover

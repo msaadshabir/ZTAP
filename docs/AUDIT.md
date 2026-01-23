@@ -69,9 +69,11 @@ The audit system tracks the following event types:
 Audit logs are stored as newline-delimited JSON (NDJSON) in `~/.ztap/audit.log`:
 
 ```json
-{"id":"1729800000000-12345","timestamp":"2025-10-24T12:00:00Z","event_type":"policy.created","actor":"admin","resource":"web-policy","action":"created","details":{"version":1},"previous_hash":"0000...","hash":"a1b2...","outcome":"success"}
-{"id":"1729800060000-12346","timestamp":"2025-10-24T12:01:00Z","event_type":"policy.enforced","actor":"system","resource":"web-policy","action":"enforce","details":{"version":1,"duration_ms":45.2,"dry_run":false},"previous_hash":"a1b2...","hash":"c3d4...","outcome":"success"}
+{"id":"1729800000000-12345","timestamp":"2025-10-24T12:00:00Z","event_type":"policy.created","actor":"admin","resource":"default/web-policy","action":"created","details":{"version":1},"previous_hash":"0000...","hash":"a1b2...","outcome":"success"}
+{"id":"1729800060000-12346","timestamp":"2025-10-24T12:01:00Z","event_type":"policy.enforced","actor":"system","resource":"default/web-policy","action":"enforce","details":{"version":1,"duration_ms":45.2,"dry_run":false},"previous_hash":"a1b2...","hash":"c3d4...","outcome":"success"}
 ```
+
+In Kubernetes deployments, `resource` is typically `namespace/policy`.
 
 Note: `policy.enforced` events include a `dry_run` field in `details` to indicate if the enforcement was simulated.
 
@@ -92,7 +94,7 @@ ztap audit view --actor admin
 ztap audit view --actor system
 
 # Filter by resource
-ztap audit view --resource web-policy
+ztap audit view --resource default/web-policy
 
 # Filter by time range (RFC3339 format)
 ztap audit view --start 2025-10-24T00:00:00Z --end 2025-10-24T23:59:59Z
@@ -157,7 +159,7 @@ The audit logger is automatically integrated into the PolicyEnforcer, logging al
 {
     "event_type": "policy.enforced",
     "actor": "system",
-    "resource": "web-policy",
+    "resource": "default/web-policy",
     "action": "enforce",
     "details": {
         "version": 1,

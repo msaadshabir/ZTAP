@@ -63,7 +63,12 @@ sudo apt-get install -y clang llvm
 
 ### Standard Build (Go)
 
-The eBPF bytecode is automatically generated and embedded during the build process if `go generate` is run:
+The eBPF bytecode is automatically generated and embedded during the build process if `go generate` is run.
+
+Notes:
+
+- `go generate ./pkg/enforcer/...` requires a `clang` toolchain that supports the BPF backend.
+- On macOS, Apple clang typically does not include the BPF backend; run generation on Linux (or in a Linux container/VM).
 
 ```bash
 # Generate the Go wrappers for eBPF bytecode
@@ -155,10 +160,24 @@ struct policy_value {
 };
 ```
 
+Additional maps (used for Kubernetes-style “selected pods only” semantics in scoped mode):
+
+```c
+// Set of cgroup ids selected by at least one policy
+map enforced_cgroups: key=__u64 (cgroup id), value=__u8 (present)
+
+// Single-element config (array[1])
+struct enforcement_config { __u8 selected_only; };
+map enforcement_config_map: key=__u32, value=enforcement_config
+```
+
 Lookup behavior:
 
 - The dataplane looks up policies using the current process cgroup id.
-- If there is no match for the current cgroup id, it falls back to `cgroup_id = 0` to preserve existing “global” enforcement.
+- Legacy (global) mode: if there is no match for the current cgroup id, it falls back to `cgroup_id = 0`.
+- Scoped (per-cgroup) mode: ZTAP enables `enforcement_config.selected_only=1` and populates `enforced_cgroups`.
+  - If the current cgroup is not in `enforced_cgroups`, traffic is allowed (pod not selected by any policy).
+  - If the current cgroup is in `enforced_cgroups` and there is no matching rule, traffic is blocked (default-deny on miss for selected pods).
 - IPv4 packets are looked up in `policy_map`.
 - IPv6 packets are looked up in `policy_map_v6`.
 
@@ -442,10 +461,10 @@ sudo cat /sys/kernel/debug/tracing/trace_pipe
 
 ```bash
 # Run enforcer tests (requires Linux)
-GOOS=linux go test ./pkg/enforcer -v
+go test ./pkg/enforcer -v
 
 # Run full eBPF verification (requires root + build tags)
-sudo GOOS=linux go test -tags integration ./pkg/enforcer -run TestEBPFIntegrationLoadAndAttach -v
+sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v
 ```
 
 The integration test recompiles `bpf/filter.o`, attaches the compiled program to a temporary

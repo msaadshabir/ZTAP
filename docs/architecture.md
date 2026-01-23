@@ -47,7 +47,8 @@ ResolveLabels(labels map[string]string) ([]string, error)
 - **Linux**: eBPF (Primary)
   - Attach to cgroup hooks (egress and ingress)
   - Uses `bpf_link` for atomic, graceful policy reloads without connection drops
-  - Per-cgroup policy keys (falls back to global keys while per-pod scoping is WIP)
+  - Per-cgroup policy keys (Kubernetes agent programs per-pod cgroup rules)
+  - In scoped mode, “selected pods only” semantics are enabled so pods without policies are not impacted
   - Kernel-level enforcement with BTF support
   - Safe packet parsing using bpf_skb_load_bytes
   - Bidirectional filtering (cgroup_skb/egress and cgroup_skb/ingress)
@@ -173,7 +174,9 @@ StartServer(port int) error
 - **Node Agent** (`ztap agent`)
   - Watches the ConfigMap policy store via a Kubernetes-backed PolicySync (`pkg/cluster/policy_sync_k8s.go`)
   - Enforces policies via the existing `PolicyEnforcer`
-  - Resolves `matchLabels` to pod IPs using Kubernetes discovery (`pkg/discovery/k8s_discovery.go`)
+  - Resolves `matchLabels` to pod IPs using Kubernetes discovery:
+    - single-namespace: `pkg/discovery/k8s_discovery.go`
+    - multi-namespace/all namespaces: `pkg/discovery/k8s_discovery_all_namespaces.go` (tenant-scoped)
   - Translates `podSelector.matchLabels` targets into concrete `/32` `ipBlock` rules and re-applies enforcement when the resolved Pod IP set changes
 User
  │

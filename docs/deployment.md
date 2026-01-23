@@ -175,6 +175,12 @@ Notes:
   - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s` configured
     Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels).
 
+Kubernetes multi-namespace agent mode:
+
+- Watch an allow-list: `ztap agent --namespaces ns-a,ns-b`
+- Watch all namespaces: `ztap agent --all-namespaces`
+- Tenant isolation requires Linux eBPF (iptables fallback can't guarantee isolation)
+
 ### View Status
 
 ```bash

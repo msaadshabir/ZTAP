@@ -119,13 +119,14 @@ var policyListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "Name\tVersion\tSource Node\tLast Updated")
-		fmt.Fprintln(w, "----\t-------\t-----------\t------------")
+		fmt.Fprintln(w, "Policy\tVersion\tSource Node\tLast Updated")
+		fmt.Fprintln(w, "------\t-------\t-----------\t------------")
 
 		for _, policy := range policies {
 			lastUpdated := time.Since(policy.Timestamp).Round(time.Second)
+			key := cluster.PolicyKey{Tenant: policy.Tenant, Name: policy.Name}.String()
 			fmt.Fprintf(w, "%s\t%d\t%s\t%s ago\n",
-				policy.Name, policy.Version, policy.Source, lastUpdated)
+				key, policy.Version, policy.Source, lastUpdated)
 		}
 		_ = w.Flush()
 		fmt.Printf("\nTotal: %d polic%s\n", len(policies), pluralize(len(policies), "y", "ies"))

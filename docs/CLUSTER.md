@@ -88,15 +88,17 @@ ZTAP synchronizes policies across all cluster nodes automatically.
 ztap policy sync examples/web-to-db.yaml --name web-to-db
 ```
 
+Tenant-scoped policy names are supported via `tenant/policy` (defaults to `default/<name>` when omitted).
+
 ### List Policies
 
 ```bash
 ztap policy list
 
 # Output:
-# Name         Version  Source Node  Last Updated
-# web-to-db    2        node-1       5s ago
-# api-policy   1        node-1       10m ago
+# Policy              Version  Source Node  Last Updated
+# default/web-to-db   2        node-1       5s ago
+# default/api-policy  1        node-1       10m ago
 ```
 
 ### Watch for Changes
@@ -109,6 +111,12 @@ ztap policy watch
 
 ```bash
 ztap policy show web-to-db
+```
+
+Or:
+
+```bash
+ztap policy show tenant-a/web-to-db
 ```
 
 ### Policy Revision History
@@ -143,12 +151,12 @@ policySync.Start(ctx)
 
 // Sync a policy (leader only)
 policyYAML := []byte(`apiVersion: ztap/v1...`)
-policySync.SyncPolicy(ctx, "web-to-db", policyYAML)
+policySync.SyncPolicy(ctx, "default/web-to-db", policyYAML)
 
 // Subscribe to updates
 updates := policySync.SubscribePolicies(ctx)
 for update := range updates {
-    fmt.Printf("Policy %s v%d updated\n", update.PolicyName, update.Version)
+    fmt.Printf("Policy %s v%d updated\n", update.PolicyKeyString(), update.Version)
 }
 ```
 

@@ -56,9 +56,18 @@ ZTAP includes comprehensive test coverage across all critical components with un
 > **Note**: These tests require Linux, root privileges, and a kernel supporting eBPF (5.7+).
 
 - **TestEBPFIntegrationLoadAndAttach**: Verifies eBPF program compilation, map population, and cgroup attachment
+- **TestEBPFIntegrationCgroupScopedMapKey**: Verifies non-zero cgroup key programming and selected-only config
+- **TestEBPFIntegrationCgroupIsolationBetweenCgroups**: Verifies a rule programmed for cgroup A does not match cgroup B
+- **TestEBPFIntegrationSelectedOnlySemantics**: Verifies non-enforced cgroups default-allow and enforced cgroups default-deny on miss
 - **TestEBPFGracefulReload**: Verifies that policy updates are applied using atomic `bpf_link` updates without detaching the program (ensuring zero downtime)
 
-**Run**: `sudo go test -tags integration ./pkg/enforcer -v`
+Run prerequisites (Linux only):
+
+- root (or sufficient capabilities to load/attach cgroup BPF)
+- kernel 5.7+
+- `make`, `clang`, and `llvm-strip` available (the tests recompile `bpf/filter.o`)
+
+**Run**: `sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v`
 
 - **TestRevokeAllEgressNotFound**: Detects missing Security Groups
 

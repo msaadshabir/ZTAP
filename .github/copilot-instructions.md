@@ -30,6 +30,12 @@ type ServiceDiscovery interface {
     ResolveLabels(labels map[string]string) ([]string, error)
 }
 
+// Optional extension for multi-tenant environments (scope is typically a k8s namespace)
+type ScopedServiceDiscovery interface {
+    ResolveLabelsScoped(scope string, labels map[string]string) ([]string, error)
+    WatchScoped(ctx context.Context, scope string, labels map[string]string) (<-chan []string, error)
+}
+
 // pkg/cluster/types.go - Leader election backends
 type LeaderElection interface {
     Start(ctx context.Context) error
@@ -104,7 +110,8 @@ Windows enforcement constraints (WFP):
 go test ./...
 
 # eBPF integration (Linux + root only)
-sudo go test -tags integration ./pkg/enforcer -run TestEBPFIntegration -v
+# Note: these tests recompile bpf/filter.o and require make + clang + llvm-strip.
+sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v
 
 # iptables integration (Linux + NetAdmin only)
 sudo ZTAP_FORCE_IPTABLES=1 go test -tags integration -v ./tests/integration_iptables.sh
@@ -138,7 +145,8 @@ type ValidationError struct {
 `pkg/audit/audit.go` uses SHA-256 hash chaining for tamper detection:
 
 ```go
-auditLogger.Log(audit.EventPolicyEnforced, "system", policyName, "enforce", details)
+// resource is typically "tenant/policy" (k8s namespace == tenant)
+auditLogger.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", details)
 auditLogger.VerifyIntegrity() // Detects tampering
 ```
 

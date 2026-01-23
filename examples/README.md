@@ -42,6 +42,12 @@ Policies that use non-/32 CIDRs will be rejected by the eBPF enforcer. See `docs
 Policies that use `podSelector` targets can be enforced by resolving selectors into `/32` `ipBlock` rules first (in-cluster via `ztap agent`, or locally via `ztap enforce --resolve-labels` with `discovery.backend: k8s`).
 Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels).
 
+Kubernetes multi-namespace agent mode:
+
+- Watch an allow-list: `ztap agent --namespaces ns-a,ns-b`
+- Watch all namespaces: `ztap agent --all-namespaces`
+- Tenant isolation requires Linux eBPF (iptables fallback can't guarantee isolation)
+
 ### web-to-db.yaml
 
 Three-tier application: web to API, IoT to internet.

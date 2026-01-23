@@ -84,7 +84,16 @@ Pod IP auto-discovery:
 - The agent resolves `podSelector.matchLabels` targets to live Pod IPs via the Kubernetes API and translates them into `/32` `ipBlock` rules for enforcement.
 - For local development (out-of-cluster), you can resolve selectors before enforcing with `ztap enforce --resolve-labels` when `discovery.backend: k8s` is configured (kubeconfig-based).
 
-Current limitation: Linux eBPF enforcement supports per-cgroup policy keys but currently falls back to a global key (`cgroup_id=0`) until the agent maps pods to cgroups.
+Multi-namespace / multi-tenant notes:
+
+- In Kubernetes deployments, tenant == namespace.
+- The agent can watch policies in one namespace, an allow-list, or all namespaces:
+  - Single namespace: `ztap agent --namespace default` (or `ZTAP_NAMESPACE=default`)
+  - Allow-list: `ztap agent --namespaces ns-a,ns-b`
+  - All namespaces: `ztap agent --all-namespaces`
+- Linux eBPF enforcement programs per-cgroup rules. In Kubernetes agent mode, ZTAP resolves selected pod cgroups and installs rules per selected cgroup.
+- When running scoped (per-cgroup) enforcement, ZTAP uses Kubernetes NetworkPolicy-style semantics: pods not selected by any policy are not isolated.
+- If eBPF is unavailable and the agent falls back to iptables, tenant isolation is not guaranteed.
 
 ## Configuration
 
