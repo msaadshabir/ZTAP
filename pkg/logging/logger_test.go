@@ -29,6 +29,9 @@ func TestLoggerWritesToFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating logger: %v", err)
 	}
+	if file, ok := logger.Output().(*os.File); ok {
+		defer file.Close()
+	}
 
 	logger.Info("hello", Fields{"component": "test"})
 	logger.Info("world", nil)
