@@ -361,7 +361,7 @@ Windows hosts are supported via Windows Filtering Platform (WFP) when running `z
 Notes:
 
 - Docker Compose stack is Linux-first; on Windows, prefer running the stack under WSL2.
-- Windows flow monitoring is currently WIP.
+- Windows flow monitoring uses WFP NetEvents and requires an elevated terminal. See `docs/runbooks/windows-flow-monitoring.md`.
 
 ## Related Documentation
 

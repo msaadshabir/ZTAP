@@ -35,7 +35,8 @@
 - Alerting with webhook integrations (Slack, PagerDuty)
 - GCP VPC Firewall Rules synchronization
 - Kubernetes Operator with NetworkPolicy CRD
-- Windows enforcement via Windows Filtering Platform (WFP) (experimental; Windows flow monitoring is WIP)
+- Windows enforcement via Windows Filtering Platform (WFP) (experimental)
+- Windows flow monitoring via WFP NetEvents (ztap-only; requires Administrator)
 - iptables fallback for older Linux kernels
 - Pre-compiled eBPF binaries (built with bpf2go)
 - **Health/readiness probes** - REST `GET /healthz` (liveness) and `GET /readyz` (readiness); gRPC exposes standard `grpc.health.v1.Health` (`Check`, `Watch`)
@@ -45,10 +46,6 @@
 - **Certificate-based authentication** - mTLS client authentication for API access (implemented for REST + gRPC; optional gate that still uses bearer-token RBAC on top)
 
 ## Planned
-
-### Operational Readiness
-
-- **Windows flow monitoring** - Complete WFP flow event capture
 
 ### Compliance and Enterprise
 

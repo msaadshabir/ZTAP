@@ -108,7 +108,7 @@ ztap status
 
 ### Observability
 
-- **Flow Monitoring** – Real-time on Linux with eBPF enforcement active; simulated on macOS; Windows flow reader is WIP
+- **Flow Monitoring** – Real-time on Linux with eBPF enforcement active; Windows via WFP NetEvents (Admin; ztap-only); simulated on macOS
 - **Alerting (Webhooks)** – Slack and PagerDuty notifications
 - **Prometheus Metrics** – Pre-built exporters
 - **Grafana Dashboards** – Auto-provisioned
@@ -141,6 +141,7 @@ ztap status
 | [Audit Logging](docs/audit.md)             | Tamper-proof audit log system             |
 | [Testing Guide](docs/testing.md)           | Comprehensive testing documentation       |
 | [Roadmap](docs/roadmap.md)                 | Delivered and planned features            |
+| [Windows Flow Runbook](docs/runbooks/windows-flow-monitoring.md) | Manual validation for WFP flows |
 | [Anomaly Detection](pkg/anomaly/README.md) | ML service setup                          |
 
 ---
@@ -386,12 +387,16 @@ ztap flows --follow
 ztap flows --action blocked --protocol TCP
 ztap flows --direction egress --limit 100
 
-# Output formats
-ztap flows --output json    # JSON format
-ztap flows --output wide    # Extended details
+  # Output formats
+  ztap flows --output table   # Default
+  ztap flows --output json
 ```
 
-On Linux, if `ztap enforce` is active, `ztap flows --follow` streams real events from the pinned eBPF ring buffer map (`/sys/fs/bpf/ztap/flow_events`). On macOS, flow output remains simulated.
+On Linux, if `ztap enforce` is active, `ztap flows --follow` streams real events from the pinned eBPF ring buffer map (`/sys/fs/bpf/ztap/flow_events`).
+
+On Windows, `ztap flows --follow` streams WFP NetEvents (requires an elevated terminal). By default it emits only ZTAP-attributable decisions (`ztap-only`), so run `ztap enforce` first.
+
+On macOS, flow output remains simulated.
 
 </details>
 

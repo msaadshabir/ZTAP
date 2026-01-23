@@ -250,7 +250,7 @@ ZTAP uses Windows Filtering Platform (WFP) on Windows.
 
 - Run `ztap enforce` from an elevated terminal (Administrator).
 - The current Windows enforcement subset is intentionally small: IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
-- Flow monitoring on Windows is still WIP.
+- Flow monitoring on Windows uses WFP NetEvents and requires an elevated terminal. See `docs/runbooks/windows-flow-monitoring.md`.
 
 ### 5. AWS Integration (Optional)
 

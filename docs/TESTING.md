@@ -141,13 +141,21 @@ go test ./... -race
 
 - Windows support uses Windows Filtering Platform (WFP) and requires an elevated terminal (Administrator) to actually apply/tear down filters.
 - Unit tests for policy translation run on any OS; WFP runtime behavior is best validated on Windows.
-- Windows WFP integration tests are not part of the default test suite yet.
+- Windows WFP integration tests exist behind a build tag and are not part of the default test suite.
+
+Run the Windows WFP flow integration tests (on Windows, elevated terminal):
+
+```bash
+go test ./pkg/flow -tags=integration -run TestWFPFlowIntegration -v
+```
 
 Compile-check WFP codepaths from non-Windows hosts:
 
 ```bash
 GOOS=windows GOARCH=amd64 go test ./... -c
 ```
+
+CI note: `.github/workflows/ci.yml` runs Go unit tests on `windows-latest` and includes Windows in the cross-build matrix.
 
 ## Test Results Summary
 
