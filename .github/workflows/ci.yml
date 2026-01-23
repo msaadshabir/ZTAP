@@ -99,6 +99,41 @@ jobs:
           name: coverage-${{ matrix.os }}
           path: coverage-${{ matrix.os }}.out
 
+  test-windows:
+    name: Go Tests (windows-latest)
+    runs-on: windows-latest
+    needs: lint
+
+    env:
+      GOFLAGS: -buildvcs=false
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run unit tests
+        run: go test ./pkg/... -v -coverprofile=coverage-windows.out
+
+      - name: Run integration tests
+        run: go test ./tests/integration_test.go -v
+
+      - name: Run CLI tests
+        run: go test ./tests/cli_test.go -v -timeout 5m
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-windows
+          path: coverage-windows.out
+
   test-integration:
     name: Integration Tests (Linux)
     runs-on: ubuntu-latest
@@ -308,9 +343,9 @@ jobs:
 
   coverage-report:
     name: Generate Coverage Report
-    needs: [test-go, test-python]
+    needs: [test-go, test-windows, test-python]
     runs-on: ubuntu-latest
-    if: always() && (needs.test-go.result == 'success' || needs.test-python.result == 'success')
+    if: always() && (needs.test-go.result == 'success' || needs.test-windows.result == 'success' || needs.test-python.result == 'success')
 
     steps:
       - name: Check out code
@@ -354,7 +389,7 @@ jobs:
     needs: lint
     strategy:
       matrix:
-        goos: [linux, darwin]
+        goos: [linux, darwin, windows]
         goarch: [amd64, arm64]
 
     steps:
@@ -371,8 +406,12 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -o ztap-${{ matrix.goos }}-${{ matrix.goarch }} .
-          ls -lh ztap-${{ matrix.goos }}-${{ matrix.goarch }}
+          out=ztap-${{ matrix.goos }}-${{ matrix.goarch }}
+          if [ "${GOOS}" = "windows" ]; then
+            out="${out}.exe"
+          fi
+          go build -o "${out}" .
+          ls -lh "${out}"
 
   benchmark:
     name: Benchmark Tests
@@ -406,6 +445,7 @@ jobs:
     needs:
       - lint
       - test-go
+      - test-windows
       - test-integration
       - test-python
       - docker-build
@@ -420,6 +460,7 @@ jobs:
           echo "Job Results:"
           echo "  lint: ${{ needs.lint.result }}"
           echo "  test-go: ${{ needs.test-go.result }}"
+          echo "  test-windows: ${{ needs.test-windows.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
           echo "  docker-build: ${{ needs.docker-build.result }}"

@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"ztap/pkg/logging"
@@ -19,13 +21,18 @@ import (
 var (
 	modfwpuclnt = syscall.NewLazyDLL("fwpuclnt.dll")
 
-	procFwpmEngineOpen0  = modfwpuclnt.NewProc("FwpmEngineOpen0")
-	procFwpmEngineClose0 = modfwpuclnt.NewProc("FwpmEngineClose0")
+	procFwpmEngineOpen0      = modfwpuclnt.NewProc("FwpmEngineOpen0")
+	procFwpmEngineClose0     = modfwpuclnt.NewProc("FwpmEngineClose0")
+	procFwpmEngineSetOption0 = modfwpuclnt.NewProc("FwpmEngineSetOption0")
 
 	procFwpmNetEventSubscribe0   = modfwpuclnt.NewProc("FwpmNetEventSubscribe0")
 	procFwpmNetEventSubscribe1   = modfwpuclnt.NewProc("FwpmNetEventSubscribe1")
 	procFwpmNetEventSubscribe2   = modfwpuclnt.NewProc("FwpmNetEventSubscribe2")
 	procFwpmNetEventUnsubscribe0 = modfwpuclnt.NewProc("FwpmNetEventUnsubscribe0")
+)
+
+const (
+	fwpmEngineCollectNetEvents uint32 = 0
 )
 
 // WindowsReader reads flow events from WFP NetEvents on Windows.
@@ -36,19 +43,66 @@ type WindowsReader struct {
 	doneCh      chan struct{}
 	cleanupOnce sync.Once
 
+	// Configuration.
+	ztapOnly bool
+
+	// Effective configuration for the current run.
+	ztapOnlyEffective bool
+
+	// Internal pipeline.
+	inCh        chan wfpEvent
+	filterCache *filterOwnerCache
+	deduper     *wfpDeduper
+	layerCache  *layerKeyCache
+
+	// WFP subscription state.
+	// We may create multiple subscriptions (e.g. allow + drop).
+	subHandles        [2]uintptr
+	netEventTemplates [2]*wfpNetEventTemplate
+
+	// Subscription version in use: 2 (Win10 1607+), 1 (Win8+), 0 (Win7).
+	subscribeVersion int
+
+	// Telemetry.
+	droppedInCh        uint64
+	filterLookupErrors uint64
+	unknownDirection   uint64
+	allowSeen          uint64
+	dropSeen           uint64
+	warnedNoAllow      uint32
+
 	engineHandle uintptr
-	subHandle    uintptr
 	eventCh      chan<- RawFlowEvent
 	callback0    uintptr
 	callback1    uintptr
 	callback2    uintptr
 }
 
+// wfpEvent is a Go-owned copy of the minimal net event fields we need.
+//
+// The WFP callback-provided memory is only valid during the callback, so we
+// must copy anything we want to use asynchronously.
+type wfpEvent struct {
+	typ      uint32
+	filterID uint64
+	layerID  uint16
+	msDir    uint32
+
+	ipVersion  uint32
+	proto      uint8
+	localAddr  [16]byte
+	remoteAddr [16]byte
+	localPort  uint16
+	remotePort uint16
+}
+
 // NewWindowsReader creates a new Windows flow reader.
 func NewWindowsReader() *WindowsReader {
 	return &WindowsReader{
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		stopCh:      make(chan struct{}),
+		doneCh:      make(chan struct{}),
+		ztapOnly:    true,
+		filterCache: newFilterOwnerCache(8192),
 	}
 }
 
@@ -65,13 +119,26 @@ func (r *WindowsReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent) 
 	r.stopCh = make(chan struct{})
 	r.doneCh = make(chan struct{})
 	r.engineHandle = 0
-	r.subHandle = 0
+	r.subHandles = [2]uintptr{}
+	r.netEventTemplates = [2]*wfpNetEventTemplate{}
 	r.eventCh = eventCh
+	r.inCh = make(chan wfpEvent, 8192)
+	r.deduper = newWfpDeduper(10000, 250_000_000) // 10k keys, 250ms window
+	r.layerCache = newLayerKeyCache()
 	r.callback0 = 0
 	r.callback1 = 0
 	r.callback2 = 0
+	r.subscribeVersion = -1
+	atomic.StoreUint64(&r.droppedInCh, 0)
+	atomic.StoreUint64(&r.filterLookupErrors, 0)
+	atomic.StoreUint64(&r.unknownDirection, 0)
+	atomic.StoreUint64(&r.allowSeen, 0)
+	atomic.StoreUint64(&r.dropSeen, 0)
+	atomic.StoreUint32(&r.warnedNoAllow, 0)
+	r.ztapOnlyEffective = r.ztapOnly
 	stopCh := r.stopCh
 	doneCh := r.doneCh
+	inCh := r.inCh
 	r.mu.Unlock()
 
 	defer func() {
@@ -87,14 +154,259 @@ func (r *WindowsReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent) 
 		return err
 	}
 
+	r.mu.RLock()
+	ver := r.subscribeVersion
+	ztapOnly := r.ztapOnlyEffective
+	r.mu.RUnlock()
+
+	if ver == 0 && ztapOnly {
+		logging.Warn("WFP NetEvents subscribe0 does not include enough metadata for ztap-only mode; falling back to all events", nil)
+		ztapOnly = false
+		r.mu.Lock()
+		r.ztapOnlyEffective = false
+		r.mu.Unlock()
+	}
+
+	go r.runWorker(ctx, stopCh, inCh, ztapOnly)
+	go r.warnIfNoAllow(ctx, stopCh)
+
+	r.mu.RLock()
+	ver = r.subscribeVersion
+	ztapOnly = r.ztapOnlyEffective
+	subs := r.subHandles
+	r.mu.RUnlock()
+	mode := "ztap-only"
+	if !ztapOnly {
+		mode = "all"
+	}
+	types := ""
+	if subs[netEventSubAllow] != 0 {
+		types = "allow"
+	}
+	if subs[netEventSubDrop] != 0 {
+		if types != "" {
+			types += ","
+		}
+		types += "drop"
+	}
+	if types == "" {
+		types = "none"
+	}
+	logging.Infof("Windows flow reader started (WFP NetEvents, mode=%s, api=subscribe%d, types=%s)", mode, ver, types)
+	if ver >= 1 && subs[netEventSubAllow] == 0 {
+		logging.Warn("WFP NetEvents allow subscription is not active; you may only see drops", nil)
+	}
+
 	runtime.KeepAlive(r)
-	logging.Info("Windows flow reader started (WFP NetEvents)", nil)
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-stopCh:
 		return nil
+	}
+}
+
+func (r *WindowsReader) runWorker(ctx context.Context, stopCh <-chan struct{}, inCh <-chan wfpEvent, ztapOnly bool) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stopCh:
+			return
+		case ev, ok := <-inCh:
+			if !ok {
+				return
+			}
+
+			if ztapOnly {
+				isZTAP, err := r.isZTAPFilter(ev.filterID)
+				if err != nil {
+					n := atomic.AddUint64(&r.filterLookupErrors, 1)
+					if n == 1 || n%10000 == 0 {
+						logging.Warnf("WFP filter correlation failed; dropping events in ztap-only mode: errors=%d last_error=%v", n, err)
+					}
+					continue
+				}
+				if !isZTAP {
+					continue
+				}
+			}
+
+			raw, ok := r.wfpEventToRawFlowEvent(ev)
+			if !ok {
+				continue
+			}
+
+			switch raw.Action {
+			case ActionAllowed:
+				atomic.AddUint64(&r.allowSeen, 1)
+			case ActionBlocked:
+				atomic.AddUint64(&r.dropSeen, 1)
+			}
+
+			// Use uptime (ns since boot) as timestamp.
+			ns := uptimeNsFunc()
+			if ns < 0 {
+				ns = 0
+			}
+			ts := uint64(ns) // #nosec G115 -- ns is clamped to >=0 above
+
+			// Deduplicate near-identical events (common when multiple layers fire).
+			if r.deduper != nil {
+				if r.deduper.SeenRecently(wfpDedupKeyFrom(ev, raw), ts) {
+					continue
+				}
+			}
+
+			raw.TimestampNs = ts
+
+			r.mu.RLock()
+			out := r.eventCh
+			r.mu.RUnlock()
+			if out == nil {
+				continue
+			}
+			select {
+			case out <- raw:
+			default:
+			}
+		}
+	}
+}
+
+func (r *WindowsReader) warnIfNoAllow(ctx context.Context, stopCh <-chan struct{}) {
+	if r == nil {
+		return
+	}
+
+	r.mu.RLock()
+	ver := r.subscribeVersion
+	subs := r.subHandles
+	r.mu.RUnlock()
+	if ver < 1 {
+		return
+	}
+	if subs[netEventSubAllow] == 0 {
+		return
+	}
+
+	select {
+	case <-ctx.Done():
+		return
+	case <-stopCh:
+		return
+	case <-time.After(2 * time.Second):
+	}
+
+	allows := atomic.LoadUint64(&r.allowSeen)
+	drops := atomic.LoadUint64(&r.dropSeen)
+	if allows == 0 && drops > 0 {
+		if atomic.CompareAndSwapUint32(&r.warnedNoAllow, 0, 1) {
+			logging.Warn("WFP allow events not observed (drops seen); if you expect allowed-flow visibility, verify WFP net event logging/auditing is enabled", nil)
+		}
+	}
+}
+
+func formatWfpCallError(name string, ret uintptr) error {
+	code := uint32(ret)
+	if code == uint32(windows.ERROR_ACCESS_DENIED) {
+		return fmt.Errorf("%s failed: access denied (run as Administrator / ensure BFE access)", name)
+	}
+	return fmt.Errorf("%s failed with error 0x%x", name, ret)
+}
+
+func (r *WindowsReader) wfpEventToRawFlowEvent(ev wfpEvent) (RawFlowEvent, bool) {
+	var action uint8
+	switch ev.typ {
+	case fwpmNetEventTypeClassifyAllow, fwpmNetEventTypeCapabilityAllow:
+		action = ActionAllowed
+	case fwpmNetEventTypeClassifyDrop, fwpmNetEventTypeCapabilityDrop:
+		action = ActionBlocked
+	default:
+		return RawFlowEvent{}, false
+	}
+
+	dir, ok := msDirectionValueToFlowDirection(ev.msDir)
+	if !ok {
+		if r != nil {
+			if key, found, err := r.layerKeyByID(ev.layerID); err == nil && found {
+				if inferred, ok2 := inferDirectionFromLayerKey(key); ok2 {
+					dir, ok = inferred, true
+				}
+			}
+		}
+	}
+	if !ok {
+		if r != nil {
+			n := atomic.AddUint64(&r.unknownDirection, 1)
+			if n == 1 || n%10000 == 0 {
+				logging.Warnf("unable to determine WFP event direction; defaulting to egress: count=%d ms_dir=0x%x layer_id=%d", n, ev.msDir, ev.layerID)
+			}
+		}
+		dir = DirectionEgress
+	}
+
+	family := uint8(0)
+	var localIP [4]uint32
+	var remoteIP [4]uint32
+
+	switch ev.ipVersion {
+	case fwpIPVersionV4:
+		family = 4
+		localIP[0] = binary.BigEndian.Uint32(ev.localAddr[:4])
+		remoteIP[0] = binary.BigEndian.Uint32(ev.remoteAddr[:4])
+	case fwpIPVersionV6:
+		family = 6
+		for i := 0; i < 4; i++ {
+			localIP[i] = binary.LittleEndian.Uint32(ev.localAddr[i*4 : i*4+4])
+			remoteIP[i] = binary.LittleEndian.Uint32(ev.remoteAddr[i*4 : i*4+4])
+		}
+	default:
+		return RawFlowEvent{}, false
+	}
+
+	localPort := ev.localPort
+	remotePort := ev.remotePort
+	proto := ev.proto
+
+	// Apply direction to decide which endpoint is source/destination.
+	if dir == DirectionIngress {
+		return RawFlowEvent{
+			SrcIP:     remoteIP,
+			DestIP:    localIP,
+			SrcPort:   remotePort,
+			DestPort:  localPort,
+			Protocol:  proto,
+			Direction: DirectionIngress,
+			Action:    action,
+			Family:    family,
+		}, true
+	}
+
+	return RawFlowEvent{
+		SrcIP:     localIP,
+		DestIP:    remoteIP,
+		SrcPort:   localPort,
+		DestPort:  remotePort,
+		Protocol:  proto,
+		Direction: DirectionEgress,
+		Action:    action,
+		Family:    family,
+	}, true
+}
+
+func msDirectionValueToFlowDirection(msDir uint32) (uint8, bool) {
+	switch msDir {
+	case fwpDirectionIn:
+		return DirectionIngress, true
+	case fwpDirectionOut:
+		return DirectionEgress, true
+	case fwpDirectionForward:
+		// Best-effort: treat forward as egress.
+		return DirectionEgress, true
+	default:
+		return 0, false
 	}
 }
 
@@ -167,6 +479,68 @@ type fwpmNetEventSubscription0 struct {
 	SessionKey   windows.GUID
 }
 
+// Minimal structures for filtering net event subscriptions.
+//
+// Notes:
+// - FWPM_NET_EVENT_ENUM_TEMPLATE0 supports filter conditions, but they are
+//   AND'ed; to filter for both allow and drop we create two subscriptions.
+// - We keep these in Go-managed memory and store pointers on WindowsReader so
+//   they remain alive until we unsubscribe.
+
+const (
+	fwpMatchEqual     uint32 = 0
+	fwpDataTypeUint32 uint32 = 3
+)
+
+const (
+	netEventSubDrop = iota
+	netEventSubAllow
+)
+
+var fwpmConditionNetEventType = windows.GUID{
+	Data1: 0x206e9996,
+	Data2: 0x490e,
+	Data3: 0x40cf,
+	Data4: [8]byte{0xb8, 0x31, 0xb3, 0x86, 0x41, 0xeb, 0x6f, 0xcb},
+}
+
+type fwpConditionValue0 struct {
+	Type uint32
+	_    uint32
+	// Union; for FWP_UINT32 it is stored inline in the low 32-bits.
+	Value uintptr
+}
+
+type fwpmFilterCondition0 struct {
+	FieldKey       windows.GUID
+	MatchType      uint32
+	ConditionValue fwpConditionValue0
+}
+
+type fwpmNetEventEnumTemplate0 struct {
+	StartTime           windows.Filetime
+	EndTime             windows.Filetime
+	NumFilterConditions uint32
+	FilterCondition     *fwpmFilterCondition0
+}
+
+type wfpNetEventTemplate struct {
+	enum fwpmNetEventEnumTemplate0
+	cond fwpmFilterCondition0
+}
+
+func newNetEventTypeTemplate(typ uint32) *wfpNetEventTemplate {
+	t := &wfpNetEventTemplate{}
+	t.cond.FieldKey = fwpmConditionNetEventType
+	t.cond.MatchType = fwpMatchEqual
+	t.cond.ConditionValue.Type = fwpDataTypeUint32
+	t.cond.ConditionValue.Value = uintptr(typ)
+
+	t.enum.NumFilterConditions = 1
+	t.enum.FilterCondition = &t.cond
+	return t
+}
+
 // Common prefix across FWPM_NET_EVENT_HEADER0/2/3.
 type fwpmNetEventHeaderPrefix struct {
 	TimeStamp  windows.Filetime
@@ -202,6 +576,15 @@ type fwpmNetEvent0 struct {
 	Type   uint32
 	_      uint32
 	Data   uintptr
+}
+
+// Enough of FWPM_NET_EVENT_CLASSIFY_DROP0 for FilterId/LayerId extraction.
+//
+// Used by older net event callbacks that do not include msFwpDirection.
+type fwpmNetEventClassifyDrop0 struct {
+	FilterId uint64
+	LayerId  uint16
+	_        uint16
 }
 
 type fwpmNetEventHeader3 struct {
@@ -273,10 +656,30 @@ func (r *WindowsReader) openEngine() error {
 		uintptr(unsafe.Pointer(&handle)),
 	)
 	if ret != 0 {
-		return fmt.Errorf("FwpmEngineOpen0 failed with error 0x%x", ret)
+		return formatWfpCallError("FwpmEngineOpen0", ret)
+	}
+
+	// Ensure net event collection is enabled.
+	if err := enableWfpNetEvents(handle); err != nil {
+		procFwpmEngineClose0.Call(handle)
+		return err
 	}
 
 	r.engineHandle = handle
+	return nil
+}
+
+func enableWfpNetEvents(engine uintptr) error {
+	// FWPM_ENGINE_COLLECT_NET_EVENTS expects a UINT32 0/1.
+	var on uint32 = 1
+	ret, _, _ := procFwpmEngineSetOption0.Call(
+		engine,
+		uintptr(fwpmEngineCollectNetEvents),
+		uintptr(unsafe.Pointer(&on)),
+	)
+	if ret != 0 {
+		return formatWfpCallError("FwpmEngineSetOption0(FWPM_ENGINE_COLLECT_NET_EVENTS)", ret)
+	}
 	return nil
 }
 
@@ -288,52 +691,75 @@ func (r *WindowsReader) subscribe() error {
 		return fmt.Errorf("WFP engine handle is not open")
 	}
 
-	var sub fwpmNetEventSubscription0
-	sub.EnumTemplate = 0 // match all
-	// flags unused
+	// Net event type filtering: create a subscription per type (conditions are AND'ed).
+	dropTmpl := newNetEventTypeTemplate(fwpmNetEventTypeClassifyDrop)
+	allowTmpl := newNetEventTypeTemplate(fwpmNetEventTypeClassifyAllow)
 
-	var eventsHandle uintptr
+	subscribeOne := func(proc *syscall.LazyProc, cb uintptr, tmpl *wfpNetEventTemplate, idx int) error {
+		var eventsHandle uintptr
+		var sub fwpmNetEventSubscription0
+		sub.EnumTemplate = uintptr(unsafe.Pointer(&tmpl.enum))
+		ret, _, _ := proc.Call(
+			h,
+			uintptr(unsafe.Pointer(&sub)),
+			cb,
+			uintptr(unsafe.Pointer(r)),
+			uintptr(unsafe.Pointer(&eventsHandle)),
+		)
+		if ret != 0 {
+			return formatWfpCallError(proc.Name, ret)
+		}
+		r.mu.Lock()
+		r.subHandles[idx] = eventsHandle
+		r.netEventTemplates[idx] = tmpl
+		r.mu.Unlock()
+		return nil
+	}
 
 	// Prefer Subscribe2 (NetEvent3), fallback to Subscribe1 (NetEvent2), finally Subscribe0.
 	// Even if a proc is present, the call can still fail; try fallbacks before giving up.
 	var subscribeErr error
 	if err := procFwpmNetEventSubscribe2.Find(); err == nil {
 		cb := syscall.NewCallback(wfpNetEventCallback2)
-		ret, _, _ := procFwpmNetEventSubscribe2.Call(
-			h,
-			uintptr(unsafe.Pointer(&sub)),
-			cb,
-			uintptr(unsafe.Pointer(r)),
-			uintptr(unsafe.Pointer(&eventsHandle)),
-		)
-		if ret == 0 {
+		okAny := false
+		if err := subscribeOne(procFwpmNetEventSubscribe2, cb, dropTmpl, netEventSubDrop); err == nil {
+			okAny = true
+		} else {
+			subscribeErr = err
+		}
+		if err := subscribeOne(procFwpmNetEventSubscribe2, cb, allowTmpl, netEventSubAllow); err == nil {
+			okAny = true
+		} else if subscribeErr == nil {
+			subscribeErr = err
+		}
+		if okAny {
 			r.mu.Lock()
-			r.subHandle = eventsHandle
 			r.callback2 = cb
+			r.subscribeVersion = 2
 			r.mu.Unlock()
 			return nil
 		}
-		subscribeErr = fmt.Errorf("FwpmNetEventSubscribe2 failed with error 0x%x", ret)
 	}
 
 	if err := procFwpmNetEventSubscribe1.Find(); err == nil {
 		cb := syscall.NewCallback(wfpNetEventCallback1)
-		ret, _, _ := procFwpmNetEventSubscribe1.Call(
-			h,
-			uintptr(unsafe.Pointer(&sub)),
-			cb,
-			uintptr(unsafe.Pointer(r)),
-			uintptr(unsafe.Pointer(&eventsHandle)),
-		)
-		if ret == 0 {
+		okAny := false
+		if err := subscribeOne(procFwpmNetEventSubscribe1, cb, dropTmpl, netEventSubDrop); err == nil {
+			okAny = true
+		} else {
+			subscribeErr = err
+		}
+		if err := subscribeOne(procFwpmNetEventSubscribe1, cb, allowTmpl, netEventSubAllow); err == nil {
+			okAny = true
+		} else if subscribeErr == nil {
+			subscribeErr = err
+		}
+		if okAny {
 			r.mu.Lock()
-			r.subHandle = eventsHandle
 			r.callback1 = cb
+			r.subscribeVersion = 1
 			r.mu.Unlock()
 			return nil
-		}
-		if subscribeErr == nil {
-			subscribeErr = fmt.Errorf("FwpmNetEventSubscribe1 failed with error 0x%x", ret)
 		}
 	}
 
@@ -344,22 +770,15 @@ func (r *WindowsReader) subscribe() error {
 		return fmt.Errorf("no supported net event subscribe function available: %w", err)
 	}
 	cb := syscall.NewCallback(wfpNetEventCallback0)
-	ret, _, _ := procFwpmNetEventSubscribe0.Call(
-		h,
-		uintptr(unsafe.Pointer(&sub)),
-		cb,
-		uintptr(unsafe.Pointer(r)),
-		uintptr(unsafe.Pointer(&eventsHandle)),
-	)
-	if ret != 0 {
+	if err := subscribeOne(procFwpmNetEventSubscribe0, cb, dropTmpl, netEventSubDrop); err != nil {
 		if subscribeErr != nil {
 			return subscribeErr
 		}
-		return fmt.Errorf("FwpmNetEventSubscribe0 failed with error 0x%x", ret)
+		return err
 	}
 	r.mu.Lock()
-	r.subHandle = eventsHandle
 	r.callback0 = cb
+	r.subscribeVersion = 0
 	r.mu.Unlock()
 	return nil
 }
@@ -369,30 +788,41 @@ func (r *WindowsReader) cleanup() error {
 	r.cleanupOnce.Do(func() {
 		r.mu.RLock()
 		engine := r.engineHandle
-		sub := r.subHandle
+		subs := r.subHandles
 		r.mu.RUnlock()
 
-		if engine != 0 && sub != 0 {
-			ret, _, _ := procFwpmNetEventUnsubscribe0.Call(engine, sub)
-			if ret != 0 {
-				errOut = fmt.Errorf("FwpmNetEventUnsubscribe0 failed with error 0x%x", ret)
+		if engine != 0 {
+			for _, sub := range subs {
+				if sub == 0 {
+					continue
+				}
+				ret, _, _ := procFwpmNetEventUnsubscribe0.Call(engine, sub)
+				if ret != 0 && errOut == nil {
+					errOut = formatWfpCallError("FwpmNetEventUnsubscribe0", ret)
+				}
 			}
 		}
 
 		if engine != 0 {
 			ret, _, _ := procFwpmEngineClose0.Call(engine)
 			if ret != 0 && errOut == nil {
-				errOut = fmt.Errorf("FwpmEngineClose0 failed with error 0x%x", ret)
+				errOut = formatWfpCallError("FwpmEngineClose0", ret)
 			}
 		}
 
 		r.mu.Lock()
 		r.engineHandle = 0
-		r.subHandle = 0
+		r.subHandles = [2]uintptr{}
+		r.netEventTemplates = [2]*wfpNetEventTemplate{}
 		r.eventCh = nil
+		r.inCh = nil
+		r.deduper = nil
+		r.layerCache = nil
 		r.callback0 = 0
 		r.callback1 = 0
 		r.callback2 = 0
+		r.subscribeVersion = -1
+		r.ztapOnlyEffective = false
 		r.running = false
 		r.mu.Unlock()
 	})
@@ -428,31 +858,23 @@ func wfpNetEventCallback2(ctx, event uintptr) uintptr {
 }
 
 func (r *WindowsReader) handleNetEvent2(ev *fwpmNetEvent2) {
-	raw, ok := wfpNetEvent2ToRawFlowEvent(ev)
+	w, ok := wfpNetEvent2ToWfpEvent(ev)
 	if !ok {
 		return
 	}
-	// Use uptime (ns since boot) as timestamp.
-	ns := uptimeNsFunc()
-	if ns < 0 {
-		ns = 0
-	}
-	raw.TimestampNs = uint64(ns) // #nosec G115 -- ns is clamped to >=0 above
-
-	r.mu.RLock()
-	ch := r.eventCh
-	r.mu.RUnlock()
-	if ch == nil {
-		return
-	}
-	select {
-	case ch <- raw:
-	default:
-	}
+	r.enqueueWfpEvent(w)
 }
 
 func (r *WindowsReader) handleNetEvent0(ev *fwpmNetEvent0) {
 	if ev == nil {
+		return
+	}
+
+	r.mu.RLock()
+	ztapOnly := r.ztapOnlyEffective
+	r.mu.RUnlock()
+	if ztapOnly {
+		// Older NetEvent0 lacks enough metadata to reliably correlate to ZTAP.
 		return
 	}
 	// Best-effort: FWPM_NET_EVENT0 doesn't include msFwpDirection.
@@ -460,187 +882,148 @@ func (r *WindowsReader) handleNetEvent0(ev *fwpmNetEvent0) {
 		return
 	}
 
-	var family uint8
-	var localIP [4]uint32
-	var remoteIP [4]uint32
-
-	switch ev.Header.Prefix.IPVersion {
-	case fwpIPVersionV4:
-		family = 4
-		localIP[0] = binary.BigEndian.Uint32(ev.Header.Prefix.LocalAddr[:4])
-		remoteIP[0] = binary.BigEndian.Uint32(ev.Header.Prefix.RemoteAddr[:4])
-	case fwpIPVersionV6:
-		family = 6
-		for i := 0; i < 4; i++ {
-			localIP[i] = binary.LittleEndian.Uint32(ev.Header.Prefix.LocalAddr[i*4 : i*4+4])
-			remoteIP[i] = binary.LittleEndian.Uint32(ev.Header.Prefix.RemoteAddr[i*4 : i*4+4])
-		}
-	default:
+	drop := (*fwpmNetEventClassifyDrop0)(unsafe.Pointer(ev.Data))
+	if drop == nil {
 		return
 	}
 
-	ns := uptimeNsFunc()
-	if ns < 0 {
-		ns = 0
+	w := wfpEvent{
+		typ:        ev.Type,
+		filterID:   drop.FilterId,
+		layerID:    drop.LayerId,
+		msDir:      0,
+		ipVersion:  ev.Header.Prefix.IPVersion,
+		proto:      ev.Header.Prefix.IPProto,
+		localAddr:  ev.Header.Prefix.LocalAddr,
+		remoteAddr: ev.Header.Prefix.RemoteAddr,
+		localPort:  ev.Header.Prefix.LocalPort,
+		remotePort: ev.Header.Prefix.RemotePort,
 	}
-
-	raw := RawFlowEvent{
-		TimestampNs: uint64(ns), // #nosec G115 -- ns is clamped to >=0 above
-		SrcIP:       localIP,
-		DestIP:      remoteIP,
-		SrcPort:     ev.Header.Prefix.LocalPort,
-		DestPort:    ev.Header.Prefix.RemotePort,
-		Protocol:    ev.Header.Prefix.IPProto,
-		Direction:   DirectionEgress,
-		Action:      ActionBlocked,
-		Family:      family,
-	}
-
-	r.mu.RLock()
-	ch := r.eventCh
-	r.mu.RUnlock()
-	if ch == nil {
-		return
-	}
-	select {
-	case ch <- raw:
-	default:
-	}
+	r.enqueueWfpEvent(w)
 }
 
 func (r *WindowsReader) handleNetEvent3(ev *fwpmNetEvent3) {
-	raw, ok := wfpNetEvent3ToRawFlowEvent(ev)
+	w, ok := wfpNetEvent3ToWfpEvent(ev)
 	if !ok {
 		return
 	}
-	ns := uptimeNsFunc()
-	if ns < 0 {
-		ns = 0
-	}
-	raw.TimestampNs = uint64(ns) // #nosec G115 -- ns is clamped to >=0 above
+	r.enqueueWfpEvent(w)
+}
 
+func (r *WindowsReader) enqueueWfpEvent(ev wfpEvent) {
 	r.mu.RLock()
-	ch := r.eventCh
+	ch := r.inCh
 	r.mu.RUnlock()
 	if ch == nil {
 		return
 	}
 	select {
-	case ch <- raw:
+	case ch <- ev:
 	default:
+		dropped := atomic.AddUint64(&r.droppedInCh, 1)
+		if dropped == 1 || dropped%10000 == 0 {
+			logging.Warnf("dropping WFP net events (queue full): dropped=%d", dropped)
+		}
 	}
+}
+
+func wfpNetEvent2ToWfpEvent(ev *fwpmNetEvent2) (wfpEvent, bool) {
+	if ev == nil {
+		return wfpEvent{}, false
+	}
+	if ev.Type != fwpmNetEventTypeClassifyAllow && ev.Type != fwpmNetEventTypeClassifyDrop {
+		return wfpEvent{}, false
+	}
+
+	out := wfpEvent{
+		typ:        ev.Type,
+		ipVersion:  ev.Header.Prefix.IPVersion,
+		proto:      ev.Header.Prefix.IPProto,
+		localAddr:  ev.Header.Prefix.LocalAddr,
+		remoteAddr: ev.Header.Prefix.RemoteAddr,
+		localPort:  ev.Header.Prefix.LocalPort,
+		remotePort: ev.Header.Prefix.RemotePort,
+	}
+
+	switch ev.Type {
+	case fwpmNetEventTypeClassifyAllow:
+		allow := (*fwpmNetEventClassifyAllow0)(unsafe.Pointer(ev.Data))
+		if allow == nil {
+			return wfpEvent{}, false
+		}
+		out.filterID = allow.FilterId
+		out.layerID = allow.LayerId
+		out.msDir = allow.MsFwpDirection
+	case fwpmNetEventTypeClassifyDrop:
+		drop := (*fwpmNetEventClassifyDrop1)(unsafe.Pointer(ev.Data))
+		if drop == nil {
+			return wfpEvent{}, false
+		}
+		out.filterID = drop.FilterId
+		out.layerID = drop.LayerId
+		out.msDir = drop.MsFwpDirection
+	}
+
+	return out, true
+}
+
+func wfpNetEvent3ToWfpEvent(ev *fwpmNetEvent3) (wfpEvent, bool) {
+	if ev == nil {
+		return wfpEvent{}, false
+	}
+	if ev.Type != fwpmNetEventTypeClassifyAllow && ev.Type != fwpmNetEventTypeClassifyDrop {
+		return wfpEvent{}, false
+	}
+
+	p := ev.Header.Header2.Prefix
+	out := wfpEvent{
+		typ:        ev.Type,
+		ipVersion:  p.IPVersion,
+		proto:      p.IPProto,
+		localAddr:  p.LocalAddr,
+		remoteAddr: p.RemoteAddr,
+		localPort:  p.LocalPort,
+		remotePort: p.RemotePort,
+	}
+
+	switch ev.Type {
+	case fwpmNetEventTypeClassifyAllow:
+		allow := (*fwpmNetEventClassifyAllow0)(unsafe.Pointer(ev.Data))
+		if allow == nil {
+			return wfpEvent{}, false
+		}
+		out.filterID = allow.FilterId
+		out.layerID = allow.LayerId
+		out.msDir = allow.MsFwpDirection
+	case fwpmNetEventTypeClassifyDrop:
+		drop := (*fwpmNetEventClassifyDrop1)(unsafe.Pointer(ev.Data))
+		if drop == nil {
+			return wfpEvent{}, false
+		}
+		out.filterID = drop.FilterId
+		out.layerID = drop.LayerId
+		out.msDir = drop.MsFwpDirection
+	}
+
+	return out, true
 }
 
 func wfpNetEvent2ToRawFlowEvent(ev *fwpmNetEvent2) (RawFlowEvent, bool) {
-	if ev == nil {
+	w, ok := wfpNetEvent2ToWfpEvent(ev)
+	if !ok {
 		return RawFlowEvent{}, false
 	}
-	return wfpHeaderAndTypeToRaw(&ev.Header.Prefix, ev.Type, ev.Data)
+	// Used only in tests; no layer-based direction inference.
+	var r WindowsReader
+	return r.wfpEventToRawFlowEvent(w)
 }
 
 func wfpNetEvent3ToRawFlowEvent(ev *fwpmNetEvent3) (RawFlowEvent, bool) {
-	if ev == nil {
+	w, ok := wfpNetEvent3ToWfpEvent(ev)
+	if !ok {
 		return RawFlowEvent{}, false
 	}
-	return wfpHeaderAndTypeToRaw(&ev.Header.Header2.Prefix, ev.Type, ev.Data)
-}
-
-func wfpHeaderAndTypeToRaw(prefix *fwpmNetEventHeaderPrefix, typ uint32, data uintptr) (RawFlowEvent, bool) {
-	if prefix == nil {
-		return RawFlowEvent{}, false
-	}
-
-	var action uint8
-	var dir uint8
-
-	switch typ {
-	case fwpmNetEventTypeClassifyAllow:
-		action = ActionAllowed
-		allow := (*fwpmNetEventClassifyAllow0)(unsafe.Pointer(data))
-		dir = msDirectionToFlowDirection(allow)
-	case fwpmNetEventTypeClassifyDrop:
-		action = ActionBlocked
-		drop := (*fwpmNetEventClassifyDrop1)(unsafe.Pointer(data))
-		dir = msDirectionToFlowDirection(drop)
-	default:
-		return RawFlowEvent{}, false
-	}
-
-	family := uint8(0)
-	var localIP [4]uint32
-	var remoteIP [4]uint32
-
-	switch prefix.IPVersion {
-	case fwpIPVersionV4:
-		family = 4
-		localIP[0] = binary.BigEndian.Uint32(prefix.LocalAddr[:4])
-		remoteIP[0] = binary.BigEndian.Uint32(prefix.RemoteAddr[:4])
-	case fwpIPVersionV6:
-		family = 6
-		for i := 0; i < 4; i++ {
-			localIP[i] = binary.LittleEndian.Uint32(prefix.LocalAddr[i*4 : i*4+4])
-			remoteIP[i] = binary.LittleEndian.Uint32(prefix.RemoteAddr[i*4 : i*4+4])
-		}
-	default:
-		return RawFlowEvent{}, false
-	}
-
-	localPort := prefix.LocalPort
-	remotePort := prefix.RemotePort
-	proto := prefix.IPProto
-
-	// Apply direction to decide which endpoint is source/destination.
-	if dir == DirectionIngress {
-		return RawFlowEvent{
-			SrcIP:     remoteIP,
-			DestIP:    localIP,
-			SrcPort:   remotePort,
-			DestPort:  localPort,
-			Protocol:  proto,
-			Direction: DirectionIngress,
-			Action:    action,
-			Family:    family,
-		}, true
-	}
-
-	return RawFlowEvent{
-		SrcIP:     localIP,
-		DestIP:    remoteIP,
-		SrcPort:   localPort,
-		DestPort:  remotePort,
-		Protocol:  proto,
-		Direction: DirectionEgress,
-		Action:    action,
-		Family:    family,
-	}, true
-}
-
-type hasMsDirection interface {
-	msDir() uint32
-}
-
-func (c *fwpmNetEventClassifyAllow0) msDir() uint32 {
-	if c == nil {
-		return 0
-	}
-	return c.MsFwpDirection
-}
-
-func (c *fwpmNetEventClassifyDrop1) msDir() uint32 {
-	if c == nil {
-		return 0
-	}
-	return c.MsFwpDirection
-}
-
-func msDirectionToFlowDirection(v hasMsDirection) uint8 {
-	switch v.msDir() {
-	case fwpDirectionIn:
-		return DirectionIngress
-	case fwpDirectionOut:
-		return DirectionEgress
-	default:
-		// Best-effort default.
-		return DirectionEgress
-	}
+	// Used only in tests; no layer-based direction inference.
+	var r WindowsReader
+	return r.wfpEventToRawFlowEvent(w)
 }
