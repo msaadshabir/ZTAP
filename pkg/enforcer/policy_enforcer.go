@@ -448,14 +448,25 @@ func (pe *PolicyEnforcer) enforceMacOS(policies []policy.NetworkPolicy) error {
 	return nil
 }
 
-// GetEnforcedVersions returns a map of policy names to their enforced versions.
+// GetEnforcedVersions returns a map of policy identifiers to enforced versions.
+// Default-tenant policies use the unqualified name; non-default tenants use tenant/name.
 func (pe *PolicyEnforcer) GetEnforcedVersions() map[string]int64 {
 	pe.mu.RLock()
 	defer pe.mu.RUnlock()
 
 	versions := make(map[string]int64, len(pe.enforcedVersion))
 	for k, v := range pe.enforcedVersion {
-		versions[k] = v
+		key, err := cluster.ParsePolicyKey(k)
+		if err != nil {
+			versions[k] = v
+			continue
+		}
+		key = key.Normalized()
+		if key.Tenant == cluster.DefaultTenant {
+			versions[key.Name] = v
+			continue
+		}
+		versions[key.String()] = v
 	}
 	return versions
 }
