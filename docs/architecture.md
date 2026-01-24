@@ -14,6 +14,7 @@ ZTAP (Zero Trust Access Platform) implements microsegmentation across hybrid env
 
 - Health, auth, and status endpoints
 - Enforcement lifecycle endpoints (start/stop/status)
+- Compliance report/export endpoints (policy-to-control mapping + evidence)
 - Flow streaming over SSE
 - Prometheus metrics endpoint (`/metrics`)
 

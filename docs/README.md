@@ -8,17 +8,18 @@ Technical documentation for ZTAP.
 | ------------------------------- | ------------------------------------ |
 | [Architecture](architecture.md) | System design and component overview |
 | [Setup Guide](setup.md)         | Installation and configuration       |
-| [eBPF Setup](ebpf.md)           | Linux eBPF enforcement               |
-| [Testing Guide](testing.md)     | Test suite and coverage              |
+| [Compliance Reporting](compliance.md) | Compliance mapping exports and reports |
+| [eBPF Setup](EBPF.md)           | Linux eBPF enforcement               |
+| [Testing Guide](TESTING.md)     | Test suite and coverage              |
 
 ## Operations
 
 | Document                    | Description                                                 |
 | --------------------------- | ----------------------------------------------------------- |
 | [Deployment](deployment.md) | Docker and containerized deployment                         |
-| [Cluster](cluster.md)       | Distributed coordination and policy sync (history/rollback) |
+| [Cluster](CLUSTER.md)       | Distributed coordination and policy sync (history/rollback) |
 | [etcd Setup](etcd.md)       | etcd backend for production clusters                        |
-| [Audit Logging](audit.md)   | Tamper-proof audit system                                   |
+| [Audit Logging](AUDIT.md)   | Tamper-proof audit system                                   |
 
 ## Reference
 
@@ -58,6 +59,8 @@ Core endpoints:
 - `POST /v1/enforcement/start` (body includes `policy_yaml`)
 - `POST /v1/enforcement/stop` (Linux only)
 - `GET /v1/flows/stream` (SSE stream)
+- `POST /v1/compliance/report` (requires `view_compliance`)
+- `POST /v1/compliance/export` (requires `view_compliance`)
 - `GET /metrics`
 
 Config backup/restore notes:

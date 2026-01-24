@@ -21,6 +21,14 @@ ZTAP includes comprehensive test coverage across all critical components with un
 
 **Run**: `go test ./pkg/policy/... -v`
 
+#### Compliance Package (`pkg/compliance`)
+
+- Mapping extraction from policy annotations and mapping files
+- Audit evidence evaluation (integrity + `policy.enforced` event presence)
+- JSON/CSV exporters and Markdown report rendering
+
+**Run**: `go test ./pkg/compliance/... -v`
+
 #### Discovery Package (`pkg/discovery/discovery_test.go`)
 
 - **TestInMemoryDiscovery_RegisterAndResolve**: Service registration and label-based resolution
@@ -76,7 +84,7 @@ Run prerequisites (Linux only):
 #### Metrics Package (`pkg/metrics/collector_test.go`)
 
 - **TestGetCollectorSingleton**: Verifies singleton initialization semantics
-- **TestCollectorCounters**: Confirms counter increments for policies and flows
+- **TestCollectorCounters**: Confirms counter increments for flows
 - **TestCollectorGaugeAndHistogram**: Validates gauge state and histogram buckets
 
 **Run**: `go test ./pkg/metrics/... -v`
@@ -168,17 +176,14 @@ CI note: `.github/workflows/ci.yml` runs Go unit tests on `windows-latest` and i
 
 ## Test Results Summary
 
-```
-Package            Tests  Pass  Coverage
-─────────────────────────────────────────
-pkg/auth             7     7    72.4%
-pkg/cloud            9     9    90.0%
-pkg/discovery       10    10    76.3%
-pkg/metrics          3     3    85.2%
-pkg/policy           3     3    73.6%
-tests/integration    6     6    N/A
-─────────────────────────────────────────
-Total               38    38
+Test counts and coverage are expected to change as the project evolves.
+
+```bash
+# Quick pass/fail
+go test ./...
+
+# Coverage (project-wide)
+go test ./... -cover
 ```
 
 ## Test Data

@@ -69,6 +69,44 @@ func TestCLIHelp(t *testing.T) {
 	}
 }
 
+func TestCLIComplianceExportSmoke(t *testing.T) {
+	skipIfInCI(t)
+	tmpDir := t.TempDir()
+	policyPath := filepath.Join(tmpDir, "policy.yaml")
+	policyYAML := `apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: p
+  annotations:
+    ztap.io/compliance.pci-dss: "10.2.1"
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  egress:
+    - to:
+        ipBlock:
+          cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443
+`
+	if err := os.WriteFile(policyPath, []byte(policyYAML), 0o644); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	output, err := runCLI(ctx, "compliance", "export", "-f", policyPath, "--format", "json")
+	if err != nil {
+		t.Fatalf("compliance export failed: %v\noutput: %s", err, output)
+	}
+	if !containsAny(output, "\"controls\"", "\"policies\"", "\"metadata\"") {
+		t.Fatalf("unexpected output: %s", output)
+	}
+}
+
 func TestCLIUserManagement(t *testing.T) {
 	skipIfInCI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

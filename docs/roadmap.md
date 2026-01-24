@@ -45,9 +45,6 @@
 - **Graceful policy reload** - Update eBPF policies without dropping active connections via atomic `bpf_link` updates
 - **Certificate-based authentication** - mTLS client authentication for API access (implemented for REST + gRPC; optional gate that still uses bearer-token RBAC on top)
 - **Namespace/tenant isolation** - Multi-tenant policy scoping
+- **Compliance report generation** - PCI-DSS, SOC2, HIPAA policy mapping exports
 
 ## Planned
-
-### Compliance and Enterprise
-
-- **Compliance report generation** - PCI-DSS, SOC2, HIPAA policy mapping exports

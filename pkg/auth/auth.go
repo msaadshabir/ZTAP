@@ -31,13 +31,14 @@ const (
 type Permission string
 
 const (
-	PermEnforce       Permission = "enforce"
-	PermViewPolicies  Permission = "view_policies"
-	PermViewLogs      Permission = "view_logs"
-	PermViewStatus    Permission = "view_status"
-	PermManageUsers   Permission = "manage_users"
-	PermViewMetrics   Permission = "view_metrics"
-	PermBackupRestore Permission = "backup_restore"
+	PermEnforce        Permission = "enforce"
+	PermViewPolicies   Permission = "view_policies"
+	PermViewCompliance Permission = "view_compliance"
+	PermViewLogs       Permission = "view_logs"
+	PermViewStatus     Permission = "view_status"
+	PermManageUsers    Permission = "manage_users"
+	PermViewMetrics    Permission = "view_metrics"
+	PermBackupRestore  Permission = "backup_restore"
 )
 
 // User represents an authenticated user
@@ -85,20 +86,22 @@ func (am *AuthManager) SessionStore() SessionStore {
 // Role permissions mapping
 var rolePermissions = map[Role]map[Permission]bool{
 	RoleAdmin: {
-		PermEnforce:       true,
-		PermViewPolicies:  true,
-		PermViewLogs:      true,
-		PermViewStatus:    true,
-		PermManageUsers:   true,
-		PermViewMetrics:   true,
-		PermBackupRestore: true,
+		PermEnforce:        true,
+		PermViewPolicies:   true,
+		PermViewCompliance: true,
+		PermViewLogs:       true,
+		PermViewStatus:     true,
+		PermManageUsers:    true,
+		PermViewMetrics:    true,
+		PermBackupRestore:  true,
 	},
 	RoleOperator: {
-		PermEnforce:      true,
-		PermViewPolicies: true,
-		PermViewLogs:     true,
-		PermViewStatus:   true,
-		PermViewMetrics:  true,
+		PermEnforce:        true,
+		PermViewPolicies:   true,
+		PermViewCompliance: true,
+		PermViewLogs:       true,
+		PermViewStatus:     true,
+		PermViewMetrics:    true,
 	},
 	RoleViewer: {
 		PermViewPolicies: true,

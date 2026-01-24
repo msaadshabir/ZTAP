@@ -14,13 +14,12 @@ import (
 
 // Collector manages all ZTAP metrics
 type Collector struct {
-	policiesEnforced prometheus.Counter
-	flowsAllowed     prometheus.Counter
-	flowsBlocked     prometheus.Counter
-	anomalyScore     prometheus.Gauge
-	policyLoadTime   prometheus.Histogram
-	flowsTotal       *prometheus.CounterVec
-	mu               sync.Mutex
+	flowsAllowed   prometheus.Counter
+	flowsBlocked   prometheus.Counter
+	anomalyScore   prometheus.Gauge
+	policyLoadTime prometheus.Histogram
+	flowsTotal     *prometheus.CounterVec
+	mu             sync.Mutex
 }
 
 var (
@@ -32,10 +31,6 @@ var (
 func GetCollector() *Collector {
 	once.Do(func() {
 		globalCollector = &Collector{
-			policiesEnforced: prometheus.NewCounter(prometheus.CounterOpts{
-				Name: "ztap_policies_enforced_total",
-				Help: "Total number of policies enforced",
-			}),
 			flowsAllowed: prometheus.NewCounter(prometheus.CounterOpts{
 				Name: "ztap_flows_allowed_total",
 				Help: "Total number of flows allowed",
@@ -60,7 +55,6 @@ func GetCollector() *Collector {
 		}
 
 		// Register metrics with Prometheus
-		prometheus.MustRegister(globalCollector.policiesEnforced)
 		prometheus.MustRegister(globalCollector.flowsAllowed)
 		prometheus.MustRegister(globalCollector.flowsBlocked)
 		prometheus.MustRegister(globalCollector.anomalyScore)
@@ -69,13 +63,6 @@ func GetCollector() *Collector {
 	})
 
 	return globalCollector
-}
-
-// IncPoliciesEnforced increments the policies enforced counter
-func (c *Collector) IncPoliciesEnforced() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.policiesEnforced.Inc()
 }
 
 // IncFlowsAllowed increments the flows allowed counter

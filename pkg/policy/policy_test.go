@@ -83,6 +83,47 @@ spec:
 	}
 }
 
+func TestLoadFromBytesWithMetadataAnnotations(t *testing.T) {
+	policyContent := `
+apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: test-policy
+  labels:
+    env: prod
+  annotations:
+    ztap.io/compliance.pci-dss: "10.2.1"
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  egress:
+    - to:
+        ipBlock:
+          cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+`
+
+	policies, err := LoadFromBytes([]byte(policyContent))
+	if err != nil {
+		t.Fatalf("LoadFromBytes: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("expected 1 policy, got %d", len(policies))
+	}
+	if policies[0].Metadata.Labels["env"] != "prod" {
+		t.Fatalf("expected label env=prod")
+	}
+	if policies[0].Metadata.Annotations["ztap.io/compliance.pci-dss"] != "10.2.1" {
+		t.Fatalf("expected compliance annotation")
+	}
+	if err := policies[0].Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+}
+
 func TestLoadFromFileWithIngress(t *testing.T) {
 	tmpDir := t.TempDir()
 	policyFile := filepath.Join(tmpDir, "test-ingress-policy.yaml")

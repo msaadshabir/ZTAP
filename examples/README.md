@@ -33,12 +33,12 @@ ztap policy history web-to-db
 ztap policy rollback web-to-db --to 1 --reason "back to known-good"
 ```
 
-See [Cluster Documentation](../docs/cluster.md) for details.
+See [Cluster Documentation](../docs/CLUSTER.md) for details.
 
 ## Policy Examples
 
 Note: on Linux, the eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
-Policies that use non-/32 CIDRs will be rejected by the eBPF enforcer. See `docs/ebpf.md`.
+Policies that use non-/32 CIDRs will be rejected by the eBPF enforcer. See `docs/EBPF.md`.
 Policies that use `podSelector` targets can be enforced by resolving selectors into `/32` `ipBlock` rules first (in-cluster via `ztap agent`, or locally via `ztap enforce --resolve-labels` with `discovery.backend: k8s`).
 Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels).
 
@@ -67,6 +67,14 @@ Prevent lateral movement in compromised environments.
 ### pci-compliant.yaml
 
 PCI-DSS compliant payment processor (HTTPS only, internal network).
+
+Compliance exports:
+
+```bash
+ztap compliance export -f pci-compliant.yaml --format json
+ztap compliance export -f pci-compliant.yaml --format csv --out pci.csv
+ztap compliance report -f pci-compliant.yaml --format md
+```
 
 ### deny-all.yaml
 
@@ -188,4 +196,4 @@ spec:
 
 - [Architecture](../docs/architecture.md)
 - [Setup Guide](../docs/setup.md)
-- [Testing](../docs/testing.md)
+- [Testing](../docs/TESTING.md)

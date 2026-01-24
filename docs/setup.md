@@ -251,7 +251,7 @@ sudo apt-get install clang llvm make linux-headers-$(uname -r)
 cd bpf && make && cd ..
 ```
 
-See [eBPF Setup Guide](ebpf.md) for detailed Linux configuration.
+See [eBPF Setup Guide](EBPF.md) for detailed Linux configuration.
 
 ### 4. Windows-Specific Setup
 
@@ -484,6 +484,11 @@ curl -s http://127.0.0.1:8080/readyz
 
 If API auth is enabled, `/metrics` on this server requires a valid bearer token with `view_metrics` permission.
 
+Compliance endpoints:
+
+- `POST /v1/compliance/report` (requires `view_compliance`)
+- `POST /v1/compliance/export` (requires `view_compliance`)
+
 Configuration:
 
 ````yaml
@@ -643,4 +648,4 @@ ztap metrics --port 9091
 
 - Read [Architecture](architecture.md) to understand internals
 - Check [examples/](../examples/) for sample policies
-- See [Testing Guide](testing.md) for test scenarios
+- See [Testing Guide](TESTING.md) for test scenarios

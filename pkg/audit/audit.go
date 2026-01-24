@@ -3,8 +3,6 @@ package audit
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -353,38 +351,7 @@ func (al *AuditLogger) GetStats() (map[string]interface{}, error) {
 
 // calculateHash computes SHA-256 hash of the entry (excluding the Hash field itself).
 func (al *AuditLogger) calculateHash(entry *AuditEntry) string {
-	// Create a copy without the hash field for hashing
-	data := struct {
-		ID           string                 `json:"id"`
-		Timestamp    time.Time              `json:"timestamp"`
-		EventType    EventType              `json:"event_type"`
-		Actor        string                 `json:"actor"`
-		Resource     string                 `json:"resource"`
-		Action       string                 `json:"action"`
-		Details      map[string]interface{} `json:"details"`
-		PreviousHash string                 `json:"previous_hash"`
-		Outcome      string                 `json:"outcome"`
-		ErrorMessage string                 `json:"error_message,omitempty"`
-		IPAddress    string                 `json:"ip_address,omitempty"`
-		NodeID       string                 `json:"node_id,omitempty"`
-	}{
-		ID:           entry.ID,
-		Timestamp:    entry.Timestamp,
-		EventType:    entry.EventType,
-		Actor:        entry.Actor,
-		Resource:     entry.Resource,
-		Action:       entry.Action,
-		Details:      entry.Details,
-		PreviousHash: entry.PreviousHash,
-		Outcome:      entry.Outcome,
-		ErrorMessage: entry.ErrorMessage,
-		IPAddress:    entry.IPAddress,
-		NodeID:       entry.NodeID,
-	}
-
-	jsonBytes, _ := json.Marshal(data)
-	hash := sha256.Sum256(jsonBytes)
-	return hex.EncodeToString(hash[:])
+	return EntryHash(entry)
 }
 
 // loadLastHash reads the audit log and retrieves the last entry's hash.

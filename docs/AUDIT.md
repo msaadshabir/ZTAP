@@ -290,6 +290,11 @@ The audit logging system helps meet compliance requirements for:
 - **PCI DSS**: Requirement 10 - Track and monitor all access to network resources
 - **HIPAA**: 164.312(b) - Audit controls
 
+ZTAP compliance reports (see `docs/compliance.md`) use the audit log for:
+
+- integrity verification (hash chain)
+- enforcement evidence (`policy.enforced` events)
+
 ## Testing
 
 The audit system includes comprehensive tests:
@@ -310,7 +315,9 @@ go test ./pkg/audit -v -cover
 # PASS: TestAuditLogger_GetStats
 # PASS: TestAuditLogger_Persistence
 # PASS: TestAuditLogger_ConcurrentWrites
-# coverage: 85.1% of statements
+# PASS: TestVerifyFileIntegrityAndQueryFile
+# PASS: TestVerifyFileIntegrityDetectsTamper
+# coverage: (varies)
 ```
 
 ## Performance
@@ -375,4 +382,4 @@ ztap audit verify
 **See Also:**
 
 - [Architecture](architecture.md)
-- [Testing Guide](testing.md)
+- [Testing Guide](TESTING.md)

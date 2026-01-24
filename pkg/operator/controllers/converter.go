@@ -1,9 +1,13 @@
 package controllers
 
 import (
+	"strings"
+
 	"ztap/pkg/operator/api/v1alpha1"
 	"ztap/pkg/policy"
 )
+
+const complianceAnnotationPrefix = "ztap.io/compliance."
 
 // ToInternalPolicy converts a ZtapNetworkPolicy CRD to the internal NetworkPolicy type.
 func ToInternalPolicy(ztnp *v1alpha1.ZtapNetworkPolicy) policy.NetworkPolicy {
@@ -11,7 +15,8 @@ func ToInternalPolicy(ztnp *v1alpha1.ZtapNetworkPolicy) policy.NetworkPolicy {
 		APIVersion: "ztap/v1",
 		Kind:       "NetworkPolicy",
 		Metadata: policy.NetworkPolicyMetadata{
-			Name: ztnp.Name,
+			Name:        ztnp.Name,
+			Annotations: filterComplianceAnnotations(ztnp.Annotations),
 		},
 		Spec: policy.NetworkPolicySpec{
 			PodSelector: policy.PodSelectorSpec{
@@ -43,6 +48,22 @@ func ToInternalPolicy(ztnp *v1alpha1.ZtapNetworkPolicy) policy.NetworkPolicy {
 	}
 
 	return p
+}
+
+func filterComplianceAnnotations(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for k, v := range in {
+		if strings.HasPrefix(k, complianceAnnotationPrefix) {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func convertEgressTarget(t v1alpha1.EgressTarget) policy.EgressTarget {

@@ -238,6 +238,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/config/backup", s.requireAuth(auth.PermBackupRestore, s.handleConfigBackup))
 	s.mux.HandleFunc("/v1/config/restore", s.requireAuth(auth.PermBackupRestore, s.handleConfigRestore))
 
+	s.mux.HandleFunc("/v1/compliance/report", s.requireAuth(auth.PermViewCompliance, s.handleComplianceReport))
+	s.mux.HandleFunc("/v1/compliance/export", s.requireAuth(auth.PermViewCompliance, s.handleComplianceExport))
+
 	metricsHandler := promhttp.Handler()
 	s.mux.HandleFunc("/metrics", s.requireAuth(auth.PermViewMetrics, metricsHandler.ServeHTTP))
 }

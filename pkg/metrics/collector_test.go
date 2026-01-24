@@ -13,7 +13,6 @@ import (
 func resetCollector(t *testing.T) {
 	t.Helper()
 	if globalCollector != nil {
-		prometheus.Unregister(globalCollector.policiesEnforced)
 		prometheus.Unregister(globalCollector.flowsAllowed)
 		prometheus.Unregister(globalCollector.flowsBlocked)
 		prometheus.Unregister(globalCollector.anomalyScore)
@@ -42,15 +41,9 @@ func TestCollectorCounters(t *testing.T) {
 	resetCollector(t)
 	collector := GetCollector()
 
-	collector.IncPoliciesEnforced()
-	collector.IncPoliciesEnforced()
 	collector.IncFlowsAllowed()
 	collector.IncFlowsBlocked()
 	collector.IncFlowsBlocked()
-
-	if got := testutil.ToFloat64(collector.policiesEnforced); got != 2 {
-		t.Fatalf("expected policiesEnforced=2, got %v", got)
-	}
 	if got := testutil.ToFloat64(collector.flowsAllowed); got != 1 {
 		t.Fatalf("expected flowsAllowed=1, got %v", got)
 	}

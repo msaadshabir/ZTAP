@@ -371,6 +371,6 @@ Notes:
 
 ## Related Documentation
 
-- [eBPF Setup](ebpf.md)
-- [Testing Guide](testing.md)
+- [eBPF Setup](EBPF.md)
+- [Testing Guide](TESTING.md)
 - [Architecture](architecture.md)

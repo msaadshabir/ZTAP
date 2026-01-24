@@ -80,7 +80,9 @@ type NetworkPolicySpec struct {
 
 // NetworkPolicyMetadata defines metadata for a network policy.
 type NetworkPolicyMetadata struct {
-	Name string `yaml:"name"`
+	Name        string            `yaml:"name"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
 // NetworkPolicy defines a zero-trust rule with bidirectional enforcement support.
