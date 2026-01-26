@@ -29,6 +29,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 
 # G304 (variable file path) is expected in a CLI that intentionally reads operator-specified files.
 # G602 (slice bounds) false positive on fixed-length arrays (e.g., [4]uint32 index 0).
-gosec -exclude=G304,G602 ./...
+# Skip generated code to avoid false positives in protobuf outputs.
+gosec -exclude=G304,G602 -exclude-generated ./...
 
 echo "All security checks passed."
