@@ -132,7 +132,7 @@ var complianceExportCmd = &cobra.Command{
 	Example:      "  ztap compliance export -f policy.yaml --format json\n  ztap compliance export -f policy.yaml --format csv --out mappings.csv\n  cat policy.yaml | ztap compliance export --policy-yaml-stdin",
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 		var in complianceInputs
 		in.policyFiles, _ = cmd.Flags().GetStringArray("policy-file")
 		in.policyStdin, _ = cmd.Flags().GetBool("policy-yaml-stdin")
@@ -178,7 +178,11 @@ var complianceExportCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer w.Close()
+		defer func() {
+			if cerr := w.Close(); runErr == nil && cerr != nil {
+				runErr = cerr
+			}
+		}()
 
 		switch strings.ToLower(strings.TrimSpace(in.format)) {
 		case "", "json":
