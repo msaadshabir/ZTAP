@@ -158,10 +158,6 @@ GetCollector() *Collector
 StartServer(port int) error
 ```
 
-## Data Flow
-
-```
-
 ### 7. Kubernetes Operator + Node Agent (WIP)
 
 **Responsibility**: Kubernetes-native policy authoring and distribution using a CRD and per-node agents
@@ -179,9 +175,13 @@ StartServer(port int) error
     - single-namespace: `pkg/discovery/k8s_discovery.go`
     - multi-namespace/all namespaces: `pkg/discovery/k8s_discovery_all_namespaces.go` (tenant-scoped)
   - Translates `podSelector.matchLabels` targets into concrete `/32` `ipBlock` rules and re-applies enforcement when the resolved Pod IP set changes
+
+## Data Flow
+
+```text
 User
  │
- ├─> CLI Command (enforce/status/logs)
+  ├─> CLI Command (enforce/status/logs)
  │
  ├─> Kubernetes (WIP)
  │    ├─> Operator (CRD -> validated policy ConfigMaps)
@@ -208,8 +208,8 @@ User
 ├─> Alerting (optional)
 │    └─> Slack / PagerDuty webhooks
  │
- └─> Metrics Collector
-      └─> Prometheus (:9090/metrics)
+  └─> Metrics Collector
+       └─> Prometheus (:9090/metrics)
 ```
 
 ## Security Model

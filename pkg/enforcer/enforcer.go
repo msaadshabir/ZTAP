@@ -26,7 +26,11 @@ type EnforcementOptions struct {
 	Policies   []policy.NetworkPolicy
 	DryRun     bool
 	CgroupPath string // Used for Linux eBPF
-	Context    context.Context
+	// BPFObjectPath optionally overrides the embedded eBPF object on Linux.
+	BPFObjectPath string
+	// DebugEBPF enables extra debug logging for eBPF loading/attachment.
+	DebugEBPF bool
+	Context   context.Context
 }
 
 // ScopedPolicy is a network policy paired with subject cgroups.
@@ -41,10 +45,12 @@ type ScopedPolicy struct {
 
 // ScopedEnforcementOptions is the tenant-aware enforcement request.
 type ScopedEnforcementOptions struct {
-	Policies   []ScopedPolicy
-	DryRun     bool
-	CgroupPath string // Used for Linux eBPF
-	Context    context.Context
+	Policies      []ScopedPolicy
+	DryRun        bool
+	CgroupPath    string // Used for Linux eBPF
+	BPFObjectPath string
+	DebugEBPF     bool
+	Context       context.Context
 }
 
 // IsLinux returns true if running on Linux

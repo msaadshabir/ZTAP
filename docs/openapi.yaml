@@ -1,0 +1,594 @@
+openapi: 3.0.3
+info:
+  title: ZTAP REST API
+  version: v1
+  description: |
+    Minimal REST API for ZTAP.
+
+    Auth uses bearer tokens from `POST /v1/auth/login`.
+servers:
+  - url: http://127.0.0.1:8080
+
+tags:
+  - name: health
+  - name: auth
+  - name: status
+  - name: enforcement
+  - name: flows
+  - name: config
+  - name: compliance
+  - name: metrics
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                type: object
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Authenticate and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthLoginRequest"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthLoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/auth/whoami:
+    get:
+      tags: [auth]
+      summary: Return the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhoAmIResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/status:
+    get:
+      tags: [status]
+      summary: Process status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/enforcement/status:
+    get:
+      tags: [enforcement]
+      summary: Enforcement status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Enforcement status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnforcementStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/enforcement/start:
+    post:
+      tags: [enforcement]
+      summary: Start enforcement
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnforcementStartRequest"
+      responses:
+        "200":
+          description: Enforcement started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnforcementStartResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/enforcement/stop:
+    post:
+      tags: [enforcement]
+      summary: Stop enforcement
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stopped:
+                    type: boolean
+                required: [stopped]
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "501":
+          description: Not implemented
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/flows/stream:
+    get:
+      tags: [flows]
+      summary: Stream flow events (Server-Sent Events)
+      description: |
+        Returns a `text/event-stream` where each `data:` line contains a JSON-encoded flow event.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/config/backup:
+    post:
+      tags: [config]
+      summary: Download a backup bundle
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupRequest"
+      responses:
+        "200":
+          description: Backup bundle (.tar.gz)
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/config/restore:
+    post:
+      tags: [config]
+      summary: Restore from a backup bundle
+      description: |
+        Upload a `.tar.gz` created by `/v1/config/backup`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dry_run
+          in: query
+          schema:
+            type: boolean
+          description: If true, compute restore plan without applying.
+        - name: force
+          in: query
+          schema:
+            type: boolean
+          description: If true, allow destructive overwrites.
+      requestBody:
+        required: true
+        content:
+          application/gzip:
+            schema:
+              type: string
+              format: binary
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Restore plan/report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Force required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Bundle too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/compliance/report:
+    post:
+      tags: [compliance]
+      summary: Generate a compliance report
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComplianceReportRequest"
+      responses:
+        "200":
+          description: Compliance report
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/compliance/export:
+    post:
+      tags: [compliance]
+      summary: Export compliance report (json/csv)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComplianceExportRequest"
+      responses:
+        "200":
+          description: Export result
+          content:
+            application/json:
+              schema:
+                type: object
+            text/csv:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /metrics:
+    get:
+      tags: [metrics]
+      summary: Prometheus metrics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Prometheus text format
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    RateLimitedResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        retry_after_seconds:
+          type: integer
+          format: int32
+      required: [error, retry_after_seconds]
+
+    AuthLoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required: [username, password]
+
+    AuthLoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required: [token, username, role, expires_at]
+
+    WhoAmIResponse:
+      type: object
+      properties:
+        username:
+          type: string
+        role:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required: [username, role, expires_at]
+
+    StatusResponse:
+      type: object
+      properties:
+        os:
+          type: string
+        arch:
+          type: string
+        hostname:
+          type: string
+        pid:
+          type: integer
+          format: int32
+        uptime:
+          type: string
+      required: [os, arch, hostname, pid, uptime]
+
+    EnforcementStatusResponse:
+      type: object
+      properties:
+        platform:
+          type: string
+        ebpf_active:
+          type: boolean
+        flow_events_pin_path:
+          type: string
+      required: [platform, ebpf_active, flow_events_pin_path]
+
+    EnforcementStartRequest:
+      type: object
+      properties:
+        policy_yaml:
+          type: string
+        policy_name:
+          type: string
+        cgroup:
+          type: string
+        bpf_object:
+          type: string
+        debug_ebpf:
+          type: boolean
+      required: [policy_yaml]
+
+    EnforcementStartResponse:
+      type: object
+      properties:
+        enforced:
+          type: boolean
+        platform:
+          type: string
+      required: [enforced, platform]
+
+    BackupRequest:
+      type: object
+      properties:
+        include_users:
+          type: boolean
+        include_sessions:
+          type: boolean
+        include_policy_current:
+          type: boolean
+        include_policy_revisions:
+          type: boolean
+        include_discovery:
+          type: boolean
+        include_config:
+          type: boolean
+
+    RestoreResponse:
+      type: object
+      properties:
+        manifest:
+          type: object
+        plan:
+          type: object
+        report:
+          type: object
+      required: [manifest, plan, report]
+
+    ComplianceReportRequest:
+      type: object
+      properties:
+        policy_yaml:
+          type: string
+        policy_name:
+          type: string
+        frameworks:
+          type: array
+          items:
+            type: string
+        mapping_yaml:
+          type: string
+        evidence_window:
+          type: string
+        strict:
+          type: boolean
+      required: [policy_yaml]
+
+    ComplianceExportRequest:
+      allOf:
+        - $ref: "#/components/schemas/ComplianceReportRequest"
+        - type: object
+          properties:
+            format:
+              type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalError:
+      description: Internal error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    MethodNotAllowed:
+      description: Method not allowed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

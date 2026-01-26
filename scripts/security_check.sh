@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+GOVULNCHECK_VERSION="v1.1.4"
+GOSEC_VERSION="v2.22.11"
+
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 echo "==> go test"
@@ -12,7 +15,7 @@ go vet ./...
 echo "==> govulncheck"
 if ! command -v govulncheck >/dev/null 2>&1; then
   echo "Installing govulncheck..."
-  go install golang.org/x/vuln/cmd/govulncheck@latest
+  go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
 fi
 export PATH="$(go env GOPATH)/bin:$PATH"
 govulncheck ./...
@@ -20,7 +23,7 @@ govulncheck ./...
 echo "==> gosec"
 if ! command -v gosec >/dev/null 2>&1; then
   echo "Installing gosec..."
-  go install github.com/securego/gosec/v2/cmd/gosec@latest
+  go install "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}"
 fi
 export PATH="$(go env GOPATH)/bin:$PATH"
 

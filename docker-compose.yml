@@ -20,6 +20,8 @@ services:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro # For eBPF cgroup attachment
     ports:
       - "9090:9090" # Metrics endpoint
+    environment:
+      - ZTAP_METRICS_LISTEN=0.0.0.0:9090
     networks:
       - ztap-net
     command: ["metrics", "--port", "9090"]

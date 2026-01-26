@@ -12,7 +12,7 @@ import (
 
 func (s *Server) handleFlowsStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	flusher, ok := w.(http.Flusher)

@@ -15,10 +15,11 @@ import (
 	"testing"
 	"time"
 
+	apiv1 "ztap/proto/ztap/api/v1"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func generateSelfSignedCert(certPath, keyPath string) error {
@@ -115,15 +116,14 @@ func TestGRPCTLS(t *testing.T) {
 	clientCtx, clientCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer clientCancel()
 
-	conn, err := grpc.DialContext(clientCtx, addr, grpc.WithTransportCredentials(creds), grpc.WithBlock())
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
 	if err != nil {
-		t.Fatalf("failed to dial gRPC: %v", err)
+		t.Fatalf("failed to create gRPC client: %v", err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { _ = conn.Close() })
 
-	var resp structpb.Struct
-	err = conn.Invoke(clientCtx, "/ztap.api.v1.StatusService/GetStatus", &emptypb.Empty{}, &resp)
-	if err != nil {
+	statusClient := apiv1.NewStatusServiceClient(conn)
+	if _, err := statusClient.GetStatus(clientCtx, &emptypb.Empty{}); err != nil {
 		t.Fatalf("GetStatus RPC failed: %v", err)
 	}
 }

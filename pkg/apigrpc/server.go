@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-
 	"runtime"
 	"strings"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"ztap/pkg/health"
 	"ztap/pkg/policy"
 	"ztap/pkg/ratelimit"
+	apiv1 "ztap/proto/ztap/api/v1"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
@@ -36,8 +36,8 @@ import (
 
 	errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/structpb"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Config struct {
@@ -441,8 +441,6 @@ func ratelimitBearer(h string) (string, bool) {
 	return tok, true
 }
 
-func ratelimitHashToken(tok string) string { return ratelimit.HashToken(tok) }
-
 func (s *Server) unaryAuthInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 	perm, requiresAuth := permissionForMethod(info.FullMethod)
 	if !requiresAuth || !s.cfg.AuthEnabled {
@@ -521,53 +519,34 @@ func bearerTokenFromMetadata(ctx context.Context) (string, error) {
 
 func permissionForMethod(fullMethod string) (auth.Permission, bool) {
 	switch fullMethod {
-	case "/ztap.api.v1.AuthService/Login":
+	case apiv1.AuthService_Login_FullMethodName:
 		return "", false
 	case "/grpc.health.v1.Health/Check":
 		return "", false
 	case "/grpc.health.v1.Health/Watch":
 		return "", false
-	case "/ztap.api.v1.AuthService/WhoAmI":
+	case apiv1.AuthService_WhoAmI_FullMethodName:
 		return auth.PermViewStatus, true
-	case "/ztap.api.v1.StatusService/GetStatus":
+	case apiv1.StatusService_GetStatus_FullMethodName:
 		return auth.PermViewStatus, true
-	case "/ztap.api.v1.EnforcementService/GetStatus":
+	case apiv1.EnforcementService_GetStatus_FullMethodName:
 		return auth.PermViewStatus, true
-	case "/ztap.api.v1.EnforcementService/Start":
+	case apiv1.EnforcementService_Start_FullMethodName:
 		return auth.PermEnforce, true
-	case "/ztap.api.v1.EnforcementService/Stop":
+	case apiv1.EnforcementService_Stop_FullMethodName:
 		return auth.PermEnforce, true
-	case "/ztap.api.v1.FlowsService/Stream":
+	case apiv1.FlowsService_Stream_FullMethodName:
 		return auth.PermViewStatus, true
 	default:
 		return "", false
 	}
 }
 
-type AuthServiceServer interface {
-	Login(ctx context.Context, req *structpb.Struct) (*structpb.Struct, error)
-	WhoAmI(ctx context.Context, req *emptypb.Empty) (*structpb.Struct, error)
-}
-
-type StatusServiceServer interface {
-	GetStatus(ctx context.Context, req *emptypb.Empty) (*structpb.Struct, error)
-}
-
-type EnforcementServiceServer interface {
-	GetStatus(ctx context.Context, req *emptypb.Empty) (*structpb.Struct, error)
-	Start(ctx context.Context, req *structpb.Struct) (*structpb.Struct, error)
-	Stop(ctx context.Context, req *emptypb.Empty) (*structpb.Struct, error)
-}
-
-type FlowsServiceServer interface {
-	Stream(req *emptypb.Empty, stream grpc.ServerStream) error
-}
-
 func (s *Server) registerServices() {
-	s.grpc.RegisterService(&authServiceDesc, &authService{srv: s})
-	s.grpc.RegisterService(&statusServiceDesc, &statusService{srv: s})
-	s.grpc.RegisterService(&enforcementServiceDesc, &enforcementService{srv: s})
-	s.grpc.RegisterService(&flowsServiceDesc, &flowsService{srv: s})
+	apiv1.RegisterAuthServiceServer(s.grpc, &authService{srv: s})
+	apiv1.RegisterStatusServiceServer(s.grpc, &statusService{srv: s})
+	apiv1.RegisterEnforcementServiceServer(s.grpc, &enforcementService{srv: s})
+	apiv1.RegisterFlowsServiceServer(s.grpc, &flowsService{srv: s})
 
 	grpc_health_v1.RegisterHealthServer(s.grpc, &healthService{srv: s})
 }
@@ -576,33 +555,45 @@ type healthService struct{ srv *Server }
 
 func (h *healthService) Check(ctx context.Context, _ *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
 	res := h.srv.readiness.Check(ctx)
-	status := grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	st := grpc_health_v1.HealthCheckResponse_NOT_SERVING
 	if res.Ready {
-		status = grpc_health_v1.HealthCheckResponse_SERVING
+		st = grpc_health_v1.HealthCheckResponse_SERVING
 	}
-	return &grpc_health_v1.HealthCheckResponse{Status: status}, nil
+	return &grpc_health_v1.HealthCheckResponse{Status: st}, nil
 }
 
 func (h *healthService) Watch(_ *grpc_health_v1.HealthCheckRequest, srv grpc_health_v1.Health_WatchServer) error {
 	res := h.srv.readiness.Check(srv.Context())
-	status := grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	st := grpc_health_v1.HealthCheckResponse_NOT_SERVING
 	if res.Ready {
-		status = grpc_health_v1.HealthCheckResponse_SERVING
+		st = grpc_health_v1.HealthCheckResponse_SERVING
 	}
-	return srv.Send(&grpc_health_v1.HealthCheckResponse{Status: status})
+	return srv.Send(&grpc_health_v1.HealthCheckResponse{Status: st})
 }
 
-type authService struct{ srv *Server }
+type authService struct {
+	apiv1.UnimplementedAuthServiceServer
+	srv *Server
+}
 
-type statusService struct{ srv *Server }
+type statusService struct {
+	apiv1.UnimplementedStatusServiceServer
+	srv *Server
+}
 
-type enforcementService struct{ srv *Server }
+type enforcementService struct {
+	apiv1.UnimplementedEnforcementServiceServer
+	srv *Server
+}
 
-type flowsService struct{ srv *Server }
+type flowsService struct {
+	apiv1.UnimplementedFlowsServiceServer
+	srv *Server
+}
 
-func (a *authService) Login(ctx context.Context, req *structpb.Struct) (*structpb.Struct, error) {
-	username := strings.TrimSpace(req.GetFields()["username"].GetStringValue())
-	password := strings.TrimSpace(req.GetFields()["password"].GetStringValue())
+func (a *authService) Login(ctx context.Context, req *apiv1.LoginRequest) (*apiv1.LoginResponse, error) {
+	username := strings.TrimSpace(req.GetUsername())
+	password := strings.TrimSpace(req.GetPassword())
 	if username == "" || password == "" {
 		return nil, status.Error(codes.InvalidArgument, "username and password are required")
 	}
@@ -612,68 +603,51 @@ func (a *authService) Login(ctx context.Context, req *structpb.Struct) (*structp
 		return nil, status.Error(codes.Unauthenticated, err.Error())
 	}
 
-	resp, err := structpb.NewStruct(map[string]any{
-		"token":      sess.Token,
-		"username":   sess.Username,
-		"role":       string(sess.Role),
-		"expires_at": sess.ExpiresAt.UTC().Format(time.RFC3339Nano),
-	})
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return resp, nil
+	return &apiv1.LoginResponse{
+		Token:     sess.Token,
+		Username:  sess.Username,
+		Role:      string(sess.Role),
+		ExpiresAt: timestamppb.New(sess.ExpiresAt.UTC()),
+	}, nil
 }
 
-func (a *authService) WhoAmI(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
+func (a *authService) WhoAmI(ctx context.Context, _ *emptypb.Empty) (*apiv1.WhoAmIResponse, error) {
 	sess, ok := sessionFromContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Internal, "missing session")
 	}
-
-	resp, err := structpb.NewStruct(map[string]any{
-		"username":   sess.Username,
-		"role":       string(sess.Role),
-		"expires_at": sess.ExpiresAt.UTC().Format(time.RFC3339Nano),
-	})
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return resp, nil
+	return &apiv1.WhoAmIResponse{
+		Username:  sess.Username,
+		Role:      string(sess.Role),
+		ExpiresAt: timestamppb.New(sess.ExpiresAt.UTC()),
+	}, nil
 }
 
-func (st *statusService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
+func (st *statusService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*apiv1.StatusResponse, error) {
 	hostname, _ := os.Hostname()
-	resp, err := structpb.NewStruct(map[string]any{
-		"os":       runtime.GOOS,
-		"arch":     runtime.GOARCH,
-		"hostname": hostname,
-		"pid":      int64(os.Getpid()),
-		"uptime":   time.Since(st.srv.startTime).Truncate(time.Second).String(),
-	})
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return resp, nil
+	return &apiv1.StatusResponse{
+		Os:       runtime.GOOS,
+		Arch:     runtime.GOARCH,
+		Hostname: hostname,
+		Pid:      int64(os.Getpid()),
+		Uptime:   time.Since(st.srv.startTime).Truncate(time.Second).String(),
+	}, nil
 }
 
-func (e *enforcementService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
-	resp, err := structpb.NewStruct(map[string]any{
-		"platform":             runtime.GOOS,
-		"ebpf_active":          enforcer.IsEBPFEnforcementActive(),
-		"flow_events_pin_path": enforcer.DefaultFlowEventsPinPath,
-	})
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return resp, nil
+func (e *enforcementService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*apiv1.EnforcementStatusResponse, error) {
+	return &apiv1.EnforcementStatusResponse{
+		Platform:          runtime.GOOS,
+		EbpfActive:        enforcer.IsEBPFEnforcementActive(),
+		FlowEventsPinPath: enforcer.DefaultFlowEventsPinPath,
+	}, nil
 }
 
-func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*structpb.Struct, error) {
-	policyYAML := strings.TrimSpace(req.GetFields()["policy_yaml"].GetStringValue())
-	policyName := strings.TrimSpace(req.GetFields()["policy_name"].GetStringValue())
-	cgroupPath := strings.TrimSpace(req.GetFields()["cgroup"].GetStringValue())
-	bpfObject := strings.TrimSpace(req.GetFields()["bpf_object"].GetStringValue())
-	debugEBPF := req.GetFields()["debug_ebpf"].GetBoolValue()
+func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementStartRequest) (*apiv1.EnforcementStartResponse, error) {
+	policyYAML := strings.TrimSpace(req.GetPolicyYaml())
+	policyName := strings.TrimSpace(req.GetPolicyName())
+	cgroupPath := strings.TrimSpace(req.GetCgroup())
+	bpfObject := strings.TrimSpace(req.GetBpfObject())
+	debugEBPF := req.GetDebugEbpf()
 
 	if policyYAML == "" {
 		return nil, status.Error(codes.InvalidArgument, "policy_yaml is required")
@@ -745,11 +719,9 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s: %w", resolvedCgroupPath, err).Error())
 		}
 
+		bpfObjectPath := ""
 		if bpfObject != "" {
 			const safeBPFDir = "/usr/lib/ztap/bpf"
-			if filepath.IsAbs(bpfObject) {
-				return nil, status.Error(codes.InvalidArgument, "bpf_object must be a relative path")
-			}
 			cleaned := filepath.Clean(bpfObject)
 			if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
 				return nil, status.Error(codes.InvalidArgument, "bpf_object contains an invalid path")
@@ -758,9 +730,12 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 			if err != nil {
 				return nil, status.Error(codes.Internal, fmt.Errorf("failed to resolve bpf directory: %w", err).Error())
 			}
-			absPath, err := filepath.Abs(filepath.Join(baseDirAbs, cleaned))
-			if err != nil {
-				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid bpf_object %s: %w", bpfObject, err).Error())
+			absPath := cleaned
+			if !filepath.IsAbs(cleaned) {
+				absPath, err = filepath.Abs(filepath.Join(baseDirAbs, cleaned))
+				if err != nil {
+					return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid bpf_object %s: %w", bpfObject, err).Error())
+				}
 			}
 			rel, err := filepath.Rel(baseDirAbs, absPath)
 			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
@@ -769,19 +744,18 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 			if _, err := os.Stat(absPath); err != nil {
 				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid bpf_object %s: %w", bpfObject, err).Error())
 			}
-			_ = os.Setenv("ZTAP_BPF_OBJECT", absPath)
-		}
-		if debugEBPF {
-			_ = os.Setenv("ZTAP_DEBUG_EBPF", "1")
+			bpfObjectPath = absPath
 		}
 
 		if err := enforcer.ValidatePoliciesForEBPF(policies); err != nil {
 			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy is not supported by eBPF enforcer yet: %w", err).Error())
 		}
 		opts := enforcer.EnforcementOptions{
-			Policies:   policies,
-			CgroupPath: resolvedCgroupPath,
-			Context:    ctx,
+			Policies:      policies,
+			CgroupPath:    resolvedCgroupPath,
+			BPFObjectPath: bpfObjectPath,
+			DebugEBPF:     debugEBPF,
+			Context:       ctx,
 		}
 		if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
 			e.srv.emitAlert(alert.Alert{
@@ -804,17 +778,10 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 			DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
 			Details:  map[string]any{"platform": platform, "count": len(policies)},
 		})
-		resp, err := structpb.NewStruct(map[string]any{"enforced": true, "platform": platform})
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		return resp, nil
+		return &apiv1.EnforcementStartResponse{Enforced: true, Platform: platform}, nil
 	}
 
-	enforcer.EnforceWithPF(enforcer.EnforcementOptions{
-		Policies: policies,
-		Context:  ctx,
-	})
+	enforcer.EnforceWithPF(enforcer.EnforcementOptions{Policies: policies, Context: ctx})
 	_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
 	e.srv.emitAlert(alert.Alert{
 		Source:   "api-grpc",
@@ -824,14 +791,10 @@ func (e *enforcementService) Start(ctx context.Context, req *structpb.Struct) (*
 		DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
 		Details:  map[string]any{"platform": platform, "count": len(policies)},
 	})
-	resp, err := structpb.NewStruct(map[string]any{"enforced": true, "platform": platform})
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return resp, nil
+	return &apiv1.EnforcementStartResponse{Enforced: true, Platform: platform}, nil
 }
 
-func (e *enforcementService) Stop(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
+func (e *enforcementService) Stop(ctx context.Context, _ *emptypb.Empty) (*apiv1.EnforcementStopResponse, error) {
 	if !enforcer.IsLinux() {
 		return nil, status.Error(codes.Unimplemented, "stop is only supported for eBPF enforcement on linux")
 	}
@@ -841,14 +804,10 @@ func (e *enforcementService) Stop(ctx context.Context, _ *emptypb.Empty) (*struc
 	if err := enforcer.StopEBPFEnforcement(); err != nil {
 		return nil, status.Error(codes.Internal, fmt.Errorf("failed to stop eBPF enforcement: %w", err).Error())
 	}
-	resp, err := structpb.NewStruct(map[string]any{"stopped": true})
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return resp, nil
+	return &apiv1.EnforcementStopResponse{Stopped: true}, nil
 }
 
-func (f *flowsService) Stream(_ *emptypb.Empty, stream grpc.ServerStream) error {
+func (f *flowsService) Stream(_ *emptypb.Empty, stream apiv1.FlowsService_StreamServer) error {
 	ctx := stream.Context()
 
 	reader := f.srv.flowReader()
@@ -867,167 +826,23 @@ func (f *flowsService) Stream(_ *emptypb.Empty, stream grpc.ServerStream) error 
 			if !ok {
 				return nil
 			}
-			msg, err := flowEventToStruct(ev)
-			if err != nil {
-				continue
-			}
-			if err := stream.SendMsg(msg); err != nil {
+			msg := flowEventToPB(ev)
+			if err := stream.Send(msg); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func flowEventToStruct(ev flow.FlowEvent) (*structpb.Struct, error) {
-	return structpb.NewStruct(map[string]any{
-		"timestamp":   ev.Timestamp.UTC().Format(time.RFC3339Nano),
-		"source_ip":   ev.SourceIP.String(),
-		"dest_ip":     ev.DestIP.String(),
-		"source_port": int64(ev.SourcePort),
-		"dest_port":   int64(ev.DestPort),
-		"protocol":    ev.Protocol,
-		"direction":   ev.Direction,
-		"action":      ev.Action,
-	})
-}
-
-var authServiceDesc = grpc.ServiceDesc{
-	ServiceName: "ztap.api.v1.AuthService",
-	HandlerType: (*AuthServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{MethodName: "Login", Handler: authServiceLoginHandler},
-		{MethodName: "WhoAmI", Handler: authServiceWhoAmIHandler},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/ztap/api/v1/api.proto",
-}
-
-var statusServiceDesc = grpc.ServiceDesc{
-	ServiceName: "ztap.api.v1.StatusService",
-	HandlerType: (*StatusServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{MethodName: "GetStatus", Handler: statusServiceGetStatusHandler},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/ztap/api/v1/api.proto",
-}
-
-var enforcementServiceDesc = grpc.ServiceDesc{
-	ServiceName: "ztap.api.v1.EnforcementService",
-	HandlerType: (*EnforcementServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{MethodName: "GetStatus", Handler: enforcementServiceGetStatusHandler},
-		{MethodName: "Start", Handler: enforcementServiceStartHandler},
-		{MethodName: "Stop", Handler: enforcementServiceStopHandler},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/ztap/api/v1/api.proto",
-}
-
-var flowsServiceDesc = grpc.ServiceDesc{
-	ServiceName: "ztap.api.v1.FlowsService",
-	HandlerType: (*FlowsServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams: []grpc.StreamDesc{
-		{StreamName: "Stream", Handler: flowsServiceStreamHandler, ServerStreams: true},
-	},
-	Metadata: "proto/ztap/api/v1/api.proto",
-}
-
-func authServiceLoginHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	in := new(structpb.Struct)
-	if err := dec(in); err != nil {
-		return nil, err
+func flowEventToPB(ev flow.FlowEvent) *apiv1.FlowEvent {
+	return &apiv1.FlowEvent{
+		Timestamp:  timestamppb.New(ev.Timestamp.UTC()),
+		SourceIp:   ev.SourceIP.String(),
+		DestIp:     ev.DestIP.String(),
+		SourcePort: uint32(ev.SourcePort),
+		DestPort:   uint32(ev.DestPort),
+		Protocol:   ev.Protocol,
+		Direction:  ev.Direction,
+		Action:     ev.Action,
 	}
-	if interceptor == nil {
-		return srv.(AuthServiceServer).Login(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/ztap.api.v1.AuthService/Login"}
-	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(AuthServiceServer).Login(ctx, req.(*structpb.Struct))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func authServiceWhoAmIHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AuthServiceServer).WhoAmI(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/ztap.api.v1.AuthService/WhoAmI"}
-	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(AuthServiceServer).WhoAmI(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func statusServiceGetStatusHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StatusServiceServer).GetStatus(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/ztap.api.v1.StatusService/GetStatus"}
-	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(StatusServiceServer).GetStatus(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func enforcementServiceGetStatusHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EnforcementServiceServer).GetStatus(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/ztap.api.v1.EnforcementService/GetStatus"}
-	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(EnforcementServiceServer).GetStatus(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func enforcementServiceStartHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	in := new(structpb.Struct)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EnforcementServiceServer).Start(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/ztap.api.v1.EnforcementService/Start"}
-	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(EnforcementServiceServer).Start(ctx, req.(*structpb.Struct))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func enforcementServiceStopHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EnforcementServiceServer).Stop(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/ztap.api.v1.EnforcementService/Stop"}
-	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(EnforcementServiceServer).Stop(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func flowsServiceStreamHandler(srv any, stream grpc.ServerStream) error {
-	in := new(emptypb.Empty)
-	if err := stream.RecvMsg(in); err != nil {
-		return err
-	}
-	return srv.(FlowsServiceServer).Stream(in, stream)
 }

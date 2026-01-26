@@ -49,7 +49,7 @@ git clone https://github.com/msaadshabir/ZTAP.git
 cd ZTAP
 
 # Start full stack with Docker Compose
-docker-compose up -d
+docker compose up -d
 
 # Access services:
 # - ZTAP metrics: http://localhost:9090/metrics
@@ -251,7 +251,7 @@ sudo apt-get install clang llvm make linux-headers-$(uname -r)
 cd bpf && make && cd ..
 ```
 
-See [eBPF Setup Guide](EBPF.md) for detailed Linux configuration.
+See [eBPF Setup Guide](ebpf.md) for detailed Linux configuration.
 
 ### 4. Windows-Specific Setup
 
@@ -566,23 +566,22 @@ ztap alert test
 ### Start Prometheus and Grafana
 
 ```bash
-cd deployments
-docker-compose up -d
+docker compose up -d
 
 # Access Grafana at http://localhost:3000
 # Username: admin
 # Password: ztap
-````
+```
 
 ### Import Dashboard
 
-The dashboard is automatically provisioned at `/etc/grafana/provisioning/dashboards/ztap.json`
+The dashboard is automatically provisioned at `/etc/grafana/provisioning/dashboards/ztap-dashboard.json`
 
 Or manually import:
 
 1. Open Grafana (http://localhost:3000)
 2. Go to Dashboards > Import
-3. Upload `deployments/grafana-dashboard.json`
+3. Upload `deployments/grafana/dashboards/ztap-dashboard.json`
 
 ## Running Anomaly Detection Service
 
@@ -648,4 +647,4 @@ ztap metrics --port 9091
 
 - Read [Architecture](architecture.md) to understand internals
 - Check [examples/](../examples/) for sample policies
-- See [Testing Guide](TESTING.md) for test scenarios
+- See [Testing Guide](testing.md) for test scenarios

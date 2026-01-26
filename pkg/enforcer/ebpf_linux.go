@@ -33,6 +33,10 @@ type eBPFEnforcer struct {
 	egressLink  link.Link
 	ingressLink link.Link
 	policies    []policy.NetworkPolicy
+	// bpfObjectPath optionally overrides the embedded eBPF object.
+	bpfObjectPath string
+	// debug enables extra debug logging for eBPF operations.
+	debug bool
 	// enforcedCgroups is a set of cgroup IDs selected by at least one policy.
 	enforcedCgroups *ebpf.Map
 	// enforcementConfigMap stores runtime flags for the BPF program.
@@ -128,12 +132,22 @@ func (e *eBPFEnforcer) LoadPoliciesScoped(policies []ScopedPolicy) error {
 
 	var objs bpfObjects
 
-	// Allow explicit override via environment variable (useful for development)
-	if p := os.Getenv("ZTAP_BPF_OBJECT"); p != "" {
-		safeP := strings.ReplaceAll(p, "\n", "")
+	debug := e.debug || os.Getenv("ZTAP_DEBUG_EBPF") == "1"
+
+	// Allow explicit override via options/env (useful for development).
+	objectOverride := strings.TrimSpace(e.bpfObjectPath)
+	if objectOverride == "" {
+		objectOverride = strings.TrimSpace(os.Getenv("ZTAP_BPF_OBJECT"))
+	}
+	if objectOverride != "" {
+		safeP := strings.ReplaceAll(objectOverride, "\n", "")
 		safeP = strings.ReplaceAll(safeP, "\r", "")
-		logging.Infof("Loading eBPF object from override: %s", safeP)
-		spec, err := ebpf.LoadCollectionSpec(p)
+		if debug {
+			logging.Infof("Loading eBPF object from override: %s", safeP)
+		} else {
+			logging.Info("Loading eBPF object from override", nil)
+		}
+		spec, err := ebpf.LoadCollectionSpec(objectOverride)
 		if err != nil {
 			return fmt.Errorf("failed to load eBPF object from %s: %w", safeP, err)
 		}
@@ -643,6 +657,8 @@ func EnforceWithEBPFReal(opts EnforcementOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to create eBPF enforcer: %w", err)
 	}
+	newEnforcer.bpfObjectPath = strings.TrimSpace(opts.BPFObjectPath)
+	newEnforcer.debug = opts.DebugEBPF
 
 	if err := newEnforcer.LoadPolicies(opts.Policies); err != nil {
 		_ = newEnforcer.Close()
@@ -699,6 +715,8 @@ func EnforceWithEBPFRealScoped(opts ScopedEnforcementOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to create eBPF enforcer: %w", err)
 	}
+	newEnforcer.bpfObjectPath = strings.TrimSpace(opts.BPFObjectPath)
+	newEnforcer.debug = opts.DebugEBPF
 
 	if err := newEnforcer.LoadPoliciesScoped(opts.Policies); err != nil {
 		_ = newEnforcer.Close()

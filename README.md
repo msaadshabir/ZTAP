@@ -3,10 +3,10 @@
 > Open-source zero-trust microsegmentation with eBPF enforcement, policy-as-code, and hybrid cloud support
 
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/EBPF.md)
+[![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/ebpf.md)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Compatible-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![AWS](https://img.shields.io/badge/AWS-Integration-FF9900?logo=amazon-aws&logoColor=white)](docs/setup.md)
-[![Test Coverage](https://img.shields.io/badge/coverage-79%25-brightgreen.svg)](docs/TESTING.md)
+[![Test Coverage](https://img.shields.io/badge/coverage-79%25-brightgreen.svg)](docs/testing.md)
 [![NIST SP 800-207](https://img.shields.io/badge/NIST-SP%20800--207-blue.svg)](https://csrc.nist.gov/publications/detail/sp/800-207/final)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -68,7 +68,7 @@ ztap agent --dry-run
 ztap status
 ```
 
-**[Full Setup Guide](docs/setup.md)** | **[Architecture](docs/architecture.md)** | **[eBPF Setup](docs/EBPF.md)**
+**[Full Setup Guide](docs/setup.md)** | **[Architecture](docs/architecture.md)** | **[eBPF Setup](docs/ebpf.md)**
 
 ---
 
@@ -140,11 +140,11 @@ ztap status
 | ------------------------------------------ | ----------------------------------------- |
 | [Setup Guide](docs/setup.md)               | Installation and configuration            |
 | [Architecture](docs/architecture.md)       | System design and components              |
-| [eBPF Enforcement](docs/EBPF.md)           | Linux kernel-level enforcement            |
-| [Cluster Coordination](docs/CLUSTER.md)    | Multi-node clustering and leader election |
-| [Audit Logging](docs/AUDIT.md)             | Tamper-proof audit log system             |
+| [eBPF Enforcement](docs/ebpf.md)           | Linux kernel-level enforcement            |
+| [Cluster Coordination](docs/cluster.md)    | Multi-node clustering and leader election |
+| [Audit Logging](docs/audit.md)             | Tamper-proof audit log system             |
 | [Compliance Reporting](docs/compliance.md) | Compliance mapping exports and reports    |
-| [Testing Guide](docs/TESTING.md)           | Comprehensive testing documentation       |
+| [Testing Guide](docs/testing.md)           | Comprehensive testing documentation       |
 | [Roadmap](docs/roadmap.md)                 | Delivered and planned features            |
 | [Windows Flow Runbook](docs/runbooks/windows-flow-monitoring.md) | Manual validation for WFP flows |
 | [Anomaly Detection](pkg/anomaly/README.md) | ML service setup                          |
@@ -268,6 +268,7 @@ Commands:
   agent       Run node agent (Kubernetes / in-cluster)
   compliance  Compliance mapping exports and reports
   enforce     Enforce zero-trust network policies
+  version     Print ZTAP version
   status      Show on-premises and cloud resource status
   cluster     Manage cluster coordination (status, join, leave, list)
   policy      Distributed policy management (sync, list, watch, show, history, rollback)
@@ -471,10 +472,10 @@ ztap audit stats                                  # Show log stats
 ### Grafana Dashboard
 
 ```bash
-docker-compose up -d  # Access at http://localhost:3000 (admin/ztap)
+docker compose up -d  # Access at http://localhost:3000 (admin/ztap)
 ```
 
-Dashboard auto-provisioned from `deployments/grafana-dashboard.json`
+Dashboard auto-provisioned from `deployments/grafana/dashboards/ztap-dashboard.json`
 
 ---
 
@@ -490,7 +491,7 @@ Dashboard auto-provisioned from `deployments/grafana-dashboard.json`
 | **Docker**     | Latest (optional)                | For Prometheus/Grafana stack        |
 | **Python**     | 3.8+ (optional)                  | For anomaly detection service       |
 
-**[Full eBPF Setup Guide](docs/EBPF.md)**
+**[Full eBPF Setup Guide](docs/ebpf.md)**
 
 ---
 
@@ -540,6 +541,6 @@ MIT License - See [LICENSE](LICENSE)
 
 **Note:** macOS enforcement (pf) is for development only. Use Linux + eBPF for production.
 
-[eBPF Setup Guide](docs/EBPF.md) | [Get Started](docs/setup.md) | [Open an Issue](../../issues)
+[eBPF Setup Guide](docs/ebpf.md) | [Get Started](docs/setup.md) | [Open an Issue](../../issues)
 
 </div>

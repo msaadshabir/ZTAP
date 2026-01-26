@@ -74,19 +74,17 @@ var enforceCmd = &cobra.Command{
 				if _, err := os.Stat(bpfObject); err != nil {
 					logging.Fatalf("Invalid --bpf-object %s: %v", bpfObject, err)
 				}
-				_ = os.Setenv("ZTAP_BPF_OBJECT", bpfObject)
-			}
-			if debugEBPF {
-				_ = os.Setenv("ZTAP_DEBUG_EBPF", "1")
 			}
 			if err := enforcer.ValidatePoliciesForLinux(policies); err != nil {
 				logging.Fatalf("Policy is not supported by enforcer yet: %v", err)
 			}
 
 			opts := enforcer.EnforcementOptions{
-				Policies:   policies,
-				DryRun:     dryRun,
-				CgroupPath: cgroupPath,
+				Policies:      policies,
+				DryRun:        dryRun,
+				CgroupPath:    cgroupPath,
+				BPFObjectPath: bpfObject,
+				DebugEBPF:     debugEBPF,
 			}
 
 			if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {

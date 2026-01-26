@@ -211,4 +211,4 @@ go test -tags=integration ./pkg/enforcer -v
 
 - [etcd Setup](etcd.md) - Production backend configuration
 - [Architecture](architecture.md) - System design overview
-- [Testing](TESTING.md) - Test suite documentation
+- [Testing](testing.md) - Test suite documentation

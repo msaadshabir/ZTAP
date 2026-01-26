@@ -10,13 +10,14 @@ import (
 	"ztap/pkg/auth"
 	"ztap/pkg/flow"
 
+	apiv1 "ztap/proto/ztap/api/v1"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func newGRPCHealthTestServer(t *testing.T) (*Server, *grpc.ClientConn) {
@@ -49,14 +50,11 @@ func newGRPCHealthTestServer(t *testing.T) (*Server, *grpc.ClientConn) {
 		_ = al.Close()
 	})
 
-	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	t.Cleanup(cancel)
-
-	conn, err := grpc.DialContext(dialCtx, "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatalf("DialContext: %v", err)
+		t.Fatalf("NewClient: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -98,34 +96,31 @@ func TestGRPCAuthLoginAndWhoAmI(t *testing.T) {
 		_ = al.Close()
 	})
 
-	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(dialCtx, "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatalf("DialContext: %v", err)
+		t.Fatalf("NewClient: %v", err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { _ = conn.Close() })
 
-	loginReq, _ := structpb.NewStruct(map[string]any{"username": "alice", "password": "pw"})
-	var loginResp structpb.Struct
-	if err := conn.Invoke(context.Background(), "/ztap.api.v1.AuthService/Login", loginReq, &loginResp); err != nil {
+	authClient := apiv1.NewAuthServiceClient(conn)
+	loginResp, err := authClient.Login(context.Background(), &apiv1.LoginRequest{Username: "alice", Password: "pw"})
+	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
-	tok := loginResp.Fields["token"].GetStringValue()
+	tok := loginResp.GetToken()
 	if tok == "" {
 		t.Fatalf("expected token")
 	}
 
 	mdCtx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tok))
-	var whoResp structpb.Struct
-	if err := conn.Invoke(mdCtx, "/ztap.api.v1.AuthService/WhoAmI", &emptypb.Empty{}, &whoResp); err != nil {
+	whoResp, err := authClient.WhoAmI(mdCtx, &emptypb.Empty{})
+	if err != nil {
 		t.Fatalf("WhoAmI: %v", err)
 	}
-	if whoResp.Fields["username"].GetStringValue() != "alice" {
-		t.Fatalf("unexpected username: %s", whoResp.Fields["username"].GetStringValue())
+	if whoResp.GetUsername() != "alice" {
+		t.Fatalf("unexpected username: %s", whoResp.GetUsername())
 	}
 }
 
@@ -218,43 +213,34 @@ func TestGRPCFlowsStream(t *testing.T) {
 		_ = al.Close()
 	})
 
-	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(dialCtx, "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatalf("DialContext: %v", err)
+		t.Fatalf("NewClient: %v", err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { _ = conn.Close() })
 
-	loginReq, _ := structpb.NewStruct(map[string]any{"username": "bob", "password": "pw"})
-	var loginResp structpb.Struct
-	if err := conn.Invoke(context.Background(), "/ztap.api.v1.AuthService/Login", loginReq, &loginResp); err != nil {
+	authClient := apiv1.NewAuthServiceClient(conn)
+	loginResp, err := authClient.Login(context.Background(), &apiv1.LoginRequest{Username: "bob", Password: "pw"})
+	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
-	tok := loginResp.Fields["token"].GetStringValue()
+	tok := loginResp.GetToken()
 
 	streamCtx, streamCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer streamCancel()
 	ctx := metadata.NewOutgoingContext(streamCtx, metadata.Pairs("authorization", "Bearer "+tok))
-	stream, err := conn.NewStream(ctx, &flowsServiceDesc.Streams[0], "/ztap.api.v1.FlowsService/Stream")
+	flowsClient := apiv1.NewFlowsServiceClient(conn)
+	stream, err := flowsClient.Stream(ctx, &emptypb.Empty{})
 	if err != nil {
-		t.Fatalf("NewStream: %v", err)
+		t.Fatalf("Stream: %v", err)
 	}
-	if err := stream.SendMsg(&emptypb.Empty{}); err != nil {
-		t.Fatalf("SendMsg: %v", err)
+	ev, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Recv: %v", err)
 	}
-	if err := stream.CloseSend(); err != nil {
-		t.Fatalf("CloseSend: %v", err)
-	}
-
-	var ev structpb.Struct
-	if err := stream.RecvMsg(&ev); err != nil {
-		t.Fatalf("RecvMsg: %v", err)
-	}
-	if ev.Fields["source_ip"].GetStringValue() == "" {
+	if ev.GetSourceIp() == "" {
 		t.Fatalf("expected source_ip")
 	}
 }

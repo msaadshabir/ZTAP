@@ -9,17 +9,17 @@ Technical documentation for ZTAP.
 | [Architecture](architecture.md) | System design and component overview |
 | [Setup Guide](setup.md)         | Installation and configuration       |
 | [Compliance Reporting](compliance.md) | Compliance mapping exports and reports |
-| [eBPF Setup](EBPF.md)           | Linux eBPF enforcement               |
-| [Testing Guide](TESTING.md)     | Test suite and coverage              |
+| [eBPF Setup](ebpf.md)           | Linux eBPF enforcement               |
+| [Testing Guide](testing.md)     | Test suite and coverage              |
 
 ## Operations
 
 | Document                    | Description                                                 |
 | --------------------------- | ----------------------------------------------------------- |
 | [Deployment](deployment.md) | Docker and containerized deployment                         |
-| [Cluster](CLUSTER.md)       | Distributed coordination and policy sync (history/rollback) |
+| [Cluster](cluster.md)       | Distributed coordination and policy sync (history/rollback) |
 | [etcd Setup](etcd.md)       | etcd backend for production clusters                        |
-| [Audit Logging](AUDIT.md)   | Tamper-proof audit system                                   |
+| [Audit Logging](audit.md)   | Tamper-proof audit system                                   |
 
 ## Reference
 
@@ -28,6 +28,7 @@ Technical documentation for ZTAP.
 | [Roadmap](roadmap.md)                         | Delivered and planned features |
 | [Examples](../examples/)                      | Sample policies and use cases  |
 | [Anomaly Detection](../pkg/anomaly/README.md) | ML service API                 |
+| [OpenAPI Spec](openapi.yaml)                  | REST API contract              |
 
 ## API Server
 

@@ -28,7 +28,7 @@ type restoreResponse struct {
 
 func (s *Server) handleConfigBackup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (s *Server) handleConfigBackup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleConfigRestore(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 

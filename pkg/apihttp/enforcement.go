@@ -32,7 +32,7 @@ type enforcementStartResponse struct {
 
 func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var req enforcementStartRequest
@@ -119,15 +119,12 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s: %w", cgroupPath, err))
 			return
 		}
+		bpfObjectPath := ""
 		if req.BPFObject != "" {
 			const safeBPFDir = "/usr/lib/ztap/bpf"
 			trimmedObj := strings.TrimSpace(req.BPFObject)
 			if trimmedObj == "" {
 				writeError(w, http.StatusBadRequest, errors.New("bpf_object must not be empty"))
-				return
-			}
-			if filepath.IsAbs(trimmedObj) {
-				writeError(w, http.StatusBadRequest, errors.New("bpf_object must be a relative path"))
 				return
 			}
 			cleaned := filepath.Clean(trimmedObj)
@@ -140,11 +137,13 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 				writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to resolve bpf directory: %w", err))
 				return
 			}
-			joinedPath := filepath.Join(baseDirAbs, cleaned)
-			absPath, err := filepath.Abs(joinedPath)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid bpf_object %s: %w", trimmedObj, err))
-				return
+			absPath := cleaned
+			if !filepath.IsAbs(cleaned) {
+				absPath, err = filepath.Abs(filepath.Join(baseDirAbs, cleaned))
+				if err != nil {
+					writeError(w, http.StatusBadRequest, fmt.Errorf("invalid bpf_object %s: %w", trimmedObj, err))
+					return
+				}
 			}
 			rel, err := filepath.Rel(baseDirAbs, absPath)
 			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
@@ -155,10 +154,7 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid bpf_object %s: %w", trimmedObj, err))
 				return
 			}
-			_ = os.Setenv("ZTAP_BPF_OBJECT", absPath)
-		}
-		if req.DebugEBPF {
-			_ = os.Setenv("ZTAP_DEBUG_EBPF", "1")
+			bpfObjectPath = absPath
 		}
 		if err := enforcer.ValidatePoliciesForEBPF(policies); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("policy is not supported by eBPF enforcer yet: %w", err))
@@ -166,9 +162,11 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 		}
 
 		opts := enforcer.EnforcementOptions{
-			Policies:   policies,
-			CgroupPath: cgroupPath,
-			Context:    r.Context(),
+			Policies:      policies,
+			CgroupPath:    cgroupPath,
+			BPFObjectPath: bpfObjectPath,
+			DebugEBPF:     req.DebugEBPF,
+			Context:       r.Context(),
 		}
 		platform := "linux"
 		if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
@@ -248,7 +246,7 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleEnforcementStop(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if enforcer.IsLinux() {

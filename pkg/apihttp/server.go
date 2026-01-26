@@ -267,6 +267,10 @@ func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, errorResponse{Error: err.Error()})
 }
 
+func writeMethodNotAllowed(w http.ResponseWriter) {
+	writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "method_not_allowed"})
+}
+
 func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration, limit float64, burst int) {
 	retrySeconds := int(retryAfter.Truncate(time.Second).Seconds())
 	if retrySeconds <= 0 {
@@ -417,7 +421,7 @@ func (s *Server) wrap(next http.Handler) http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -425,7 +429,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	res := s.readiness.Check(r.Context())
@@ -520,7 +524,7 @@ type statusResponse struct {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	hostname, _ := os.Hostname()
@@ -547,7 +551,7 @@ type authLoginResponse struct {
 
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var req authLoginRequest
@@ -576,7 +580,7 @@ type whoAmIResponse struct {
 
 func (s *Server) handleAuthWhoAmI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	sess, ok := sessionFromContext(r.Context())
@@ -595,7 +599,7 @@ type enforcementStatusResponse struct {
 
 func (s *Server) handleEnforcementStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	writeJSON(w, http.StatusOK, enforcementStatusResponse{Platform: runtime.GOOS, EBPFActive: enforcer.IsEBPFEnforcementActive(), FlowEventsPinPath: enforcer.DefaultFlowEventsPinPath})

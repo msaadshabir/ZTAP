@@ -1,6 +1,6 @@
 # Binaries
-ztap
-ztap_*
+/ztap
+/ztap_*
 *_example
 *.exe
 *.dll
@@ -97,4 +97,3 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-

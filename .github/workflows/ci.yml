@@ -21,7 +21,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
+          cache: true
 
       - name: Run go fmt
         run: |
@@ -39,12 +40,10 @@ jobs:
 
       - name: Install golangci-lint from source
         run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.1
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 
       - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m --skip-dirs examples
-        # TODO: remove once golangci-lint supports Go 1.24 export data (currently fails typecheck)
-        continue-on-error: true
+        run: golangci-lint run --timeout=5m
 
   test-go:
     name: Go Tests (${{ matrix.os }})
@@ -54,7 +53,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        go-version: ["1.24"]
 
     env:
       GOFLAGS: -buildvcs=false
@@ -66,7 +64,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version-file: go.mod
+          cache: true
 
       - name: Clean Go build cache
         run: go clean -cache -testcache
@@ -114,7 +113,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
+          cache: true
 
       - name: Download dependencies
         run: go mod download
@@ -149,7 +149,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
+          cache: true
 
       - name: Download dependencies
         run: go mod download
@@ -169,7 +170,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
+          cache: true
 
       - name: Run Gosec Security Scanner
         uses: securego/gosec@v2.21.4
@@ -301,7 +303,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
+          cache: true
 
       - name: Install eBPF build dependencies
         run: |
@@ -354,7 +357,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
+          cache: true
 
       - name: Download all coverage artifacts
         uses: actions/download-artifact@v4
@@ -399,7 +403,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
+          cache: true
 
       - name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
         env:
@@ -426,7 +431,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
+          cache: true
 
       - name: Run benchmarks
         run: |

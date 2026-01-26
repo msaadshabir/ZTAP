@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package ztap.api.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "ztap/proto/ztap/api/v1;apiv1";
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token = 1;
+  string username = 2;
+  string role = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message WhoAmIResponse {
+  string username = 1;
+  string role = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message StatusResponse {
+  string os = 1;
+  string arch = 2;
+  string hostname = 3;
+  int64 pid = 4;
+  string uptime = 5;
+}
+
+message EnforcementStatusResponse {
+  string platform = 1;
+  bool ebpf_active = 2;
+  string flow_events_pin_path = 3;
+}
+
+message EnforcementStartRequest {
+  string policy_yaml = 1;
+  string policy_name = 2;
+  string cgroup = 3;
+  string bpf_object = 4;
+  bool debug_ebpf = 5;
+}
+
+message EnforcementStartResponse {
+  bool enforced = 1;
+  string platform = 2;
+}
+
+message EnforcementStopResponse {
+  bool stopped = 1;
+}
+
+message FlowEvent {
+  google.protobuf.Timestamp timestamp = 1;
+  string source_ip = 2;
+  string dest_ip = 3;
+  uint32 source_port = 4;
+  uint32 dest_port = 5;
+  string protocol = 6;
+  string direction = 7;
+  string action = 8;
+}
+
+service AuthService {
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc WhoAmI(google.protobuf.Empty) returns (WhoAmIResponse);
+}
+
+service StatusService {
+  rpc GetStatus(google.protobuf.Empty) returns (StatusResponse);
+}
+
+service EnforcementService {
+  rpc GetStatus(google.protobuf.Empty) returns (EnforcementStatusResponse);
+  rpc Start(EnforcementStartRequest) returns (EnforcementStartResponse);
+  rpc Stop(google.protobuf.Empty) returns (EnforcementStopResponse);
+}
+
+service FlowsService {
+  rpc Stream(google.protobuf.Empty) returns (stream FlowEvent);
+}

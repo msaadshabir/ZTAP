@@ -382,4 +382,4 @@ ztap audit verify
 **See Also:**
 
 - [Architecture](architecture.md)
-- [Testing Guide](TESTING.md)
+- [Testing Guide](testing.md)

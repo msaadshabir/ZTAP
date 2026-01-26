@@ -44,7 +44,7 @@ func parseEvidenceWindow(s string) (time.Duration, error) {
 
 func (s *Server) handleComplianceReport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 
@@ -122,7 +122,7 @@ type complianceExportRequest struct {
 
 func (s *Server) handleComplianceExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 

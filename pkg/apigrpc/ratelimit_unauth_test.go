@@ -4,10 +4,11 @@ import (
 	"context"
 	"net"
 	"testing"
-	"time"
 
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
+
+	apiv1 "ztap/proto/ztap/api/v1"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -15,7 +16,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestGRPCRateLimit_UnauthBucketBlocks(t *testing.T) {
@@ -57,23 +57,20 @@ func TestGRPCRateLimit_UnauthBucketBlocks(t *testing.T) {
 		_ = al.Close()
 	})
 
-	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(dialCtx, "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatalf("DialContext: %v", err)
+		t.Fatalf("NewClient: %v", err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { _ = conn.Close() })
+
+	authClient := apiv1.NewAuthServiceClient(conn)
 
 	// Call a protected method without auth metadata (will fail auth, but should still be rate-limited).
-	var resp1 structpb.Struct
-	_ = conn.Invoke(context.Background(), "/ztap.api.v1.AuthService/WhoAmI", &emptypb.Empty{}, &resp1)
+	_, _ = authClient.WhoAmI(context.Background(), &emptypb.Empty{})
 
-	var resp2 structpb.Struct
-	err = conn.Invoke(context.Background(), "/ztap.api.v1.AuthService/WhoAmI", &emptypb.Empty{}, &resp2)
+	_, err = authClient.WhoAmI(context.Background(), &emptypb.Empty{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}

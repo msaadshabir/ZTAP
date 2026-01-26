@@ -4,10 +4,11 @@ import (
 	"context"
 	"net"
 	"testing"
-	"time"
 
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
+
+	apiv1 "ztap/proto/ztap/api/v1"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -16,7 +17,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestGRPCRateLimit_UnaryBlocksSecond(t *testing.T) {
@@ -59,36 +59,31 @@ func TestGRPCRateLimit_UnaryBlocksSecond(t *testing.T) {
 		_ = al.Close()
 	})
 
-	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(dialCtx, "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatalf("DialContext: %v", err)
+		t.Fatalf("NewClient: %v", err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { _ = conn.Close() })
 
-	loginReq, _ := structpb.NewStruct(map[string]any{"username": "alice", "password": "pw"})
-	var loginResp structpb.Struct
-	if err := conn.Invoke(context.Background(), "/ztap.api.v1.AuthService/Login", loginReq, &loginResp); err != nil {
+	authClient := apiv1.NewAuthServiceClient(conn)
+	loginResp, err := authClient.Login(context.Background(), &apiv1.LoginRequest{Username: "alice", Password: "pw"})
+	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
-	tok := loginResp.Fields["token"].GetStringValue()
+	tok := loginResp.GetToken()
 	if tok == "" {
 		t.Fatalf("expected token")
 	}
 
 	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tok))
 	// First WhoAmI (allowed)
-	var whoResp structpb.Struct
-	if err := conn.Invoke(ctx, "/ztap.api.v1.AuthService/WhoAmI", &emptypb.Empty{}, &whoResp); err != nil {
+	if _, err := authClient.WhoAmI(ctx, &emptypb.Empty{}); err != nil {
 		t.Fatalf("WhoAmI first: %v", err)
 	}
 
-	var whoResp2 structpb.Struct
-	err = conn.Invoke(ctx, "/ztap.api.v1.AuthService/WhoAmI", &emptypb.Empty{}, &whoResp2)
+	_, err = authClient.WhoAmI(ctx, &emptypb.Empty{})
 	if err == nil {
 		t.Fatalf("expected rate limit error")
 	}
