@@ -116,10 +116,10 @@ func openOut(path string) (io.WriteCloser, error) {
 	if strings.TrimSpace(path) == "" || path == "-" {
 		return nopWriteCloser{Writer: os.Stdout}, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, err
 	}
-	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 }
 
 type nopWriteCloser struct{ io.Writer }
@@ -247,17 +247,17 @@ var complianceReportCmd = &cobra.Command{
 
 		// Optional bundle output.
 		if strings.TrimSpace(in.outDir) != "" {
-			if err := os.MkdirAll(in.outDir, 0o755); err != nil {
+			if err := os.MkdirAll(in.outDir, 0o750); err != nil {
 				return err
 			}
 			md, err := compliance.RenderMarkdown(report)
 			if err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(in.outDir, "report.md"), []byte(md), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(in.outDir, "report.md"), []byte(md), 0o600); err != nil {
 				return err
 			}
-			jf, err := os.OpenFile(filepath.Join(in.outDir, "report.json"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+			jf, err := os.OpenFile(filepath.Join(in.outDir, "report.json"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 			if err != nil {
 				return err
 			}
