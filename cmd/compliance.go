@@ -270,7 +270,11 @@ var complianceReportCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer w.Close()
+		defer func() {
+			if cerr := w.Close(); err == nil && cerr != nil {
+				err = cerr
+			}
+		}()
 
 		switch format {
 		case "md", "markdown":
