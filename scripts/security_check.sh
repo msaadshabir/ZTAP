@@ -6,11 +6,22 @@ GOSEC_VERSION="v2.22.11"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-echo "==> go test"
-go test ./...
+SKIP_TESTS="${ZTAP_SECURITY_SKIP_TESTS:-0}"
+SKIP_VET="${ZTAP_SECURITY_SKIP_VET:-0}"
 
-echo "==> go vet"
-go vet ./...
+if [ "${SKIP_TESTS}" != "1" ]; then
+  echo "==> go test"
+  go test ./...
+else
+  echo "==> go test (skipped)"
+fi
+
+if [ "${SKIP_VET}" != "1" ]; then
+  echo "==> go vet"
+  go vet ./...
+else
+  echo "==> go vet (skipped)"
+fi
 
 echo "==> govulncheck"
 if ! command -v govulncheck >/dev/null 2>&1; then

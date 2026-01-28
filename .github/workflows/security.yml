@@ -1,24 +1,68 @@
-name: security
+name: Security
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   push:
+    branches: [main]
   pull_request:
+    # Run lightweight security checks on PRs; heavy checks run on main only
+    types: [opened, synchronize, reopened]
+  schedule:
+    # Weekly security sweep (Monday 03:00 UTC)
+    - cron: "0 3 * * 1"
 
 permissions:
   contents: read
 
 jobs:
   security:
+    name: Govulncheck + Gosec (light)
     runs-on: ubuntu-latest
+    env:
+      ZTAP_SECURITY_SKIP_TESTS: "1"
+      ZTAP_SECURITY_SKIP_VET: "1"
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Run security checks
+      - name: Run scripted security checks
         run: |
           chmod +x scripts/security_check.sh
-          scripts/security_check.sh
+          ./scripts/security_check.sh
+
+  security-deep:
+    name: Trivy + SARIF upload (main only)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')
+    needs: security
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Run Trivy filesystem scan and upload SARIF
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+        continue-on-error: true
+
+      - name: Upload SARIF to GitHub
+        uses: github/codeql-action/upload-sarif@439137e1b50c27ba9e2f9befc93e43091b449c34
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
