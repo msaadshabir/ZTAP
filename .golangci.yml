@@ -3,16 +3,15 @@ version: "2"
 run:
   timeout: 5m
 
-issues:
-  exclude-rules:
-    - path: ^examples/
-
 linters:
-  disable:
-    - all
+  default: none
   enable:
     - errcheck
     - gosimple
     - ineffassign
     - staticcheck
     - unused
+
+exclusions:
+  paths:
+    - ^examples/
