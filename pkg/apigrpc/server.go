@@ -292,7 +292,7 @@ func (s *Server) initRateLimiting() {
 
 func (s *Server) isExemptMethod(fullMethod string) bool {
 	switch fullMethod {
-	case "/grpc.health.v1.Health/Check", "/grpc.health.v1.Health/Watch":
+	case "/grpc.health.v1.Health/Check", "/grpc.health.v1.Health/List", "/grpc.health.v1.Health/Watch":
 		return true
 	}
 	for _, m := range s.cfg.RateLimit.ExemptMethods {
@@ -569,6 +569,24 @@ func (h *healthService) Watch(_ *grpc_health_v1.HealthCheckRequest, srv grpc_hea
 		st = grpc_health_v1.HealthCheckResponse_SERVING
 	}
 	return srv.Send(&grpc_health_v1.HealthCheckResponse{Status: st})
+}
+
+// List implements the newer health check List RPC which streams the
+// service health statuses. For our simple readiness checker we send a
+// single status and return.
+// List returns a snapshot of all known service health statuses. The
+// grpc health proto defines a HealthListRequest/HealthListResponse pair.
+// For our simple readiness checker we return a single entry (the overall
+// server status) in the Statuses map.
+func (h *healthService) List(ctx context.Context, _ *grpc_health_v1.HealthListRequest) (*grpc_health_v1.HealthListResponse, error) {
+	res := h.srv.readiness.Check(ctx)
+	st := grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	if res.Ready {
+		st = grpc_health_v1.HealthCheckResponse_SERVING
+	}
+	return &grpc_health_v1.HealthListResponse{
+		Statuses: map[string]*grpc_health_v1.HealthCheckResponse{"": &grpc_health_v1.HealthCheckResponse{Status: st}},
+	}, nil
 }
 
 type authService struct {
