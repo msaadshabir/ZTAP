@@ -47,7 +47,7 @@ func generateSelfSignedCert(certPath, keyPath string) error {
 	if err != nil {
 		return err
 	}
-	defer certOut.Close()
+	defer func() { _ = certOut.Close() }()
 	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func generateSelfSignedCert(certPath, keyPath string) error {
 	if err != nil {
 		return err
 	}
-	defer keyOut.Close()
+	defer func() { _ = keyOut.Close() }()
 	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
 	if err != nil {
 		return err
@@ -108,7 +108,7 @@ func TestTLSServer(t *testing.T) {
 		t.Fatalf("failed to listen: %v", err)
 	}
 	addr := l.Addr().String()
-	l.Close()
+	_ = l.Close()
 
 	srv.cfg.Listen = addr
 
@@ -153,7 +153,7 @@ func TestTLSServer(t *testing.T) {
 		}
 
 		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		if backoff > 200*time.Millisecond {
@@ -164,7 +164,7 @@ func TestTLSServer(t *testing.T) {
 			backoff *= 2
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)

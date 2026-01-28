@@ -52,7 +52,7 @@ func generateSelfSignedCert(certPath, keyPath string) error {
 	if err != nil {
 		return err
 	}
-	defer certOut.Close()
+	defer func() { _ = certOut.Close() }()
 	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func generateSelfSignedCert(certPath, keyPath string) error {
 	if err != nil {
 		return err
 	}
-	defer keyOut.Close()
+	defer func() { _ = keyOut.Close() }()
 	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
 	if err != nil {
 		return err
@@ -87,7 +87,7 @@ func TestGRPCTLS(t *testing.T) {
 		t.Fatalf("failed to listen: %v", err)
 	}
 	addr := l.Addr().String()
-	l.Close()
+	_ = l.Close()
 
 	cfg := Config{
 		Listen:      addr,

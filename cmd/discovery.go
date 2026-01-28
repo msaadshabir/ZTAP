@@ -125,7 +125,7 @@ var listServicesCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tIP\tLABELS\tUPDATED")
+		_, _ = fmt.Fprintln(w, "NAME\tIP\tLABELS\tUPDATED")
 
 		for _, service := range services {
 			labels := ""
@@ -135,7 +135,7 @@ var listServicesCmd = &cobra.Command{
 				}
 				labels += fmt.Sprintf("%s=%s", k, v)
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 				service.Name,
 				service.IP,
 				labels,

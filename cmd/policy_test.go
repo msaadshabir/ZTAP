@@ -89,7 +89,7 @@ spec:
 
 				runPolicyValidate(cmd, tt.args[1:])
 
-				w.Close()
+				_ = w.Close()
 				os.Stdout = oldStdout
 			}
 		})

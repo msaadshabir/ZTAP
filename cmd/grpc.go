@@ -94,7 +94,7 @@ var grpcServeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer am.Close()
+		defer func() { _ = am.Close() }()
 
 		srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager})
 		if err != nil {

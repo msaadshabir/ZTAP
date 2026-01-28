@@ -30,7 +30,7 @@ func TestLoggerWritesToFile(t *testing.T) {
 		t.Fatalf("unexpected error creating logger: %v", err)
 	}
 	if file, ok := logger.Output().(*os.File); ok {
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 	}
 
 	logger.Info("hello", Fields{"component": "test"})

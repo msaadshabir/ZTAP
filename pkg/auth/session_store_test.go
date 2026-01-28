@@ -28,7 +28,7 @@ func TestSessionStoresContract(t *testing.T) {
 	for name, store := range mkStores(t) {
 		store := store
 		t.Run(name, func(t *testing.T) {
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			ctx := context.Background()
 			now := time.Now()

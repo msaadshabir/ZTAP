@@ -23,7 +23,7 @@ func TestComplianceReportRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
-	defer al.Close()
+	defer func() { _ = al.Close() }()
 
 	srv, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
 	if err != nil {
@@ -52,7 +52,7 @@ func TestComplianceReportOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
-	defer al.Close()
+	defer func() { _ = al.Close() }()
 
 	srv, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
 	if err != nil {
@@ -98,7 +98,7 @@ func TestComplianceReportForbiddenForViewer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
-	defer al.Close()
+	defer func() { _ = al.Close() }()
 
 	srv, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
 	if err != nil {
@@ -143,7 +143,7 @@ func TestComplianceExportCSVContentType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
-	defer al.Close()
+	defer func() { _ = al.Close() }()
 
 	srv, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
 	if err != nil {
@@ -194,7 +194,7 @@ func TestComplianceReportInvalidYAMLReturns400(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
-	defer al.Close()
+	defer func() { _ = al.Close() }()
 
 	srv, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
 	if err != nil {
@@ -239,7 +239,7 @@ func TestComplianceReportResponseHasMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
-	defer al.Close()
+	defer func() { _ = al.Close() }()
 
 	srv, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: true}, AuthManager: am, AuditLogger: al})
 	if err != nil {

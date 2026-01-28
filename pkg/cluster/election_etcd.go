@@ -522,7 +522,8 @@ func (e *EtcdElection) monitorNodes() {
 // handleNodeEvent processes node change events.
 func (e *EtcdElection) handleNodeEvent(ev *clientv3.Event) {
 	var node Node
-	if ev.Type == clientv3.EventTypePut {
+	switch ev.Type {
+	case clientv3.EventTypePut:
 		if err := json.Unmarshal(ev.Kv.Value, &node); err != nil {
 			logging.Warnf("Error unmarshaling node: %v", err)
 			return
@@ -544,7 +545,7 @@ func (e *EtcdElection) handleNodeEvent(ev *clientv3.Event) {
 			Node:      &node,
 			Timestamp: time.Now(),
 		})
-	} else if ev.Type == clientv3.EventTypeDelete {
+	case clientv3.EventTypeDelete:
 		// Extract node ID from key
 		key := string(ev.Kv.Key)
 		prefix := fmt.Sprintf("%s/nodes/", e.etcdConfig.KeyPrefix)

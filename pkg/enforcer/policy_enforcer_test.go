@@ -251,10 +251,7 @@ spec:
 	mockSync.sendUpdate(cluster.PolicyUpdate{Tenant: "tenant-b", PolicyName: "shared", YAML: policyYAML, Version: 1, Source: "node-1", Timestamp: time.Now()})
 
 	deadline := time.Now().Add(1 * time.Second)
-	for {
-		if enforcer.GetEnforcedVersion("tenant-a/shared") == 1 && enforcer.GetEnforcedVersion("tenant-b/shared") == 1 {
-			break
-		}
+	for enforcer.GetEnforcedVersion("tenant-a/shared") != 1 || enforcer.GetEnforcedVersion("tenant-b/shared") != 1 {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for tenant-scoped versions; got tenant-a=%d tenant-b=%d",
 				enforcer.GetEnforcedVersion("tenant-a/shared"), enforcer.GetEnforcedVersion("tenant-b/shared"))

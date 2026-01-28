@@ -13,6 +13,7 @@ import (
 )
 
 func TestK8sPolicySyncSyncExistingAllNamespaces(t *testing.T) {
+	//nolint:staticcheck // NewClientset requires applyconfigs not generated in this repo.
 	client := fake.NewSimpleClientset(
 		&corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -65,6 +66,7 @@ func TestK8sPolicySyncSyncExistingAllNamespaces(t *testing.T) {
 }
 
 func TestK8sPolicySyncNamespaceAllowList(t *testing.T) {
+	//nolint:staticcheck // NewClientset requires applyconfigs not generated in this repo.
 	client := fake.NewSimpleClientset(
 		&corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -115,6 +117,7 @@ func TestK8sPolicySyncNamespaceAllowList(t *testing.T) {
 }
 
 func TestK8sPolicySyncMultiNamespaceWatch(t *testing.T) {
+	//nolint:staticcheck // NewClientset requires applyconfigs not generated in this repo.
 	client := fake.NewSimpleClientset()
 
 	// The fake clientset's built-in watch behavior isn't reliable for this usage.

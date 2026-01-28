@@ -15,7 +15,7 @@ func TestNewAuditLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	if logger.logPath != logPath {
 		t.Errorf("expected logPath %s, got %s", logPath, logger.logPath)
@@ -34,7 +34,7 @@ func TestAuditLogger_Log(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	details := map[string]interface{}{
 		"policy_name": "web-policy",
@@ -59,7 +59,7 @@ func TestAuditLogger_LogFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	details := map[string]interface{}{
 		"policy_name": "invalid-policy",
@@ -99,7 +99,7 @@ func TestAuditLogger_HashChaining(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Log first entry
 	err = logger.Log(EventPolicyCreated, "admin", "policy-1", "created", nil)
@@ -155,14 +155,14 @@ func TestAuditLogger_VerifyIntegrity(t *testing.T) {
 		}
 	}
 
-	logger.Close()
+	_ = logger.Close()
 
 	// Reopen and verify
 	logger, err = NewAuditLogger(logPath)
 	if err != nil {
 		t.Fatalf("failed to reopen audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	valid, err := logger.VerifyIntegrity()
 	if err != nil {
@@ -191,7 +191,7 @@ func TestAuditLogger_VerifyIntegrityDetectsTampering(t *testing.T) {
 		}
 	}
 
-	logger.Close()
+	_ = logger.Close()
 
 	// Tamper with the log file (modify a byte)
 	data, err := os.ReadFile(logPath)
@@ -214,7 +214,7 @@ func TestAuditLogger_VerifyIntegrityDetectsTampering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to reopen audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	valid, err := logger.VerifyIntegrity()
 	if valid {
@@ -234,7 +234,7 @@ func TestAuditLogger_Query(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Log different event types
 	_ = logger.Log(EventPolicyCreated, "admin", "policy-1", "created", nil)
@@ -300,7 +300,7 @@ func TestAuditLogger_QueryByResource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Log entries for different resources
 	_ = logger.Log(EventPolicyCreated, "admin", "web-policy", "created", nil)
@@ -333,7 +333,7 @@ func TestAuditLogger_GetStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Log some entries
 	for i := 0; i < 10; i++ {
@@ -373,14 +373,14 @@ func TestAuditLogger_Persistence(t *testing.T) {
 	_ = logger.Log(EventPolicyCreated, "admin", "policy-1", "created", nil)
 	_ = logger.Log(EventPolicyUpdated, "admin", "policy-1", "updated", nil)
 	firstHash := logger.lastHash
-	logger.Close()
+	_ = logger.Close()
 
 	// Reopen logger
 	logger, err = NewAuditLogger(logPath)
 	if err != nil {
 		t.Fatalf("failed to reopen audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Last hash should be restored
 	if logger.lastHash != firstHash {
@@ -419,7 +419,7 @@ func TestAuditLogger_ConcurrentWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Write entries concurrently
 	done := make(chan bool)

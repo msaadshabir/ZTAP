@@ -72,7 +72,7 @@ func GetFileStats(path string) (FileStats, error) {
 	if err != nil {
 		return FileStats{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dec := json.NewDecoder(bufio.NewReader(f))
 	var last AuditEntry
@@ -109,7 +109,7 @@ func VerifyFileIntegrity(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dec := json.NewDecoder(bufio.NewReader(f))
 	previousHash := "0000000000000000000000000000000000000000000000000000000000000000"
@@ -141,7 +141,7 @@ func QueryFile(path string, opts QueryOptions) ([]AuditEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dec := json.NewDecoder(bufio.NewReader(f))
 
@@ -192,7 +192,7 @@ func ScanFile(path string, opts QueryOptions, fn func(AuditEntry) bool) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dec := json.NewDecoder(bufio.NewReader(f))
 	for {

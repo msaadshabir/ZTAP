@@ -177,7 +177,7 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audit log: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Pre-allocate with estimated capacity
 	estimatedSize := 100
@@ -267,7 +267,7 @@ func (al *AuditLogger) VerifyIntegrity() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to open audit log: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	decoder := json.NewDecoder(file)
 	previousHash := "0000000000000000000000000000000000000000000000000000000000000000"
@@ -364,7 +364,7 @@ func (al *AuditLogger) loadLastHash() error {
 		}
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Use buffered reader for better performance
 	reader := bufio.NewReader(file)

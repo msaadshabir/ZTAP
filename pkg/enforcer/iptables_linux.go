@@ -175,14 +175,14 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 			}
 
 			if len(ingress.Ports) == 0 {
-				target.WriteString(fmt.Sprintf("-A ZTAP-INGRESS -s %s -j ACCEPT\n", cidr))
+				_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -j ACCEPT\n", cidr)
 			} else {
 				for _, port := range ingress.Ports {
 					proto := strings.ToLower(port.Protocol)
 					if proto == "" {
 						proto = "tcp"
 					}
-					target.WriteString(fmt.Sprintf("-A ZTAP-INGRESS -s %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port))
+					_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port)
 				}
 			}
 		}
@@ -200,14 +200,14 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 			}
 
 			if len(egress.Ports) == 0 {
-				target.WriteString(fmt.Sprintf("-A ZTAP-EGRESS -d %s -j ACCEPT\n", cidr))
+				_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -j ACCEPT\n", cidr)
 			} else {
 				for _, port := range egress.Ports {
 					proto := strings.ToLower(port.Protocol)
 					if proto == "" {
 						proto = "tcp"
 					}
-					target.WriteString(fmt.Sprintf("-A ZTAP-EGRESS -d %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port))
+					_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port)
 				}
 			}
 		}

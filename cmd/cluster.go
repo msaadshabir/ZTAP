@@ -59,12 +59,12 @@ var clusterStatusCmd = &cobra.Command{
 			fmt.Println("  (no nodes)")
 		} else {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "  ID\tAddress\tRole\tState\tJoined")
-			fmt.Fprintln(w, "  --\t-------\t----\t-----\t------")
+			_, _ = fmt.Fprintln(w, "  ID\tAddress\tRole\tState\tJoined")
+			_, _ = fmt.Fprintln(w, "  --\t-------\t----\t-----\t------")
 
 			for _, node := range nodes {
 				joined := time.Since(node.JoinedAt).Round(time.Second)
-				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s ago\n",
+				_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s ago\n",
 					node.ID, node.Address, node.Role, node.State, joined)
 			}
 			_ = w.Flush()
@@ -143,13 +143,13 @@ var clusterListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tAddress\tRole\tState\tJoined\tLast Seen")
-		fmt.Fprintln(w, "--\t-------\t----\t-----\t------\t---------")
+		_, _ = fmt.Fprintln(w, "ID\tAddress\tRole\tState\tJoined\tLast Seen")
+		_, _ = fmt.Fprintln(w, "--\t-------\t----\t-----\t------\t---------")
 
 		for _, node := range nodes {
 			joined := time.Since(node.JoinedAt).Round(time.Second)
 			lastSeen := time.Since(node.LastSeen).Round(time.Millisecond)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s ago\t%s ago\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s ago\t%s ago\n",
 				node.ID, node.Address, node.Role, node.State, joined, lastSeen)
 		}
 		_ = w.Flush()
@@ -238,7 +238,7 @@ var clusterTestEtcdCmd = &cobra.Command{
 			fmt.Printf("Error: Failed to connect to etcd: %v\n", err)
 			os.Exit(1)
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

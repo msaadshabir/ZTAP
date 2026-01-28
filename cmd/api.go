@@ -102,7 +102,7 @@ var apiServeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer am.Close()
+		defer func() { _ = am.Close() }()
 
 		sessionsPath, err := resolvedSessionsSQLitePath()
 		if err != nil {

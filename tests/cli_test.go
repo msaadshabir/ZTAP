@@ -378,7 +378,7 @@ func findOpenPort(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("failed to find open port: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	_, port, err := net.SplitHostPort(l.Addr().String())
 	if err != nil {
 		t.Fatalf("failed to parse listener address: %v", err)

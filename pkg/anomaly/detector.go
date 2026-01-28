@@ -61,7 +61,7 @@ func (d *PythonDetector) Detect(flow FlowRecord) (*AnomalyScore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to call detection service: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("detection service returned status %d", resp.StatusCode)
@@ -86,7 +86,7 @@ func (d *PythonDetector) Train(flows []FlowRecord) error {
 	if err != nil {
 		return fmt.Errorf("failed to call training service: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("training service returned status %d", resp.StatusCode)

@@ -186,7 +186,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	errCh := make(chan error, 1)
 

@@ -248,22 +248,22 @@ func (c *ConsulDiscovery) ResolveLabels(labels map[string]string) ([]string, err
 	// Placeholder: In production, use Consul API
 	// consul, err := api.NewClient(&api.Config{Address: c.address})
 	// services, _, err := consul.Health().Service(serviceName, "", true, nil)
-	return nil, fmt.Errorf("Consul discovery not yet implemented")
+	return nil, fmt.Errorf("consul discovery not yet implemented")
 }
 
 // RegisterService registers with Consul
 func (c *ConsulDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
-	return fmt.Errorf("Consul discovery not yet implemented")
+	return fmt.Errorf("consul discovery not yet implemented")
 }
 
 // DeregisterService removes from Consul
 func (c *ConsulDiscovery) DeregisterService(name string) error {
-	return fmt.Errorf("Consul discovery not yet implemented")
+	return fmt.Errorf("consul discovery not yet implemented")
 }
 
 // Watch watches Consul for service changes
 func (c *ConsulDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
-	return nil, fmt.Errorf("Consul discovery not yet implemented")
+	return nil, fmt.Errorf("consul discovery not yet implemented")
 }
 
 // Stop is a no-op for the Consul discovery stub.
