@@ -24,6 +24,10 @@ jobs:
             goarch: amd64
           - goos: darwin
             goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
 
     steps:
       - name: Check out code
@@ -44,17 +48,23 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           VERSION: ${{ steps.version.outputs.VERSION }}
+          CGO_ENABLED: "0"
         run: |
           mkdir -p dist
-          BINARY_NAME="ztap-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          BASENAME="ztap-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          BINARY_NAME="${BASENAME}"
+          if [ "${GOOS}" = "windows" ]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
+
           go build -ldflags="-s -w -X main.Version=${VERSION}" -o "dist/${BINARY_NAME}" .
 
           # Create archive
           cd dist
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip "${BINARY_NAME}.zip" "${BINARY_NAME}"
+          if [ "${GOOS}" = "windows" ]; then
+            zip "${BASENAME}.zip" "${BINARY_NAME}"
           else
-            tar czf "${BINARY_NAME}.tar.gz" "${BINARY_NAME}"
+            tar czf "${BASENAME}.tar.gz" "${BINARY_NAME}"
           fi
 
       - name: Upload artifacts
@@ -118,6 +128,9 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f

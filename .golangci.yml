@@ -1,14 +1,15 @@
-version: 2
+version: "2"
 
 run:
   timeout: 5m
 
 issues:
-  exclude-dirs:
-    - examples
+  exclude-rules:
+    - path: ^examples/
 
 linters:
-  disable-all: true
+  disable:
+    - all
   enable:
     - errcheck
     - gosimple

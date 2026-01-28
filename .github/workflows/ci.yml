@@ -5,6 +5,7 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -34,17 +35,12 @@ jobs:
           echo "docker=true" >> "$GITHUB_OUTPUT"
           echo "ebpf=true" >> "$GITHUB_OUTPUT"
 
-      - name: Check out code
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          fetch-depth: 0
-
       - name: Filter changed paths
         id: filter
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
         with:
+          token: ${{ github.token }}
           filters: |
             python:
               - 'pkg/anomaly/**'
@@ -88,7 +84,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20
         with:
-          version: latest
+          version: v2.1.0
           args: --timeout=5m
 
   test-go:
@@ -116,14 +112,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run unit tests
-        run: go test ./pkg/... -v -coverprofile=coverage-${{ matrix.os }}.out
-
-      - name: Run integration tests
-        run: go test ./tests/integration_test.go -v
-
-      - name: Run CLI tests
-        run: go test ./tests/cli_test.go -v -timeout 5m
+      - name: Run tests
+        run: go test ./... -v -coverprofile=coverage-${{ matrix.os }}.out -timeout 10m
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -153,14 +143,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run unit tests
-        run: go test ./pkg/... -v -coverprofile=coverage-windows.out
-
-      - name: Run integration tests
-        run: go test ./tests/integration_test.go -v
-
-      - name: Run CLI tests
-        run: go test ./tests/cli_test.go -v -timeout 5m
+      - name: Run tests
+        run: go test ./... -v -coverprofile=coverage-windows.out -timeout 10m
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -196,6 +180,9 @@ jobs:
     name: Dependency Review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       - name: Check out code
@@ -221,24 +208,19 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache Python dependencies
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pkg/anomaly/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          cache: pip
+          cache-dependency-path: pkg/anomaly/requirements.txt
 
       - name: Install dependencies
+        working-directory: pkg/anomaly
         run: |
-          cd pkg/anomaly
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pytest-cov
 
       - name: Run Python tests
-        run: |
-          cd pkg/anomaly
-          python -m pytest test_service.py -v --cov=service --cov-report=xml
+        working-directory: pkg/anomaly
+        run: python -m pytest test_service.py -v --cov=service --cov-report=xml
 
       - name: Upload Python coverage
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -279,6 +261,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build ZTAP Operator Docker image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: ./Dockerfile.operator
+          push: false
+          tags: ztap-operator:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Test Docker Compose Stack
         if: github.event_name != 'pull_request'
         run: |
@@ -310,7 +302,7 @@ jobs:
       - name: Install eBPF build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm make linux-headers-$(uname -r)
+          sudo apt-get install -y clang llvm make
 
       - name: Download dependencies
         run: go mod download
