@@ -12,6 +12,7 @@ import (
 )
 
 func TestK8sDiscovery(t *testing.T) {
+	//nolint:staticcheck // NewClientset requires applyconfigs not generated in this repo.
 	client := fake.NewSimpleClientset()
 	namespace := "default"
 	disc, err := NewK8sDiscovery(client, namespace)

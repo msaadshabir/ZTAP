@@ -119,13 +119,13 @@ var policyListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "Policy\tVersion\tSource Node\tLast Updated")
-		fmt.Fprintln(w, "------\t-------\t-----------\t------------")
+		_, _ = fmt.Fprintln(w, "Policy\tVersion\tSource Node\tLast Updated")
+		_, _ = fmt.Fprintln(w, "------\t-------\t-----------\t------------")
 
 		for _, policy := range policies {
 			lastUpdated := time.Since(policy.Timestamp).Round(time.Second)
 			key := cluster.PolicyKey{Tenant: policy.Tenant, Name: policy.Name}.String()
-			fmt.Fprintf(w, "%s\t%d\t%s\t%s ago\n",
+			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s ago\n",
 				key, policy.Version, policy.Source, lastUpdated)
 		}
 		_ = w.Flush()
@@ -231,8 +231,8 @@ var policyHistoryCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "Version\tSource\tRollback From\tReason\tAge")
-		fmt.Fprintln(w, "-------\t------\t-------------\t------\t---")
+		_, _ = fmt.Fprintln(w, "Version\tSource\tRollback From\tReason\tAge")
+		_, _ = fmt.Fprintln(w, "-------\t------\t-------------\t------\t---")
 
 		for _, rev := range revisions {
 			rollbackFrom := "-"
@@ -244,7 +244,7 @@ var policyHistoryCmd = &cobra.Command{
 				reason = "-"
 			}
 			age := time.Since(rev.Timestamp).Round(time.Second)
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s ago\n",
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s ago\n",
 				rev.Version,
 				rev.Source,
 				rollbackFrom,

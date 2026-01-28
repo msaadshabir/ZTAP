@@ -49,7 +49,7 @@ func (s *SlackSink) Send(ctx context.Context, a Alert) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("slack webhook returned %s", resp.Status)

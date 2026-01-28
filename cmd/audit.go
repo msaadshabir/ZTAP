@@ -76,7 +76,7 @@ func runAuditView(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open audit log: %w", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Build query options
 	opts := audit.QueryOptions{
@@ -145,7 +145,7 @@ func runAuditVerify(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open audit log: %w", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	fmt.Println("Verifying audit log integrity...")
 	fmt.Printf("Log file: %s\n\n", logPath)
@@ -177,7 +177,7 @@ func runAuditStats(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open audit log: %w", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	stats, err := logger.GetStats()
 	if err != nil {

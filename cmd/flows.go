@@ -177,8 +177,8 @@ func displayRecentFlows(filter flow.FlowFilter, limit int, output string) {
 
 func printFlowHeader() {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TIMESTAMP\tDIRECTION\tPROTOCOL\tSOURCE\tDESTINATION\tACTION")
-	fmt.Fprintln(w, "---------\t---------\t--------\t------\t-----------\t------")
+	_, _ = fmt.Fprintln(w, "TIMESTAMP\tDIRECTION\tPROTOCOL\tSOURCE\tDESTINATION\tACTION")
+	_, _ = fmt.Fprintln(w, "---------\t---------\t--------\t------\t-----------\t------")
 	_ = w.Flush()
 }
 
@@ -194,7 +194,7 @@ func printFlowRow(event flow.FlowEvent) {
 	}
 	reset := "\033[0m"
 
-	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s%s%s\n",
+	_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s%s%s\n",
 		timestamp, event.Direction, event.Protocol, src, dst,
 		actionColor, strings.ToUpper(event.Action), reset)
 	_ = w.Flush()

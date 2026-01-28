@@ -11,6 +11,7 @@ import (
 )
 
 func TestK8sDiscoveryAllNamespaces_ResolveLabelsScoped(t *testing.T) {
+	//nolint:staticcheck // NewClientset requires applyconfigs not generated in this repo.
 	client := fake.NewSimpleClientset()
 	disc, err := NewK8sDiscoveryAllNamespaces(client)
 	if err != nil {
@@ -44,6 +45,7 @@ func TestK8sDiscoveryAllNamespaces_ResolveLabelsScoped(t *testing.T) {
 }
 
 func TestK8sDiscoveryAllNamespaces_WatchScopedIsNamespaceScoped(t *testing.T) {
+	//nolint:staticcheck // NewClientset requires applyconfigs not generated in this repo.
 	client := fake.NewSimpleClientset()
 	disc, err := NewK8sDiscoveryAllNamespaces(client)
 	if err != nil {
