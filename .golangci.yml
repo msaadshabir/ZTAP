@@ -7,7 +7,6 @@ linters:
   default: none
   enable:
     - errcheck
-    - gosimple
     - ineffassign
     - staticcheck
     - unused
