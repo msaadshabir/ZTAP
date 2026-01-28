@@ -93,8 +93,8 @@ var listUsersCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "USERNAME\tROLE\tENABLED\tCREATED\tLAST LOGIN")
-		fmt.Fprintln(w, "--------\t----\t-------\t-------\t----------")
+		_, _ = fmt.Fprintln(w, "USERNAME\tROLE\tENABLED\tCREATED\tLAST LOGIN")
+		_, _ = fmt.Fprintln(w, "--------\t----\t-------\t-------\t----------")
 
 		for _, user := range users {
 			lastLogin := "Never"
@@ -107,7 +107,7 @@ var listUsersCmd = &cobra.Command{
 				enabled = "No"
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 				user.Username,
 				user.Role,
 				enabled,

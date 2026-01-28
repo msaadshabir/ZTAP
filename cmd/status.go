@@ -57,8 +57,8 @@ var statusCmd = &cobra.Command{
 				fmt.Println("  No resources found")
 			} else {
 				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-				fmt.Fprintln(w, "  ID\tName\tType\tPrivate IP\tPublic IP\tLabels")
-				fmt.Fprintln(w, "  --\t----\t----\t----------\t---------\t------")
+				_, _ = fmt.Fprintln(w, "  ID\tName\tType\tPrivate IP\tPublic IP\tLabels")
+				_, _ = fmt.Fprintln(w, "  --\t----\t----\t----------\t---------\t------")
 
 				for _, r := range resources {
 					labels := ""
@@ -68,7 +68,7 @@ var statusCmd = &cobra.Command{
 						}
 						labels += fmt.Sprintf("%s=%s ", k, v)
 					}
-					fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
+					_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
 						r.ID, r.Name, r.Type, r.PrivateIP, r.PublicIP, labels)
 				}
 				_ = w.Flush()
