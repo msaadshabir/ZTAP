@@ -18,10 +18,14 @@ on:
 permissions:
   contents: read
 
+env:
+  GOFLAGS: -buildvcs=false
+
 jobs:
   security:
     name: Govulncheck + Gosec (light)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       ZTAP_SECURITY_SKIP_TESTS: "1"
       ZTAP_SECURITY_SKIP_VET: "1"
@@ -45,6 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')
     needs: security
+    timeout-minutes: 20
     permissions:
       security-events: write
       contents: read

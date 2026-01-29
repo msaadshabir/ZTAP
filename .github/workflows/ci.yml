@@ -4,6 +4,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  GOFLAGS: -buildvcs=false
+
 on:
   workflow_dispatch:
   push:
@@ -18,6 +24,7 @@ jobs:
   changes:
     name: Detect Changed Paths
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
@@ -57,6 +64,7 @@ jobs:
   lint:
     name: Lint & Format Check
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Check out code
@@ -91,6 +99,7 @@ jobs:
     name: Go Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: lint
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -126,6 +135,7 @@ jobs:
     runs-on: windows-latest
     needs: lint
     if: github.event_name != 'pull_request'
+    timeout-minutes: 30
 
     env:
       GOFLAGS: -buildvcs=false
@@ -156,6 +166,7 @@ jobs:
     name: Integration Tests (Linux)
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 20
 
     env:
       GOFLAGS: -buildvcs=false
@@ -180,6 +191,7 @@ jobs:
     name: Dependency Review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
@@ -198,6 +210,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, changes]
     if: github.event_name != 'pull_request' || needs.changes.outputs.python == 'true'
+    timeout-minutes: 15
 
     steps:
       - name: Check out code
@@ -233,6 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, changes]
     if: github.event_name != 'pull_request' || needs.changes.outputs.docker == 'true' || needs.changes.outputs.python == 'true' || needs.changes.outputs.ebpf == 'true'
+    timeout-minutes: 30
 
     steps:
       - name: Check out code
@@ -286,6 +300,7 @@ jobs:
     needs: [lint, test-go, changes]
     # Forked PRs cannot run privileged eBPF steps
     if: (github.event_name != 'pull_request' || needs.changes.outputs.ebpf == 'true') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    timeout-minutes: 30
     env:
       GOFLAGS: -buildvcs=false
 
@@ -332,6 +347,7 @@ jobs:
     needs: [test-go, test-windows, test-python]
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' && always() && (needs.test-go.result == 'success' || needs.test-windows.result == 'success' || needs.test-python.result == 'success')
+    timeout-minutes: 10
 
     steps:
       - name: Check out code
@@ -374,7 +390,9 @@ jobs:
     name: Build Check (Multi-Platform)
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         goos: [linux, darwin, windows]
         goarch: ${{ fromJSON(github.event_name == 'pull_request' && '["amd64"]' || '["amd64","arm64"]') }}
@@ -393,6 +411,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
         run: |
           out=ztap-${{ matrix.goos }}-${{ matrix.goarch }}
           if [ "${GOOS}" = "windows" ]; then
@@ -406,6 +425,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test-go
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 10
 
     steps:
       - name: Check out code
@@ -440,7 +460,9 @@ jobs:
       - docker-build
       - ebpf-verification
       - build-check
+      - dependency-review
     if: always()
+    timeout-minutes: 5
 
     steps:
       - name: Check all jobs status
@@ -454,6 +476,7 @@ jobs:
           echo "  docker-build: ${{ needs.docker-build.result }}"
           echo "  ebpf-verification: ${{ needs.ebpf-verification.result }}"
           echo "  build-check: ${{ needs.build-check.result }}"
+          echo "  dependency-review: ${{ needs.dependency-review.result }}"
           echo ""
 
           if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then

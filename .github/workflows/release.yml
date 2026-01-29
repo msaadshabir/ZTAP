@@ -6,13 +6,13 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   build-release:
     name: Build Release Binaries
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         include:
@@ -79,6 +79,9 @@ jobs:
     name: Create GitHub Release
     needs: build-release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
 
     steps:
       - name: Check out code
@@ -124,6 +127,10 @@ jobs:
     name: Build and Push Docker Images
     needs: create-release
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Check out code
