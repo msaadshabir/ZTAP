@@ -41,7 +41,7 @@ jobs:
 
       - name: Get version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: printf 'VERSION=%s\n' "${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
       - name: Build binary
         env:
@@ -94,7 +94,7 @@ jobs:
 
       - name: Get version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: printf 'VERSION=%s\n' "${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         id: changelog
@@ -152,9 +152,11 @@ jobs:
       - name: Get version from tag
         id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "VERSION_SHORT=${VERSION#v}" >> $GITHUB_OUTPUT
+          VERSION="${GITHUB_REF#refs/tags/}"
+          {
+            printf 'VERSION=%s\n' "$VERSION"
+            printf 'VERSION_SHORT=%s\n' "${VERSION#v}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push ZTAP image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83

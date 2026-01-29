@@ -38,9 +38,11 @@ jobs:
         id: defaults
         if: github.event_name != 'pull_request'
         run: |
-          echo "python=true" >> "$GITHUB_OUTPUT"
-          echo "docker=true" >> "$GITHUB_OUTPUT"
-          echo "ebpf=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "python=true"
+            echo "docker=true"
+            echo "ebpf=true"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Filter changed paths
         id: filter
@@ -87,7 +89,10 @@ jobs:
 
       - name: Run go vet
         run: |
-          go vet $(go list ./... | grep -v '/examples/')
+          mapfile -t packages < <(go list ./... | grep -v '/examples/')
+          if [ "${#packages[@]}" -gt 0 ]; then
+            go vet "${packages[@]}"
+          fi
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20
@@ -389,16 +394,18 @@ jobs:
 
       - name: Generate combined coverage report
         run: |
-          echo "## Test Coverage Summary" > coverage-summary.md
-          echo "" >> coverage-summary.md
-          for file in coverage-reports/coverage-*/coverage-*.out; do
-            if [ -f "$file" ]; then
-              os=$(basename $(dirname "$file") | sed 's/coverage-//')
-              echo "### $os" >> coverage-summary.md
-              go tool cover -func="$file" | tail -1 >> coverage-summary.md
-              echo "" >> coverage-summary.md
-            fi
-          done
+          {
+            printf '## Test Coverage Summary\n\n'
+            for file in coverage-reports/coverage-*/coverage-*.out; do
+              if [ -f "$file" ]; then
+                os=$(basename "$(dirname "$file")")
+                os=${os#coverage-}
+                printf '### %s\n' "$os"
+                go tool cover -func="$file" | tail -1
+                printf '\n'
+              fi
+            done
+          } > coverage-summary.md
 
       - name: Upload coverage summary
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
