@@ -95,6 +95,26 @@ jobs:
           version: v2.8.0
           args: --timeout=5m
 
+  actionlint:
+    name: Actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.10
+          "$(go env GOPATH)/bin/actionlint" -color
+
   test-go:
     name: Go Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -453,6 +473,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - lint
+      - actionlint
       - test-go
       - test-windows
       - test-integration
@@ -469,6 +490,7 @@ jobs:
         run: |
           echo "Job Results:"
           echo "  lint: ${{ needs.lint.result }}"
+          echo "  actionlint: ${{ needs.actionlint.result }}"
           echo "  test-go: ${{ needs.test-go.result }}"
           echo "  test-windows: ${{ needs.test-windows.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
