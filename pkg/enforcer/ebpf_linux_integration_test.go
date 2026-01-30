@@ -65,10 +65,14 @@ func TestEBPFIntegrationLoadAndAttach(t *testing.T) {
 	var lookupKey any
 	if mode == policyMapModeLPMTrie {
 		ones, _ := ipnet.Mask.Size()
+		prefixLen, err := lpmPrefixLen(ones)
+		if err != nil {
+			t.Fatalf("prefix length: %v", err)
+		}
 		var ipBytes [4]byte
 		copy(ipBytes[:], ipnet.IP.To4())
 		lookupKey = &policyKeyLPM{
-			PrefixLen: uint32(lpmFixedBits + ones),
+			PrefixLen: prefixLen,
 			Meta:      packLPMMeta(DirectionEgress, protocol, 443),
 			CgroupID:  0,
 			IP:        ipBytes,
@@ -138,10 +142,14 @@ func TestEBPFIntegrationCgroupScopedMapKey(t *testing.T) {
 	var lookupKey any
 	if mode == policyMapModeLPMTrie {
 		ones, _ := ipnet.Mask.Size()
+		prefixLen, err := lpmPrefixLen(ones)
+		if err != nil {
+			t.Fatalf("prefix length: %v", err)
+		}
 		var ipBytes [4]byte
 		copy(ipBytes[:], ipnet.IP.To4())
 		lookupKey = &policyKeyLPM{
-			PrefixLen: uint32(lpmFixedBits + ones),
+			PrefixLen: prefixLen,
 			Meta:      packLPMMeta(DirectionEgress, protocol, 443),
 			CgroupID:  cgid,
 			IP:        ipBytes,
@@ -228,10 +236,14 @@ func TestEBPFIntegrationCgroupIsolationBetweenCgroups(t *testing.T) {
 	var keyB any
 	if mode == policyMapModeLPMTrie {
 		ones, _ := ipnet.Mask.Size()
+		prefixLen, err := lpmPrefixLen(ones)
+		if err != nil {
+			t.Fatalf("prefix length: %v", err)
+		}
 		var ipBytes [4]byte
 		copy(ipBytes[:], ipnet.IP.To4())
-		keyA = &policyKeyLPM{PrefixLen: uint32(lpmFixedBits + ones), Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: cgidA, IP: ipBytes}
-		keyB = &policyKeyLPM{PrefixLen: uint32(lpmFixedBits + ones), Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: cgidB, IP: ipBytes}
+		keyA = &policyKeyLPM{PrefixLen: prefixLen, Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: cgidA, IP: ipBytes}
+		keyB = &policyKeyLPM{PrefixLen: prefixLen, Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: cgidB, IP: ipBytes}
 	} else {
 		keyA = &policyKey{CgroupID: cgidA, IP: ipToUint32(ipnet.IP.To4()), Port: 443, Protocol: protocol, Direction: DirectionEgress}
 		keyB = &policyKey{CgroupID: cgidB, IP: ipToUint32(ipnet.IP.To4()), Port: 443, Protocol: protocol, Direction: DirectionEgress}
@@ -658,9 +670,13 @@ func TestEBPFGracefulReload(t *testing.T) {
 	var key any
 	if mode == policyMapModeLPMTrie {
 		ones, _ := ipnetNew.Mask.Size()
+		prefixLen, err := lpmPrefixLen(ones)
+		if err != nil {
+			t.Fatalf("prefix length: %v", err)
+		}
 		var ipBytes [4]byte
 		copy(ipBytes[:], ipnetNew.IP.To4())
-		key = &policyKeyLPM{PrefixLen: uint32(lpmFixedBits + ones), Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: 0, IP: ipBytes}
+		key = &policyKeyLPM{PrefixLen: prefixLen, Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: 0, IP: ipBytes}
 	} else {
 		key = &policyKey{IP: ipToUint32(ipnetNew.IP.To4()), Port: 443, Protocol: protocol, Direction: DirectionEgress}
 	}
@@ -680,9 +696,13 @@ func TestEBPFGracefulReload(t *testing.T) {
 	var oldKey any
 	if mode == policyMapModeLPMTrie {
 		ones, _ := ipnetOld.Mask.Size()
+		prefixLen, err := lpmPrefixLen(ones)
+		if err != nil {
+			t.Fatalf("prefix length: %v", err)
+		}
 		var ipBytes [4]byte
 		copy(ipBytes[:], ipnetOld.IP.To4())
-		oldKey = &policyKeyLPM{PrefixLen: uint32(lpmFixedBits + ones), Meta: packLPMMeta(DirectionEgress, protocol, 80), CgroupID: 0, IP: ipBytes}
+		oldKey = &policyKeyLPM{PrefixLen: prefixLen, Meta: packLPMMeta(DirectionEgress, protocol, 80), CgroupID: 0, IP: ipBytes}
 	} else {
 		oldKey = &policyKey{IP: ipToUint32(ipnetOld.IP.To4()), Port: 80, Protocol: protocol, Direction: DirectionEgress}
 	}

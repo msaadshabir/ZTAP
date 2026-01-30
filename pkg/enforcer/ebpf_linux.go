@@ -82,6 +82,14 @@ func packLPMMeta(direction uint8, protocol uint8, port uint16) uint32 {
 	return (uint32(direction) << 24) | (uint32(protocol) << 16) | uint32(port)
 }
 
+func lpmPrefixLen(ones int) (uint32, error) {
+	if ones < 0 || ones > 128 {
+		return 0, fmt.Errorf("invalid cidr prefix length %d", ones)
+	}
+	// #nosec G115 -- ones bounded above; fits within uint32.
+	return uint32(lpmFixedBits + ones), nil
+}
+
 // policyKey represents the key for eBPF policy map
 // Must match struct policy_key in bpf/filter.c
 type policyKey struct {
@@ -379,6 +387,10 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 		// Detect if it's IPv4 or IPv6
 		isIPv6 := ip.To4() == nil
 		ones, _ := ipnet.Mask.Size()
+		prefixLen, err := lpmPrefixLen(ones)
+		if err != nil {
+			return err
+		}
 
 		for _, port := range egress.Ports {
 			portValue, err := toUint16Port(port.Port)
@@ -408,7 +420,7 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 						}
 						copy(ipBytes[:], v6)
 						key := policyKeyV6LPM{
-							PrefixLen: uint32(lpmFixedBits + ones),
+							PrefixLen: prefixLen,
 							Meta:      packLPMMeta(DirectionEgress, protocol, portValue),
 							CgroupID:  cgid,
 							IP:        ipBytes,
@@ -438,7 +450,7 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 						}
 						copy(ipBytes[:], v4)
 						key := policyKeyLPM{
-							PrefixLen: uint32(lpmFixedBits + ones),
+							PrefixLen: prefixLen,
 							Meta:      packLPMMeta(DirectionEgress, protocol, portValue),
 							CgroupID:  cgid,
 							IP:        ipBytes,
@@ -495,6 +507,10 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 		// Detect if it's IPv4 or IPv6
 		isIPv6 := ip.To4() == nil
 		ones, _ := ipnet.Mask.Size()
+		prefixLen, err := lpmPrefixLen(ones)
+		if err != nil {
+			return err
+		}
 
 		for _, port := range ingress.Ports {
 			portValue, err := toUint16Port(port.Port)
@@ -524,7 +540,7 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 						}
 						copy(ipBytes[:], v6)
 						key := policyKeyV6LPM{
-							PrefixLen: uint32(lpmFixedBits + ones),
+							PrefixLen: prefixLen,
 							Meta:      packLPMMeta(DirectionIngress, protocol, portValue),
 							CgroupID:  cgid,
 							IP:        ipBytes,
@@ -554,7 +570,7 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 						}
 						copy(ipBytes[:], v4)
 						key := policyKeyLPM{
-							PrefixLen: uint32(lpmFixedBits + ones),
+							PrefixLen: prefixLen,
 							Meta:      packLPMMeta(DirectionIngress, protocol, portValue),
 							CgroupID:  cgid,
 							IP:        ipBytes,
