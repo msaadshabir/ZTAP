@@ -3,8 +3,10 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,14 +33,21 @@ type Service struct {
 type InMemoryDiscovery struct {
 	services map[string]*Service
 	mu       sync.RWMutex
-	watchers []chan []string
+	watchers []*inMemoryWatcher
+}
+
+type inMemoryWatcher struct {
+	selector map[string]string
+	ch       chan []string
+	lastIPs  []string
+	closed   bool
 }
 
 // NewInMemoryDiscovery creates a new in-memory discovery service
 func NewInMemoryDiscovery() *InMemoryDiscovery {
 	return &InMemoryDiscovery{
 		services: make(map[string]*Service),
-		watchers: make([]chan []string, 0),
+		watchers: make([]*inMemoryWatcher, 0),
 	}
 }
 
@@ -56,21 +65,20 @@ func (d *InMemoryDiscovery) ResolveLabels(labels map[string]string) ([]string, e
 	}
 
 	if len(ips) == 0 {
-		return nil, fmt.Errorf("no services found matching labels: %v", labels)
+		return nil, &NoMatchesError{Resource: "services", Labels: copyLabelMap(labels)}
 	}
-
+	sort.Strings(ips)
 	return ips, nil
 }
 
 // RegisterService adds a service to the discovery
 func (d *InMemoryDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	// Validate IP
 	if net.ParseIP(ip) == nil {
 		return fmt.Errorf("invalid IP address: %s", ip)
 	}
+
+	d.mu.Lock()
 
 	d.services[name] = &Service{
 		Name:      name,
@@ -78,19 +86,19 @@ func (d *InMemoryDiscovery) RegisterService(name string, ip string, labels map[s
 		Labels:    labels,
 		UpdatedAt: time.Now(),
 	}
+	d.mu.Unlock()
 
 	// Notify watchers
 	d.notifyWatchers()
-
 	return nil
 }
 
 // DeregisterService removes a service
 func (d *InMemoryDiscovery) DeregisterService(name string) error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	delete(d.services, name)
+	d.mu.Unlock()
+
 	d.notifyWatchers()
 	return nil
 }
@@ -98,13 +106,21 @@ func (d *InMemoryDiscovery) DeregisterService(name string) error {
 // Watch returns a channel that receives IP updates when services change
 func (d *InMemoryDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
 	ch := make(chan []string, 10)
+	// Compute initial state before registering watcher.
+	// For no matches, emit an empty set (non-fatal for downstream consumers).
+	ips, err := d.ResolveLabels(labels)
+	if err != nil {
+		if !isNoMatches(err) {
+			return nil, err
+		}
+		ips = []string{}
+	}
+	watcher := &inMemoryWatcher{selector: copyLabelMap(labels), ch: ch, lastIPs: ips}
 
 	d.mu.Lock()
-	d.watchers = append(d.watchers, ch)
+	d.watchers = append(d.watchers, watcher)
 	d.mu.Unlock()
 
-	// Send initial state
-	ips, _ := d.ResolveLabels(labels)
 	ch <- ips
 
 	// Handle context cancellation
@@ -112,17 +128,19 @@ func (d *InMemoryDiscovery) Watch(ctx context.Context, labels map[string]string)
 		<-ctx.Done()
 		d.mu.Lock()
 		defer d.mu.Unlock()
-
-		// Remove watcher efficiently without preserving order
+		if watcher.closed {
+			return
+		}
+		// Remove watcher efficiently without preserving order.
 		for i, w := range d.watchers {
-			if w == ch {
-				// Replace with last element and truncate (faster removal)
+			if w == watcher {
 				last := len(d.watchers) - 1
 				d.watchers[i] = d.watchers[last]
 				d.watchers = d.watchers[:last]
 				break
 			}
 		}
+		watcher.closed = true
 		close(ch)
 	}()
 
@@ -131,17 +149,29 @@ func (d *InMemoryDiscovery) Watch(ctx context.Context, labels map[string]string)
 
 // notifyWatchers sends updates to all watchers
 func (d *InMemoryDiscovery) notifyWatchers() {
-	for _, ch := range d.watchers {
-		// Get all IPs
-		ips := make([]string, 0, len(d.services))
-		for _, service := range d.services {
-			ips = append(ips, service.IP)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, w := range d.watchers {
+		if w == nil || w.closed {
+			continue
 		}
 
-		select {
-		case ch <- ips:
-		default:
-			// Skip if channel is full
+		ips := make([]string, 0, len(d.services))
+		for _, service := range d.services {
+			if matchLabels(service.Labels, w.selector) {
+				ips = append(ips, service.IP)
+			}
+		}
+		sort.Strings(ips)
+
+		if !equalStrings(ips, w.lastIPs) {
+			w.lastIPs = ips
+			select {
+			case w.ch <- ips:
+			default:
+				// Skip if channel is full
+			}
 		}
 	}
 }
@@ -161,14 +191,38 @@ func (d *InMemoryDiscovery) ListServices() []*Service {
 // Stop shuts down watchers.
 func (d *InMemoryDiscovery) Stop() error {
 	d.mu.Lock()
-	watchers := append([]chan []string(nil), d.watchers...)
+	for _, w := range d.watchers {
+		if w == nil || w.closed {
+			continue
+		}
+		w.closed = true
+		close(w.ch)
+	}
 	d.watchers = nil
 	d.mu.Unlock()
-
-	for _, ch := range watchers {
-		close(ch)
-	}
 	return nil
+}
+
+func copyLabelMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func isNoMatches(err error) bool {
+	type noMatches interface {
+		NoMatches() bool
+	}
+	var nm noMatches
+	if errors.As(err, &nm) {
+		return nm.NoMatches()
+	}
+	return false
 }
 
 // matchLabels checks if service labels match the selector
@@ -196,9 +250,14 @@ func (d *DNSDiscovery) ResolveLabels(labels map[string]string) ([]string, error)
 	// Build DNS query from labels
 	// Format: app-value.tier-value.domain
 	// Pre-allocate capacity for efficiency
-	parts := make([]string, 0, len(labels))
-	for key, value := range labels {
-		parts = append(parts, fmt.Sprintf("%s-%s", key, value))
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s-%s", key, labels[key]))
 	}
 
 	hostname := strings.Join(parts, ".") + "." + d.domain
@@ -206,7 +265,14 @@ func (d *DNSDiscovery) ResolveLabels(labels map[string]string) ([]string, error)
 	// Resolve DNS
 	ips, err := net.LookupHost(hostname)
 	if err != nil {
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+			return nil, &NoMatchesError{Resource: "dns records", Scope: hostname, Labels: copyLabelMap(labels)}
+		}
 		return nil, fmt.Errorf("DNS lookup failed for %s: %w", hostname, err)
+	}
+	if len(ips) == 0 {
+		return nil, &NoMatchesError{Resource: "dns records", Scope: hostname, Labels: copyLabelMap(labels)}
 	}
 
 	return ips, nil
@@ -282,6 +348,7 @@ type CacheDiscovery struct {
 type cacheEntry struct {
 	ips       []string
 	expiresAt time.Time
+	noMatches bool
 }
 
 // NewCacheDiscovery creates a caching wrapper
@@ -303,6 +370,9 @@ func (c *CacheDiscovery) ResolveLabels(labels map[string]string) ([]string, erro
 	if entry, exists := c.cache[key]; exists {
 		if time.Now().Before(entry.expiresAt) {
 			c.mu.RUnlock()
+			if entry.noMatches {
+				return nil, &NoMatchesError{Labels: copyLabelMap(labels)}
+			}
 			return entry.ips, nil
 		}
 	}
@@ -311,6 +381,11 @@ func (c *CacheDiscovery) ResolveLabels(labels map[string]string) ([]string, erro
 	// Cache miss or expired, fetch from backend
 	ips, err := c.backend.ResolveLabels(labels)
 	if err != nil {
+		if isNoMatches(err) {
+			c.mu.Lock()
+			c.cache[key] = cacheEntry{expiresAt: time.Now().Add(c.ttl), noMatches: true}
+			c.mu.Unlock()
+		}
 		return nil, err
 	}
 
@@ -337,7 +412,30 @@ func (c *CacheDiscovery) DeregisterService(name string) error {
 
 // Watch delegates to backend
 func (c *CacheDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
-	return c.backend.Watch(ctx, labels)
+	ch, err := c.backend.Watch(ctx, labels)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan []string, 10)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ips, ok := <-ch:
+				if !ok {
+					return
+				}
+				c.ClearCache()
+				select {
+				case out <- ips:
+				default:
+				}
+			}
+		}
+	}()
+	return out, nil
 }
 
 // ClearCache removes all cached entries

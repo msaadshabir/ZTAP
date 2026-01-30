@@ -3,12 +3,14 @@ package policy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	yaml "gopkg.in/yaml.v2"
@@ -639,23 +641,25 @@ func (r *PolicyResolver) ResolvePodSelectorsToIPBlocksScoped(scope string, polic
 		// Resolve Egress
 		for _, egress := range p.Spec.Egress {
 			if len(egress.To.PodSelector.MatchLabels) > 0 {
-				ips, err := r.ResolveLabelsScoped(scope, egress.To.PodSelector.MatchLabels)
+				labels := egress.To.PodSelector.MatchLabels
+				ips, err := r.ResolveLabelsScoped(scope, labels)
 				if err != nil {
+					if isNoMatchesError(err) {
+						continue
+					}
 					return nil, fmt.Errorf("policy %s: failed to resolve egress podSelector %v: %w",
-						p.Metadata.Name, egress.To.PodSelector.MatchLabels, err)
+						p.Metadata.Name, labels, err)
 				}
 
-				for _, ip := range ips {
-					// Ensure it's a valid IPv4
-					parsedIP := net.ParseIP(ip)
-					if parsedIP == nil || parsedIP.To4() == nil {
-						return nil, fmt.Errorf("policy %s: resolved IP %s is not a valid IPv4 address",
-							p.Metadata.Name, ip)
-					}
-
+				cidrs, err := ipsToHostCIDRs(ips)
+				if err != nil {
+					return nil, fmt.Errorf("policy %s: invalid resolved IP for egress podSelector %v: %w",
+						p.Metadata.Name, labels, err)
+				}
+				for _, cidr := range cidrs {
 					newEgress := egress
 					newEgress.To.PodSelector = PodSelectorSpec{}
-					newEgress.To.IPBlock = IPBlockSpec{CIDR: ip + "/32"}
+					newEgress.To.IPBlock = IPBlockSpec{CIDR: cidr}
 					rp.Spec.Egress = append(rp.Spec.Egress, newEgress)
 				}
 			} else {
@@ -666,23 +670,25 @@ func (r *PolicyResolver) ResolvePodSelectorsToIPBlocksScoped(scope string, polic
 		// Resolve Ingress
 		for _, ingress := range p.Spec.Ingress {
 			if len(ingress.From.PodSelector.MatchLabels) > 0 {
-				ips, err := r.ResolveLabelsScoped(scope, ingress.From.PodSelector.MatchLabels)
+				labels := ingress.From.PodSelector.MatchLabels
+				ips, err := r.ResolveLabelsScoped(scope, labels)
 				if err != nil {
+					if isNoMatchesError(err) {
+						continue
+					}
 					return nil, fmt.Errorf("policy %s: failed to resolve ingress podSelector %v: %w",
-						p.Metadata.Name, ingress.From.PodSelector.MatchLabels, err)
+						p.Metadata.Name, labels, err)
 				}
 
-				for _, ip := range ips {
-					// Ensure it's a valid IPv4
-					parsedIP := net.ParseIP(ip)
-					if parsedIP == nil || parsedIP.To4() == nil {
-						return nil, fmt.Errorf("policy %s: resolved IP %s is not a valid IPv4 address",
-							p.Metadata.Name, ip)
-					}
-
+				cidrs, err := ipsToHostCIDRs(ips)
+				if err != nil {
+					return nil, fmt.Errorf("policy %s: invalid resolved IP for ingress podSelector %v: %w",
+						p.Metadata.Name, labels, err)
+				}
+				for _, cidr := range cidrs {
 					newIngress := ingress
 					newIngress.From.PodSelector = PodSelectorSpec{}
-					newIngress.From.IPBlock = IPBlockSpec{CIDR: ip + "/32"}
+					newIngress.From.IPBlock = IPBlockSpec{CIDR: cidr}
 					rp.Spec.Ingress = append(rp.Spec.Ingress, newIngress)
 				}
 			} else {
@@ -694,4 +700,54 @@ func (r *PolicyResolver) ResolvePodSelectorsToIPBlocksScoped(scope string, polic
 	}
 
 	return resolvedPolicies, nil
+}
+
+func isNoMatchesError(err error) bool {
+	type noMatches interface {
+		NoMatches() bool
+	}
+	var nm noMatches
+	if errors.As(err, &nm) {
+		return nm.NoMatches()
+	}
+	return false
+}
+
+func ipsToHostCIDRs(ips []string) ([]string, error) {
+	if len(ips) == 0 {
+		return []string{}, nil
+	}
+	seen := make(map[string]struct{}, len(ips))
+	out := make([]string, 0, len(ips))
+	for _, raw := range ips {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		parsed := net.ParseIP(raw)
+		if parsed == nil {
+			return nil, fmt.Errorf("%q is not a valid IP address", raw)
+		}
+		if v4 := parsed.To4(); v4 != nil {
+			ipStr := v4.String()
+			if _, ok := seen[ipStr]; ok {
+				continue
+			}
+			seen[ipStr] = struct{}{}
+			out = append(out, ipStr+"/32")
+			continue
+		}
+		if v6 := parsed.To16(); v6 != nil {
+			ipStr := v6.String()
+			if _, ok := seen[ipStr]; ok {
+				continue
+			}
+			seen[ipStr] = struct{}{}
+			out = append(out, ipStr+"/128")
+			continue
+		}
+		return nil, fmt.Errorf("%q is not a valid IP address", raw)
+	}
+	sort.Strings(out)
+	return out, nil
 }

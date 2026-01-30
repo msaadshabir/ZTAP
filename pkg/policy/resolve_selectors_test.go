@@ -165,3 +165,148 @@ func TestResolvePodSelectorsToIPBlocks_Error(t *testing.T) {
 		t.Error("Expected error for missing resolution, got nil")
 	}
 }
+
+type noMatchesErr struct {
+	labels map[string]string
+}
+
+func (e noMatchesErr) Error() string {
+	return fmt.Sprintf("no matches for labels %v", e.labels)
+}
+
+func (e noMatchesErr) NoMatches() bool {
+	return true
+}
+
+type mockNoMatchesDiscovery struct {
+	responses map[string][]string
+}
+
+func (m *mockNoMatchesDiscovery) ResolveLabels(labels map[string]string) ([]string, error) {
+	key := fmt.Sprintf("%v", labels)
+	if ips, ok := m.responses[key]; ok {
+		return ips, nil
+	}
+	return nil, noMatchesErr{labels: labels}
+}
+
+func (m *mockNoMatchesDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
+	return nil
+}
+
+func (m *mockNoMatchesDiscovery) DeregisterService(name string) error {
+	return nil
+}
+
+func (m *mockNoMatchesDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
+	return nil, nil
+}
+
+func (m *mockNoMatchesDiscovery) Stop() error {
+	return nil
+}
+
+func TestResolvePodSelectorsToIPBlocks_NoMatchesIsEmpty(t *testing.T) {
+	disc := &mockNoMatchesDiscovery{responses: map[string][]string{}}
+	resolver := NewPolicyResolver(disc)
+
+	policies := []NetworkPolicy{
+		{
+			Metadata: NetworkPolicyMetadata{Name: "no-match"},
+			Spec: NetworkPolicySpec{
+				PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+				Egress: []EgressRule{
+					{
+						To:    EgressTarget{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "missing"}}},
+						Ports: []PortSpec{{Protocol: "TCP", Port: 80}},
+					},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+	if err != nil {
+		t.Fatalf("ResolvePodSelectorsToIPBlocks failed: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("Expected 1 policy, got %d", len(resolved))
+	}
+	if len(resolved[0].Spec.Egress) != 0 {
+		t.Fatalf("Expected selector-only egress to be removed, got %d rules", len(resolved[0].Spec.Egress))
+	}
+}
+
+func TestResolvePodSelectorsToIPBlocks_IPv6(t *testing.T) {
+	disc := &mockNoMatchesDiscovery{
+		responses: map[string][]string{
+			"map[app:db]": {"2001:db8::1"},
+		},
+	}
+	resolver := NewPolicyResolver(disc)
+
+	policies := []NetworkPolicy{
+		{
+			Metadata: NetworkPolicyMetadata{Name: "v6"},
+			Spec: NetworkPolicySpec{
+				PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+				Egress: []EgressRule{
+					{
+						To:    EgressTarget{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "db"}}},
+						Ports: []PortSpec{{Protocol: "TCP", Port: 443}},
+					},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+	if err != nil {
+		t.Fatalf("ResolvePodSelectorsToIPBlocks failed: %v", err)
+	}
+	p := resolved[0]
+	if len(p.Spec.Egress) != 1 {
+		t.Fatalf("Expected 1 egress rule, got %d", len(p.Spec.Egress))
+	}
+	if p.Spec.Egress[0].To.IPBlock.CIDR != "2001:db8::1/128" {
+		t.Fatalf("Expected 2001:db8::1/128, got %s", p.Spec.Egress[0].To.IPBlock.CIDR)
+	}
+}
+
+func TestResolvePodSelectorsToIPBlocks_DedupAndSort(t *testing.T) {
+	disc := &mockNoMatchesDiscovery{
+		responses: map[string][]string{
+			"map[app:web]": {"10.0.0.2", "10.0.0.1", "10.0.0.2"},
+		},
+	}
+	resolver := NewPolicyResolver(disc)
+
+	policies := []NetworkPolicy{
+		{
+			Metadata: NetworkPolicyMetadata{Name: "sort"},
+			Spec: NetworkPolicySpec{
+				PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "lb"}},
+				Ingress: []IngressRule{
+					{
+						From:  IngressSource{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}}},
+						Ports: []PortSpec{{Protocol: "TCP", Port: 80}},
+					},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+	if err != nil {
+		t.Fatalf("ResolvePodSelectorsToIPBlocks failed: %v", err)
+	}
+	p := resolved[0]
+	if len(p.Spec.Ingress) != 2 {
+		t.Fatalf("Expected 2 ingress rules after dedupe, got %d", len(p.Spec.Ingress))
+	}
+	expected := []string{"10.0.0.1/32", "10.0.0.2/32"}
+	actual := []string{p.Spec.Ingress[0].From.IPBlock.CIDR, p.Spec.Ingress[1].From.IPBlock.CIDR}
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatalf("Expected %v, got %v", expected, actual)
+	}
+}

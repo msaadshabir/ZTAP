@@ -181,36 +181,36 @@ StartServer(port int) error
 
 ```text
 User
- │
-  ├─> CLI Command (enforce/status/logs)
- │
- ├─> Kubernetes (WIP)
- │    ├─> Operator (CRD -> validated policy ConfigMaps)
- │    └─> Node Agent (watches ConfigMaps -> PolicyEnforcer)
- │
- ├─> API Server (HTTP)
- │
- ├─> Policy Engine
- │    ├─> Parse YAML
- │    ├─> Validate
- │    └─> Resolve Labels
- │
- ├─> OS Enforcer
- │    ├─> eBPF (Linux)
- │    ├─> pf (macOS)
- │    └─> WFP (Windows)
- │
- ├─> Cloud Integrator (optional)
- │    └─> AWS Security Groups
- │
- ├─> Anomaly Detector (optional)
- │    └─> Python ML Service
+│
+├─> CLI Command (enforce/status/logs)
+│
+├─> Kubernetes (WIP)
+│   ├─> Operator (CRD -> validated policy ConfigMaps)
+│   └─> Node Agent (watches ConfigMaps -> PolicyEnforcer)
+│
+├─> API Server (HTTP/gRPC)
+│
+├─> Policy Engine
+│   ├─> Parse YAML
+│   ├─> Validate
+│   └─> Resolve Labels (and optionally re-resolve over time)
+│
+├─> OS Enforcer
+│   ├─> eBPF (Linux)
+│   ├─> pf (macOS)
+│   └─> WFP (Windows)
+│
+├─> Cloud Integrator (optional)
+│   └─> AWS Security Groups
+│
+├─> Anomaly Detector (optional)
+│   └─> Python ML Service
 │
 ├─> Alerting (optional)
-│    └─> Slack / PagerDuty webhooks
- │
-  └─> Metrics Collector
-       └─> Prometheus (:9090/metrics)
+│   └─> Slack / PagerDuty webhooks
+│
+└─> Metrics Collector
+    └─> Prometheus (:9090/metrics)
 ```
 
 ## Security Model

@@ -343,6 +343,7 @@ func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster
 
 func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 	activeWatches := make(map[string]context.CancelFunc)
+	watchEndedCh := make(chan string, 128)
 	defer func() {
 		for _, cancel := range activeWatches {
 			cancel()
@@ -358,6 +359,11 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 			return
 		case <-pe.stopCh:
 			return
+		case endedKey := <-watchEndedCh:
+			if cancel, ok := activeWatches[endedKey]; ok {
+				cancel()
+				delete(activeWatches, endedKey)
+			}
 		case <-ticker.C:
 			// Check for new selectors in active policies
 			pe.mu.RLock()
@@ -370,7 +376,7 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 				policies, _ := policy.LoadFromBytes(update.YAML)
 				for _, p := range policies {
 					if len(p.Spec.PodSelector.MatchLabels) > 0 {
-						key := fmt.Sprintf("%s|subject|%v", tenant, p.Spec.PodSelector.MatchLabels)
+						key := fmt.Sprintf("%s|subject|%s", tenant, policy.SelectorKey(p.Spec.PodSelector.MatchLabels))
 						selectors[key] = struct {
 							tenant string
 							labels map[string]string
@@ -378,7 +384,7 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 					}
 					for _, egress := range p.Spec.Egress {
 						if len(egress.To.PodSelector.MatchLabels) > 0 {
-							key := fmt.Sprintf("%s|egress|%v", tenant, egress.To.PodSelector.MatchLabels)
+							key := fmt.Sprintf("%s|egress|%s", tenant, policy.SelectorKey(egress.To.PodSelector.MatchLabels))
 							selectors[key] = struct {
 								tenant string
 								labels map[string]string
@@ -387,7 +393,7 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 					}
 					for _, ingress := range p.Spec.Ingress {
 						if len(ingress.From.PodSelector.MatchLabels) > 0 {
-							key := fmt.Sprintf("%s|ingress|%v", tenant, ingress.From.PodSelector.MatchLabels)
+							key := fmt.Sprintf("%s|ingress|%s", tenant, policy.SelectorKey(ingress.From.PodSelector.MatchLabels))
 							selectors[key] = struct {
 								tenant string
 								labels map[string]string
@@ -403,7 +409,6 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 			for key, sel := range selectors {
 				if _, ok := activeWatches[key]; !ok {
 					watchCtx, cancel := context.WithCancel(ctx)
-					activeWatches[key] = cancel
 					var ch <-chan []string
 					var err error
 					if isScoped {
@@ -412,10 +417,12 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 						ch, err = pe.discovery.Watch(watchCtx, sel.labels)
 					}
 					if err != nil {
+						cancel()
 						logging.Warnf("failed to start watch for %s %v: %v", sel.tenant, sel.labels, err)
 						continue
 					}
-					go func(labels map[string]string, ch <-chan []string) {
+					activeWatches[key] = cancel
+					go func(key string, labels map[string]string, ch <-chan []string) {
 						for range ch {
 							// Trigger re-apply
 							select {
@@ -423,7 +430,11 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 							default:
 							}
 						}
-					}(sel.labels, ch)
+						select {
+						case watchEndedCh <- key:
+						default:
+						}
+					}(key, sel.labels, ch)
 				}
 			}
 

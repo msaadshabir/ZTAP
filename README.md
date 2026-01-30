@@ -53,9 +53,11 @@ ztap enforce -f policy.yaml
 # Linux (eBPF)
 # Note: `ztap enforce` keeps running while enforcement is active.
 # Supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP (ICMP ignores `port`).
-# Policies that use `podSelector.matchLabels` can be enforced by resolving selectors into concrete `ipBlock` rules first:
+# Policies that use `podSelector.matchLabels` are enforced by resolving selectors into concrete `ipBlock` rules via discovery:
 # - In-cluster: run `ztap agent`
-# - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s`
+# - Local/CLI: run `ztap enforce` with `discovery.backend: k8s` configured (auto-resolves and refreshes while running)
+#   - Control refresh with `--resolve-labels-interval` (default: `5s`; set to `0` to resolve once)
+#   - If a selector currently resolves to zero targets, enforcement still starts; the rule becomes active when targets appear and resolution refreshes
 # In multi-namespace Kubernetes deployments:
 # - `ztap agent --namespaces ns-a,ns-b` or `ztap agent --all-namespaces`
 # - Tenant isolation requires Linux eBPF (iptables fallback can't guarantee isolation)

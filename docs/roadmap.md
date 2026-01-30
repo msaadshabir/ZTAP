@@ -47,11 +47,12 @@
 - **Certificate-based authentication** - mTLS client authentication for API access (implemented for REST + gRPC; optional gate that still uses bearer-token RBAC on top)
 - **Namespace/tenant isolation** - Multi-tenant policy scoping
 - **Compliance report generation** - PCI-DSS, SOC2, HIPAA policy mapping exports
+- Improve label-based enforcement outside Kubernetes agent mode (automatic selector resolution and re-resolution over time).
 
 ## Planned
 
 ### Enforcement & Policy Support
-- Improve label-based enforcement outside Kubernetes agent mode (automatic selector resolution and re-resolution over time).
+
 - Extend the policy spec toward Kubernetes NetworkPolicy parity (e.g., namespaceSelector, matchExpressions, ipBlock.except, named ports / port ranges).
 
 ### Kubernetes Packaging

@@ -1,6 +1,7 @@
 package apihttp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,18 +58,43 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 		policyKey = parsed.String()
 	}
 
-	policies, err := policy.LoadFromBytes([]byte(req.PolicyYAML))
+	basePolicies, err := policy.LoadFromBytes([]byte(req.PolicyYAML))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("failed to parse policy yaml: %w", err))
 		return
 	}
-	if len(policies) == 0 {
+	if len(basePolicies) == 0 {
 		writeError(w, http.StatusBadRequest, errors.New("no policies found"))
 		return
 	}
 
-	named := make([]policy.NamedPolicy, 0, len(policies))
-	for _, p := range policies {
+	needsResolution := policiesNeedTargetResolution(basePolicies)
+
+	s.enforcementMu.Lock()
+	defer s.enforcementMu.Unlock()
+
+	policies := basePolicies
+	if needsResolution {
+		if s.discovery == nil {
+			writeError(w, http.StatusBadRequest, errors.New("policy contains podSelector targets but no discovery backend is configured"))
+			return
+		}
+		if err := s.ensureDiscoveryStarted(); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to start discovery backend: %w", err))
+			return
+		}
+		enforcer.WarnNoMatchPolicyTargets(s.discovery, enforcer.SelectorRefreshOptions{Scope: policyTenant}, basePolicies)
+		resolver := policy.NewPolicyResolver(s.discovery)
+		resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(policyTenant, basePolicies)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("failed to resolve pod selectors: %w", err))
+			return
+		}
+		policies = resolved
+	}
+
+	named := make([]policy.NamedPolicy, 0, len(basePolicies))
+	for _, p := range basePolicies {
 		if err := p.Validate(); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
@@ -161,12 +187,16 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		ctx := s.runCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		opts := enforcer.EnforcementOptions{
 			Policies:      policies,
 			CgroupPath:    cgroupPath,
 			BPFObjectPath: bpfObjectPath,
 			DebugEBPF:     req.DebugEBPF,
-			Context:       r.Context(),
+			Context:       ctx,
 		}
 		platform := "linux"
 		if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
@@ -182,6 +212,8 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		s.stopEnforcementRefreshLocked()
+
 		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": platform, "count": len(policies)})
 		s.emitAlert(alert.Alert{
 			Source:   "api-http",
@@ -192,14 +224,42 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			Details:  map[string]any{"platform": platform, "count": len(policies)},
 		})
 		writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: platform})
+
+		if needsResolution && s.resolveLabelsInterval > 0 {
+			refreshCtx, refreshCancel := context.WithCancel(ctx)
+			s.refreshCancelFn = refreshCancel
+			go enforcer.RunSelectorRefresh(refreshCtx, s.discovery, basePolicies, enforcer.SelectorRefreshOptions{Scope: policyTenant, PollInterval: s.resolveLabelsInterval}, func(next []policy.NetworkPolicy) error {
+				select {
+				case <-refreshCtx.Done():
+					return nil
+				default:
+				}
+				s.enforcementMu.Lock()
+				defer s.enforcementMu.Unlock()
+				if err := enforcer.ValidatePoliciesForEBPF(next); err != nil {
+					return err
+				}
+				return enforcer.EnforceWithEBPFIfAvailable(enforcer.EnforcementOptions{
+					Policies:      next,
+					CgroupPath:    cgroupPath,
+					BPFObjectPath: bpfObjectPath,
+					DebugEBPF:     req.DebugEBPF,
+					Context:       refreshCtx,
+				})
+			})
+		}
 		return
 	}
 
 	if enforcer.IsWindows() {
 		platform := "windows"
+		ctx := s.runCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		opts := enforcer.EnforcementOptions{
 			Policies: policies,
-			Context:  r.Context(),
+			Context:  ctx,
 		}
 		if err := enforcer.EnforceWithWFP(opts); err != nil {
 			s.emitAlert(alert.Alert{
@@ -214,6 +274,8 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		s.stopEnforcementRefreshLocked()
+
 		_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": platform, "count": len(policies)})
 		s.emitAlert(alert.Alert{
 			Source:   "api-http",
@@ -224,13 +286,32 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			Details:  map[string]any{"platform": platform, "count": len(policies)},
 		})
 		writeJSON(w, http.StatusOK, enforcementStartResponse{Enforced: true, Platform: platform})
+
+		if needsResolution && s.resolveLabelsInterval > 0 {
+			refreshCtx, refreshCancel := context.WithCancel(ctx)
+			s.refreshCancelFn = refreshCancel
+			go enforcer.RunSelectorRefresh(refreshCtx, s.discovery, basePolicies, enforcer.SelectorRefreshOptions{Scope: policyTenant, PollInterval: s.resolveLabelsInterval}, func(next []policy.NetworkPolicy) error {
+				select {
+				case <-refreshCtx.Done():
+					return nil
+				default:
+				}
+				s.enforcementMu.Lock()
+				defer s.enforcementMu.Unlock()
+				return enforcer.EnforceWithWFP(enforcer.EnforcementOptions{Policies: next, Context: refreshCtx})
+			})
+		}
 		return
 	}
 
 	platform := runtime.GOOS
+	ctx := s.runCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	enforcer.EnforceWithPF(enforcer.EnforcementOptions{
 		Policies: policies,
-		Context:  r.Context(),
+		Context:  ctx,
 	})
 	_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": platform, "count": len(policies)})
 	s.emitAlert(alert.Alert{
@@ -249,6 +330,10 @@ func (s *Server) handleEnforcementStop(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w)
 		return
 	}
+	s.enforcementMu.Lock()
+	defer s.enforcementMu.Unlock()
+	s.stopEnforcementRefreshLocked()
+
 	if enforcer.IsLinux() {
 		if os.Geteuid() != 0 {
 			writeError(w, http.StatusForbidden, errors.New("eBPF enforcement requires root privileges"))
@@ -270,4 +355,20 @@ func (s *Server) handleEnforcementStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotImplemented, errors.New("stop is only supported for eBPF on linux or WFP on windows"))
+}
+
+func policiesNeedTargetResolution(policies []policy.NetworkPolicy) bool {
+	for _, p := range policies {
+		for _, e := range p.Spec.Egress {
+			if len(e.To.PodSelector.MatchLabels) > 0 {
+				return true
+			}
+		}
+		for _, in := range p.Spec.Ingress {
+			if len(in.From.PodSelector.MatchLabels) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -82,7 +82,20 @@ kubectl apply -f deployments/kubernetes/ztap-operator.yaml
 Pod IP auto-discovery:
 
 - The agent resolves `podSelector.matchLabels` targets to live Pod IPs via the Kubernetes API and translates them into host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules for enforcement.
-- For local development (out-of-cluster), you can resolve selectors before enforcing with `ztap enforce --resolve-labels` when `discovery.backend: k8s` is configured (kubeconfig-based).
+- For local development (out-of-cluster), `ztap enforce` resolves `podSelector.matchLabels` automatically when `discovery.backend: k8s` is configured (kubeconfig-based), and refreshes resolution while it is running.
+  - Tune refresh with `--resolve-labels-interval` (default: `5s`; set to `0` to resolve once).
+  - If a selector currently resolves to zero targets (e.g., rollouts/scale-to-zero), enforcement still starts; the rule is inactive until targets appear and resolution refreshes.
+
+Minimal out-of-cluster discovery config:
+
+```yaml
+# config.yaml (or file set via ZTAP_CONFIG)
+discovery:
+  backend: k8s
+  k8s:
+    namespace: default
+    # kubeconfig: /absolute/path/to/kubeconfig (optional; defaults to $KUBECONFIG or ~/.kube/config)
+```
 
 Multi-namespace / multi-tenant notes:
 

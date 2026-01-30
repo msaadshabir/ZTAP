@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"ztap/pkg/alert"
@@ -21,6 +22,7 @@ import (
 	"ztap/pkg/enforcer"
 	"ztap/pkg/flow"
 	"ztap/pkg/health"
+	"ztap/pkg/policy"
 	"ztap/pkg/ratelimit"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -78,6 +80,16 @@ type Server struct {
 	rateLimiter *ratelimit.Store
 	rlAllowed   *prometheus.CounterVec
 	rlLimited   *prometheus.CounterVec
+
+	discovery             policy.ServiceDiscovery
+	resolveLabelsInterval time.Duration
+
+	discoveryMu      sync.Mutex
+	discoveryStarted bool
+
+	enforcementMu   sync.Mutex
+	refreshCancelFn context.CancelFunc
+	runCtx          context.Context
 }
 
 type ServerOptions struct {
@@ -94,6 +106,14 @@ type ServerOptions struct {
 	PolicyCurrentYAMLFunc func(context.Context) ([]byte, error)
 
 	FlowReaderFactory func() flow.FlowReader
+
+	// Discovery is an optional service discovery backend used for resolving
+	// podSelector.matchLabels targets when enforcement is started via the API.
+	Discovery policy.ServiceDiscovery
+
+	// ResolveLabelsInterval controls re-resolution of podSelector targets over
+	// time when discovery is configured. If 0, refresh is disabled.
+	ResolveLabelsInterval time.Duration
 }
 
 func NewServer(opts ServerOptions) (*Server, error) {
@@ -122,16 +142,19 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:                opts.Config,
-		mux:                http.NewServeMux(),
-		auth:               opts.AuthManager,
-		audit:              opts.AuditLogger,
-		readiness:          &health.Checker{AuthEnabled: opts.Config.AuthEnabled, Auth: opts.AuthManager, Audit: opts.AuditLogger},
-		startTime:          time.Now(),
-		flowReader:         opts.FlowReaderFactory,
-		alerts:             opts.Alerts,
-		sessionsSQLitePath: opts.SessionsSQLitePath,
-		policyCurrentYAML:  opts.PolicyCurrentYAMLFunc,
+		cfg:                   opts.Config,
+		mux:                   http.NewServeMux(),
+		auth:                  opts.AuthManager,
+		audit:                 opts.AuditLogger,
+		readiness:             &health.Checker{AuthEnabled: opts.Config.AuthEnabled, Auth: opts.AuthManager, Audit: opts.AuditLogger},
+		startTime:             time.Now(),
+		flowReader:            opts.FlowReaderFactory,
+		alerts:                opts.Alerts,
+		sessionsSQLitePath:    opts.SessionsSQLitePath,
+		policyCurrentYAML:     opts.PolicyCurrentYAMLFunc,
+		discovery:             opts.Discovery,
+		resolveLabelsInterval: opts.ResolveLabelsInterval,
+		runCtx:                context.Background(),
 	}
 
 	s.initRateLimiting()
@@ -152,6 +175,16 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
+	s.runCtx = ctx
+	defer s.stopEnforcementRefresh()
+	defer func() {
+		if s.discovery != nil {
+			if err := s.discovery.Stop(); err != nil {
+				// Best-effort cleanup.
+			}
+		}
+	}()
+
 	defer func() {
 		if s.rateLimiter != nil {
 			s.rateLimiter.Close()
@@ -218,6 +251,46 @@ func (s *Server) Serve(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+func (s *Server) stopEnforcementRefreshLocked() {
+	if s.refreshCancelFn == nil {
+		return
+	}
+	s.refreshCancelFn()
+	s.refreshCancelFn = nil
+}
+
+func (s *Server) stopEnforcementRefresh() {
+	s.enforcementMu.Lock()
+	defer s.enforcementMu.Unlock()
+	s.stopEnforcementRefreshLocked()
+}
+
+func (s *Server) ensureDiscoveryStarted() error {
+	if s.discovery == nil {
+		return nil
+	}
+
+	s.discoveryMu.Lock()
+	defer s.discoveryMu.Unlock()
+	if s.discoveryStarted {
+		return nil
+	}
+
+	starter, ok := s.discovery.(interface{ Start(context.Context) error })
+	if ok {
+		base := s.runCtx
+		if base == nil {
+			base = context.Background()
+		}
+		if err := starter.Start(base); err != nil {
+			return err
+		}
+	}
+
+	s.discoveryStarted = true
+	return nil
 }
 
 func (s *Server) routes() {

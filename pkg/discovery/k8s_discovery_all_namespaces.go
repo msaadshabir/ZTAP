@@ -128,7 +128,7 @@ func (d *K8sDiscoveryAllNamespaces) ResolveLabelsScoped(scope string, selector m
 	}
 
 	if len(ips) == 0 {
-		return nil, fmt.Errorf("no pods found matching labels in namespace %s: %v", scope, selector)
+		return nil, &NoMatchesError{Resource: "pods", Scope: scope, Labels: copyLabelMap(selector)}
 	}
 
 	sort.Strings(ips)

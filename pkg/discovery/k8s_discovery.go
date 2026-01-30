@@ -95,7 +95,7 @@ func (d *K8sDiscovery) ResolveLabels(selector map[string]string) ([]string, erro
 	}
 
 	if len(ips) == 0 {
-		return nil, fmt.Errorf("no pods found matching labels: %v", selector)
+		return nil, &NoMatchesError{Resource: "pods", Labels: copyLabelMap(selector)}
 	}
 
 	sort.Strings(ips)

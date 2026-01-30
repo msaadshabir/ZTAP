@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"ztap/pkg/alert"
@@ -78,6 +79,14 @@ type ServerOptions struct {
 	Alerts      *alert.Manager
 
 	FlowReaderFactory func() flow.FlowReader
+
+	// Discovery is an optional service discovery backend used for resolving
+	// podSelector.matchLabels targets when enforcement is started via the API.
+	Discovery policy.ServiceDiscovery
+
+	// ResolveLabelsInterval controls re-resolution of podSelector targets over
+	// time when discovery is configured. If 0, refresh is disabled.
+	ResolveLabelsInterval time.Duration
 }
 
 type Server struct {
@@ -94,6 +103,16 @@ type Server struct {
 	rateLimiter *ratelimit.Store
 	rlAllowed   *prometheus.CounterVec
 	rlLimited   *prometheus.CounterVec
+
+	discovery             policy.ServiceDiscovery
+	resolveLabelsInterval time.Duration
+
+	discoveryMu      sync.Mutex
+	discoveryStarted bool
+
+	enforcementMu   sync.Mutex
+	refreshCancelFn context.CancelFunc
+	runCtx          context.Context
 }
 
 func NewServer(opts ServerOptions) (*Server, error) {
@@ -119,13 +138,16 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:        opts.Config,
-		auth:       opts.AuthManager,
-		audit:      opts.AuditLogger,
-		readiness:  &health.Checker{AuthEnabled: opts.Config.AuthEnabled, Auth: opts.AuthManager, Audit: opts.AuditLogger},
-		startTime:  time.Now(),
-		alerts:     opts.Alerts,
-		flowReader: opts.FlowReaderFactory,
+		cfg:                   opts.Config,
+		auth:                  opts.AuthManager,
+		audit:                 opts.AuditLogger,
+		readiness:             &health.Checker{AuthEnabled: opts.Config.AuthEnabled, Auth: opts.AuthManager, Audit: opts.AuditLogger},
+		startTime:             time.Now(),
+		alerts:                opts.Alerts,
+		flowReader:            opts.FlowReaderFactory,
+		discovery:             opts.Discovery,
+		resolveLabelsInterval: opts.ResolveLabelsInterval,
+		runCtx:                context.Background(),
 	}
 
 	s.initRateLimiting()
@@ -176,6 +198,14 @@ func (s *Server) ListenAddr() string {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
+	s.runCtx = ctx
+	defer s.stopEnforcementRefresh()
+	defer func() {
+		if s.discovery != nil {
+			_ = s.discovery.Stop()
+		}
+	}()
+
 	defer func() {
 		if s.rateLimiter != nil {
 			s.rateLimiter.Close()
@@ -205,6 +235,62 @@ func (s *Server) Serve(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+func (s *Server) stopEnforcementRefreshLocked() {
+	if s.refreshCancelFn == nil {
+		return
+	}
+	s.refreshCancelFn()
+	s.refreshCancelFn = nil
+}
+
+func (s *Server) stopEnforcementRefresh() {
+	s.enforcementMu.Lock()
+	defer s.enforcementMu.Unlock()
+	s.stopEnforcementRefreshLocked()
+}
+
+func (s *Server) ensureDiscoveryStarted() error {
+	if s.discovery == nil {
+		return nil
+	}
+
+	s.discoveryMu.Lock()
+	defer s.discoveryMu.Unlock()
+	if s.discoveryStarted {
+		return nil
+	}
+
+	starter, ok := s.discovery.(interface{ Start(context.Context) error })
+	if ok {
+		base := s.runCtx
+		if base == nil {
+			base = context.Background()
+		}
+		if err := starter.Start(base); err != nil {
+			return err
+		}
+	}
+
+	s.discoveryStarted = true
+	return nil
+}
+
+func policiesNeedTargetResolution(policies []policy.NetworkPolicy) bool {
+	for _, p := range policies {
+		for _, e := range p.Spec.Egress {
+			if len(e.To.PodSelector.MatchLabels) > 0 {
+				return true
+			}
+		}
+		for _, in := range p.Spec.Ingress {
+			if len(in.From.PodSelector.MatchLabels) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type ctxKey int
@@ -682,16 +768,38 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 		policyKey = parsed.String()
 	}
 
-	policies, err := policy.LoadFromBytes([]byte(policyYAML))
+	basePolicies, err := policy.LoadFromBytes([]byte(policyYAML))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to parse policy yaml: %w", err).Error())
 	}
-	if len(policies) == 0 {
+	if len(basePolicies) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "no policies found")
 	}
 
-	named := make([]policy.NamedPolicy, 0, len(policies))
-	for _, p := range policies {
+	needsResolution := policiesNeedTargetResolution(basePolicies)
+
+	e.srv.enforcementMu.Lock()
+	defer e.srv.enforcementMu.Unlock()
+
+	policies := basePolicies
+	if needsResolution {
+		if e.srv.discovery == nil {
+			return nil, status.Error(codes.InvalidArgument, "policy contains podSelector targets but no discovery backend is configured")
+		}
+		if err := e.srv.ensureDiscoveryStarted(); err != nil {
+			return nil, status.Error(codes.Internal, fmt.Errorf("failed to start discovery backend: %w", err).Error())
+		}
+		enforcer.WarnNoMatchPolicyTargets(e.srv.discovery, enforcer.SelectorRefreshOptions{Scope: policyTenant}, basePolicies)
+		resolver := policy.NewPolicyResolver(e.srv.discovery)
+		resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(policyTenant, basePolicies)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to resolve pod selectors: %w", err).Error())
+		}
+		policies = resolved
+	}
+
+	named := make([]policy.NamedPolicy, 0, len(basePolicies))
+	for _, p := range basePolicies {
 		if err := p.Validate(); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
@@ -768,13 +876,11 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 		if err := enforcer.ValidatePoliciesForEBPF(policies); err != nil {
 			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy is not supported by eBPF enforcer yet: %w", err).Error())
 		}
-		opts := enforcer.EnforcementOptions{
-			Policies:      policies,
-			CgroupPath:    resolvedCgroupPath,
-			BPFObjectPath: bpfObjectPath,
-			DebugEBPF:     debugEBPF,
-			Context:       ctx,
+		srvCtx := e.srv.runCtx
+		if srvCtx == nil {
+			srvCtx = context.Background()
 		}
+		opts := enforcer.EnforcementOptions{Policies: policies, CgroupPath: resolvedCgroupPath, BPFObjectPath: bpfObjectPath, DebugEBPF: debugEBPF, Context: srvCtx}
 		if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
 			e.srv.emitAlert(alert.Alert{
 				Source:   "api-grpc",
@@ -787,32 +893,46 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			return nil, status.Error(codes.Internal, fmt.Errorf("failed to enforce via eBPF: %w", err).Error())
 		}
 
+		e.srv.stopEnforcementRefreshLocked()
+		if needsResolution && e.srv.discovery != nil && e.srv.resolveLabelsInterval > 0 {
+			refreshCtx, refreshCancel := context.WithCancel(srvCtx)
+			e.srv.refreshCancelFn = refreshCancel
+			go enforcer.RunSelectorRefresh(refreshCtx, e.srv.discovery, basePolicies, enforcer.SelectorRefreshOptions{Scope: policyTenant, PollInterval: e.srv.resolveLabelsInterval}, func(next []policy.NetworkPolicy) error {
+				select {
+				case <-refreshCtx.Done():
+					return nil
+				default:
+				}
+				e.srv.enforcementMu.Lock()
+				defer e.srv.enforcementMu.Unlock()
+				if err := enforcer.ValidatePoliciesForEBPF(next); err != nil {
+					return err
+				}
+				return enforcer.EnforceWithEBPFIfAvailable(enforcer.EnforcementOptions{Policies: next, CgroupPath: resolvedCgroupPath, BPFObjectPath: bpfObjectPath, DebugEBPF: debugEBPF, Context: refreshCtx})
+			})
+		}
+
 		_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": "linux", "count": len(policies)})
-		e.srv.emitAlert(alert.Alert{
-			Source:   "api-grpc",
-			Severity: alert.SeverityInfo,
-			Title:    "policy enforced",
-			Message:  fmt.Sprintf("%s enforced on %s", policyKey, platform),
-			DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
-			Details:  map[string]any{"platform": platform, "count": len(policies)},
-		})
+		e.srv.emitAlert(alert.Alert{Source: "api-grpc", Severity: alert.SeverityInfo, Title: "policy enforced", Message: fmt.Sprintf("%s enforced on %s", policyKey, platform), DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform), Details: map[string]any{"platform": platform, "count": len(policies)}})
 		return &apiv1.EnforcementStartResponse{Enforced: true, Platform: platform}, nil
 	}
 
-	enforcer.EnforceWithPF(enforcer.EnforcementOptions{Policies: policies, Context: ctx})
+	srvCtx := e.srv.runCtx
+	if srvCtx == nil {
+		srvCtx = context.Background()
+	}
+	enforcer.EnforceWithPF(enforcer.EnforcementOptions{Policies: policies, Context: srvCtx})
+	e.srv.stopEnforcementRefreshLocked()
 	_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
-	e.srv.emitAlert(alert.Alert{
-		Source:   "api-grpc",
-		Severity: alert.SeverityInfo,
-		Title:    "policy enforced",
-		Message:  fmt.Sprintf("%s enforced on %s", policyKey, platform),
-		DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform),
-		Details:  map[string]any{"platform": platform, "count": len(policies)},
-	})
+	e.srv.emitAlert(alert.Alert{Source: "api-grpc", Severity: alert.SeverityInfo, Title: "policy enforced", Message: fmt.Sprintf("%s enforced on %s", policyKey, platform), DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform), Details: map[string]any{"platform": platform, "count": len(policies)}})
 	return &apiv1.EnforcementStartResponse{Enforced: true, Platform: platform}, nil
 }
 
 func (e *enforcementService) Stop(ctx context.Context, _ *emptypb.Empty) (*apiv1.EnforcementStopResponse, error) {
+	e.srv.enforcementMu.Lock()
+	defer e.srv.enforcementMu.Unlock()
+	e.srv.stopEnforcementRefreshLocked()
+
 	if !enforcer.IsLinux() {
 		return nil, status.Error(codes.Unimplemented, "stop is only supported for eBPF enforcement on linux")
 	}

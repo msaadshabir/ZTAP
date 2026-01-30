@@ -39,7 +39,9 @@ See [Cluster Documentation](../docs/cluster.md) for details.
 
 Note: on Linux, ZTAP enforces via eBPF when available (otherwise falls back to iptables).
 The eBPF enforcer supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP (ICMP ignores `port`). See `docs/ebpf.md`.
-Policies that use `podSelector` targets can be enforced by resolving selectors into concrete `ipBlock` rules first (in-cluster via `ztap agent`, or locally via `ztap enforce --resolve-labels` with `discovery.backend: k8s`).
+Policies that use `podSelector` targets can be enforced by resolving selectors into concrete `ipBlock` rules via discovery (in-cluster via `ztap agent`, or locally via `ztap enforce` with `discovery.backend: k8s`).
+`ztap enforce` refreshes selector resolution while it is running; tune with `--resolve-labels-interval` (default: `5s`; set to `0` to resolve once).
+If a selector currently resolves to zero targets, enforcement still starts; the rule becomes active when targets appear and resolution refreshes.
 Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels).
 
 Kubernetes multi-namespace agent mode:
@@ -105,7 +107,7 @@ ztap enforce -f ingress-only.yaml
 ### Label-Based Rules
 
 Note: label-based rules (`podSelector.matchLabels`) require resolution into concrete IPs.
-In Kubernetes, targets are translated into host CIDRs (`/32` for IPv4, `/128` for IPv6) via discovery (recommended: `ztap agent`), or via `ztap enforce --resolve-labels` when `discovery.backend: k8s` is configured.
+In Kubernetes, targets are translated into host CIDRs (`/32` for IPv4, `/128` for IPv6) via discovery (recommended: `ztap agent`), or via `ztap enforce` when `discovery.backend: k8s` is configured.
 For GCP firewall sync, `podSelector.matchLabels` is resolved against GCE instance labels within the specified VPC network.
 
 ```yaml

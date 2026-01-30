@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"ztap/pkg/alert"
 	"ztap/pkg/apihttp"
+	"ztap/pkg/logging"
 	"ztap/pkg/metrics"
 
 	"github.com/spf13/cobra"
@@ -108,7 +110,12 @@ var apiServeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, SessionsSQLitePath: sessionsPath})
+		disc, err := getDiscoveryBackend()
+		if err != nil {
+			logging.Warnf("Failed to load discovery backend (podSelector targets via API will not be resolvable): %v", err)
+			disc = nil
+		}
+		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, SessionsSQLitePath: sessionsPath, Discovery: disc, ResolveLabelsInterval: 5 * time.Second})
 		if err != nil {
 			return err
 		}
