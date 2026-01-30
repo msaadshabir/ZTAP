@@ -3,23 +3,116 @@
 package enforcer
 
 import (
+	"net"
 	"os"
+	"strings"
 
 	"ztap/pkg/logging"
 	"ztap/pkg/policy"
+
+	"github.com/cilium/ebpf"
 )
 
 var activeIptablesEnforcer *IptablesEnforcer
 
+func ebpfPolicyMapLPMModes(bpfObjectPath string) (v4 bool, v6 bool) {
+	objectOverride := strings.TrimSpace(bpfObjectPath)
+	if objectOverride == "" {
+		objectOverride = strings.TrimSpace(os.Getenv("ZTAP_BPF_OBJECT"))
+	}
+
+	var (
+		spec *ebpf.CollectionSpec
+		err  error
+	)
+	if objectOverride != "" {
+		spec, err = ebpf.LoadCollectionSpec(objectOverride)
+	} else {
+		spec, err = loadBpf()
+	}
+	if err != nil {
+		return false, false
+	}
+	if ms, ok := spec.Maps["policy_map"]; ok && ms != nil && ms.Type == ebpf.LPMTrie {
+		v4 = true
+	}
+	if ms, ok := spec.Maps["policy_map_v6"]; ok && ms != nil && ms.Type == ebpf.LPMTrie {
+		v6 = true
+	}
+	return v4, v6
+}
+
+func policiesSupportedByEBPF(policies []policy.NetworkPolicy, bpfObjectPath string) bool {
+	v4LPM, v6LPM := ebpfPolicyMapLPMModes(bpfObjectPath)
+
+	// Until the embedded (or overridden) eBPF program supports CIDR LPM,
+	// restrict to host CIDRs only.
+	for _, p := range policies {
+		for _, egress := range p.Spec.Egress {
+			cidr := egress.To.IPBlock.CIDR
+			if cidr == "" {
+				continue
+			}
+			_, ipnet, err := net.ParseCIDR(cidr)
+			if err != nil {
+				return false
+			}
+			ones, bits := ipnet.Mask.Size()
+			switch bits {
+			case 32:
+				if !v4LPM && ones != 32 {
+					return false
+				}
+			case 128:
+				if !v6LPM && ones != 128 {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+		for _, ingress := range p.Spec.Ingress {
+			cidr := ingress.From.IPBlock.CIDR
+			if cidr == "" {
+				continue
+			}
+			_, ipnet, err := net.ParseCIDR(cidr)
+			if err != nil {
+				return false
+			}
+			ones, bits := ipnet.Mask.Size()
+			switch bits {
+			case 32:
+				if !v4LPM && ones != 32 {
+					return false
+				}
+			case 128:
+				if !v6LPM && ones != 128 {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // EnforceWithEBPFIfAvailable uses the best available enforcer on Linux (eBPF or iptables).
 func EnforceWithEBPFIfAvailable(opts EnforcementOptions) error {
-	if CanUseEBPF() {
+	ebpfAvailable := CanUseEBPF()
+	ebpfSupported := ebpfAvailable && policiesSupportedByEBPF(opts.Policies, opts.BPFObjectPath)
+	if ebpfSupported {
 		if opts.DryRun {
 			logging.Info("[DRY-RUN] Enforcing via eBPF (Linux)...", nil)
 		} else {
 			logging.Info("Enforcing via eBPF (Linux)...", nil)
 		}
 		return EnforceWithEBPFReal(opts)
+	}
+
+	if ebpfAvailable && !ebpfSupported {
+		logging.Warn("Policies require CIDR support; falling back to iptables until eBPF LPM lands", nil)
 	}
 
 	if opts.DryRun {
@@ -45,7 +138,9 @@ func EnforceWithEBPFIfAvailableScoped(opts ScopedEnforcementOptions) error {
 		flattened = append(flattened, sp.Policy)
 	}
 
-	if CanUseEBPF() {
+	ebpfAvailable := CanUseEBPF()
+	ebpfSupported := ebpfAvailable && policiesSupportedByEBPF(flattened, opts.BPFObjectPath)
+	if ebpfSupported {
 		if opts.DryRun {
 			logging.Info("[DRY-RUN] Enforcing via eBPF (Linux, tenant-scoped)...", nil)
 		} else {
@@ -54,7 +149,12 @@ func EnforceWithEBPFIfAvailableScoped(opts ScopedEnforcementOptions) error {
 		return EnforceWithEBPFRealScoped(opts)
 	}
 
-	logging.Warn("eBPF not available; falling back to iptables (tenant isolation not guaranteed)", nil)
+	if ebpfAvailable && !ebpfSupported {
+		logging.Warn("Policies require CIDR support; falling back to iptables until eBPF LPM lands (tenant isolation not guaranteed)", nil)
+	}
+	if !ebpfAvailable {
+		logging.Warn("eBPF not available; falling back to iptables (tenant isolation not guaranteed)", nil)
+	}
 	activeIptablesEnforcer = NewIptablesEnforcer()
 	if err := activeIptablesEnforcer.Init(); err != nil {
 		return err

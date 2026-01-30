@@ -3,7 +3,7 @@
 
 package enforcer
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -no-strip -target bpfel -target bpfeb -cc clang bpf ../../bpf/filter.c -- -I../../bpf
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -no-strip -target bpfel,bpfeb -cc clang bpf ../../bpf/filter.c -- -I../../bpf
 
 import (
 	"fmt"
@@ -29,10 +29,12 @@ var (
 
 // eBPFEnforcer manages eBPF programs for network policy enforcement
 type eBPFEnforcer struct {
-	objs        *bpfObjects
-	egressLink  link.Link
-	ingressLink link.Link
-	policies    []policy.NetworkPolicy
+	objs            *bpfObjects
+	policyMapV4Mode policyMapMode
+	policyMapV6Mode policyMapMode
+	egressLink      link.Link
+	ingressLink     link.Link
+	policies        []policy.NetworkPolicy
 	// bpfObjectPath optionally overrides the embedded eBPF object.
 	bpfObjectPath string
 	// debug enables extra debug logging for eBPF operations.
@@ -53,6 +55,33 @@ const (
 	DirectionIngress uint8 = 1
 )
 
+type policyMapMode uint8
+
+const (
+	policyMapModeExact policyMapMode = iota
+	policyMapModeLPMTrie
+)
+
+const lpmFixedBits = 96
+
+func detectPolicyMapMode(m *ebpf.Map) policyMapMode {
+	if m == nil {
+		return policyMapModeExact
+	}
+	info, err := m.Info()
+	if err != nil || info == nil {
+		return policyMapModeExact
+	}
+	if info.Type == ebpf.LPMTrie {
+		return policyMapModeLPMTrie
+	}
+	return policyMapModeExact
+}
+
+func packLPMMeta(direction uint8, protocol uint8, port uint16) uint32 {
+	return (uint32(direction) << 24) | (uint32(protocol) << 16) | uint32(port)
+}
+
 // policyKey represents the key for eBPF policy map
 // Must match struct policy_key in bpf/filter.c
 type policyKey struct {
@@ -71,6 +100,25 @@ type policyKeyV6 struct {
 	Port      uint16
 	Protocol  uint8
 	Direction uint8
+}
+
+// policyKeyLPM represents the key for the IPv4 policy LPM trie.
+// Matches the planned struct layout in bpf/filter.c.
+type policyKeyLPM struct {
+	PrefixLen uint32
+	Meta      uint32
+	CgroupID  uint64
+	IP        [4]byte
+	_         [4]byte
+}
+
+// policyKeyV6LPM represents the key for the IPv6 policy LPM trie.
+// Matches the planned struct layout in bpf/filter.c.
+type policyKeyV6LPM struct {
+	PrefixLen uint32
+	Meta      uint32
+	CgroupID  uint64
+	IP        [16]byte
 }
 
 // policyValue represents the value for eBPF policy map
@@ -186,6 +234,12 @@ func (e *eBPFEnforcer) LoadPoliciesScoped(policies []ScopedPolicy) error {
 			e.objs = &objs
 		}
 	}
+
+	// Detect policy map modes (exact hash vs LPM trie).
+	// This allows supporting newer BPF objects via ZTAP_BPF_OBJECT without
+	// breaking compatibility with the embedded exact-match maps.
+	e.policyMapV4Mode = detectPolicyMapMode(e.objs.PolicyMap)
+	e.policyMapV6Mode = detectPolicyMapMode(e.objs.PolicyMapV6)
 
 	if scopedMode {
 		if e.enforcedCgroups == nil || e.enforcementConfigMap == nil {
@@ -324,43 +378,85 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 
 		// Detect if it's IPv4 or IPv6
 		isIPv6 := ip.To4() == nil
+		ones, _ := ipnet.Mask.Size()
 
 		for _, port := range egress.Ports {
 			portValue, err := toUint16Port(port.Port)
 			if err != nil {
 				return err
 			}
+			isICMP := strings.EqualFold(port.Protocol, "ICMP")
+			if isICMP {
+				// ICMP has no L4 port; ignore policy port value.
+				portValue = 0
+			}
 			protocol := protocolToNum(port.Protocol)
 
 			for _, cgid := range subjectCgroupIDs {
 				if isIPv6 {
-					// Remap ICMP (1) to ICMPv6 (58) for IPv6 rules
-					if protocol == 1 {
+					// Remap ICMP to ICMPv6 for IPv6 rules.
+					if isICMP {
 						protocol = 58
 					}
 
-					key := policyKeyV6{
-						CgroupID:  cgid,
-						IP:        ipToUint32Array(ip),
-						Port:      portValue,
-						Protocol:  protocol,
-						Direction: DirectionEgress,
-					}
 					value := policyValue{Action: 1}
-					if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
-						return fmt.Errorf("failed to update IPv6 policy map: %w", err)
+					if e.policyMapV6Mode == policyMapModeLPMTrie {
+						var ipBytes [16]byte
+						v6 := ipnet.IP.To16()
+						if v6 == nil {
+							return fmt.Errorf("invalid IPv6 CIDR %s", egress.To.IPBlock.CIDR)
+						}
+						copy(ipBytes[:], v6)
+						key := policyKeyV6LPM{
+							PrefixLen: uint32(lpmFixedBits + ones),
+							Meta:      packLPMMeta(DirectionEgress, protocol, portValue),
+							CgroupID:  cgid,
+							IP:        ipBytes,
+						}
+						if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
+							return fmt.Errorf("failed to update IPv6 policy LPM trie: %w", err)
+						}
+					} else {
+						key := policyKeyV6{
+							CgroupID:  cgid,
+							IP:        ipToUint32Array(ip),
+							Port:      portValue,
+							Protocol:  protocol,
+							Direction: DirectionEgress,
+						}
+						if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
+							return fmt.Errorf("failed to update IPv6 policy map: %w", err)
+						}
 					}
 				} else {
-					key := policyKey{
-						CgroupID:  cgid,
-						IP:        ipToUint32(ip.To4()),
-						Port:      portValue,
-						Protocol:  protocol,
-						Direction: DirectionEgress,
-					}
 					value := policyValue{Action: 1}
-					if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
-						return fmt.Errorf("failed to update policy map: %w", err)
+					if e.policyMapV4Mode == policyMapModeLPMTrie {
+						var ipBytes [4]byte
+						v4 := ipnet.IP.To4()
+						if v4 == nil {
+							return fmt.Errorf("invalid IPv4 CIDR %s", egress.To.IPBlock.CIDR)
+						}
+						copy(ipBytes[:], v4)
+						key := policyKeyLPM{
+							PrefixLen: uint32(lpmFixedBits + ones),
+							Meta:      packLPMMeta(DirectionEgress, protocol, portValue),
+							CgroupID:  cgid,
+							IP:        ipBytes,
+						}
+						if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+							return fmt.Errorf("failed to update policy LPM trie: %w", err)
+						}
+					} else {
+						key := policyKey{
+							CgroupID:  cgid,
+							IP:        ipToUint32(ip.To4()),
+							Port:      portValue,
+							Protocol:  protocol,
+							Direction: DirectionEgress,
+						}
+						if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+							return fmt.Errorf("failed to update policy map: %w", err)
+						}
 					}
 				}
 			}
@@ -398,43 +494,85 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 
 		// Detect if it's IPv4 or IPv6
 		isIPv6 := ip.To4() == nil
+		ones, _ := ipnet.Mask.Size()
 
 		for _, port := range ingress.Ports {
 			portValue, err := toUint16Port(port.Port)
 			if err != nil {
 				return err
 			}
+			isICMP := strings.EqualFold(port.Protocol, "ICMP")
+			if isICMP {
+				// ICMP has no L4 port; ignore policy port value.
+				portValue = 0
+			}
 			protocol := protocolToNum(port.Protocol)
 
 			for _, cgid := range subjectCgroupIDs {
 				if isIPv6 {
-					// Remap ICMP (1) to ICMPv6 (58) for IPv6 rules
-					if protocol == 1 {
+					// Remap ICMP to ICMPv6 for IPv6 rules.
+					if isICMP {
 						protocol = 58
 					}
 
-					key := policyKeyV6{
-						CgroupID:  cgid,
-						IP:        ipToUint32Array(ip),
-						Port:      portValue,
-						Protocol:  protocol,
-						Direction: DirectionIngress,
-					}
 					value := policyValue{Action: 1}
-					if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
-						return fmt.Errorf("failed to update IPv6 policy map: %w", err)
+					if e.policyMapV6Mode == policyMapModeLPMTrie {
+						var ipBytes [16]byte
+						v6 := ipnet.IP.To16()
+						if v6 == nil {
+							return fmt.Errorf("invalid IPv6 CIDR %s", ingress.From.IPBlock.CIDR)
+						}
+						copy(ipBytes[:], v6)
+						key := policyKeyV6LPM{
+							PrefixLen: uint32(lpmFixedBits + ones),
+							Meta:      packLPMMeta(DirectionIngress, protocol, portValue),
+							CgroupID:  cgid,
+							IP:        ipBytes,
+						}
+						if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
+							return fmt.Errorf("failed to update IPv6 policy LPM trie: %w", err)
+						}
+					} else {
+						key := policyKeyV6{
+							CgroupID:  cgid,
+							IP:        ipToUint32Array(ip),
+							Port:      portValue,
+							Protocol:  protocol,
+							Direction: DirectionIngress,
+						}
+						if err := e.objs.PolicyMapV6.Put(&key, &value); err != nil {
+							return fmt.Errorf("failed to update IPv6 policy map: %w", err)
+						}
 					}
 				} else {
-					key := policyKey{
-						CgroupID:  cgid,
-						IP:        ipToUint32(ip.To4()),
-						Port:      portValue,
-						Protocol:  protocol,
-						Direction: DirectionIngress,
-					}
 					value := policyValue{Action: 1}
-					if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
-						return fmt.Errorf("failed to update policy map: %w", err)
+					if e.policyMapV4Mode == policyMapModeLPMTrie {
+						var ipBytes [4]byte
+						v4 := ipnet.IP.To4()
+						if v4 == nil {
+							return fmt.Errorf("invalid IPv4 CIDR %s", ingress.From.IPBlock.CIDR)
+						}
+						copy(ipBytes[:], v4)
+						key := policyKeyLPM{
+							PrefixLen: uint32(lpmFixedBits + ones),
+							Meta:      packLPMMeta(DirectionIngress, protocol, portValue),
+							CgroupID:  cgid,
+							IP:        ipBytes,
+						}
+						if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+							return fmt.Errorf("failed to update policy LPM trie: %w", err)
+						}
+					} else {
+						key := policyKey{
+							CgroupID:  cgid,
+							IP:        ipToUint32(ip.To4()),
+							Port:      portValue,
+							Protocol:  protocol,
+							Direction: DirectionIngress,
+						}
+						if err := e.objs.PolicyMap.Put(&key, &value); err != nil {
+							return fmt.Errorf("failed to update policy map: %w", err)
+						}
 					}
 				}
 			}

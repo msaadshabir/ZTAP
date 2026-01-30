@@ -47,9 +47,21 @@ func TestIptablesRestoreGeneration(t *testing.T) {
 						},
 					},
 					{
+						From: policy.IngressSource{IPBlock: policy.IPBlockSpec{CIDR: "1.2.3.0/24"}},
+						Ports: []policy.PortSpec{
+							{Protocol: "ICMP", Port: 9999},
+						},
+					},
+					{
 						From: policy.IngressSource{IPBlock: policy.IPBlockSpec{CIDR: "2001:db8::1/128"}},
 						Ports: []policy.PortSpec{
 							{Protocol: "TCP", Port: 443},
+						},
+					},
+					{
+						From: policy.IngressSource{IPBlock: policy.IPBlockSpec{CIDR: "2001:db8::/64"}},
+						Ports: []policy.PortSpec{
+							{Protocol: "ICMP", Port: 9999},
 						},
 					},
 				},
@@ -58,7 +70,19 @@ func TestIptablesRestoreGeneration(t *testing.T) {
 						To: policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "8.8.8.8/32"}},
 					},
 					{
+						To: policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "8.8.8.0/24"}},
+						Ports: []policy.PortSpec{
+							{Protocol: "ICMP", Port: 1234},
+						},
+					},
+					{
 						To: policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "2606:4700:4700::1111/128"}},
+					},
+					{
+						To: policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "2606:4700:4700::/48"}},
+						Ports: []policy.PortSpec{
+							{Protocol: "ICMP", Port: 1234},
+						},
 					},
 				},
 			},
@@ -70,14 +94,18 @@ func TestIptablesRestoreGeneration(t *testing.T) {
 	expectedV4 := []string{
 		"*filter",
 		"-A ZTAP-INGRESS -s 1.2.3.4/32 -p tcp --dport 80 -j ACCEPT",
+		"-A ZTAP-INGRESS -s 1.2.3.0/24 -p icmp -j ACCEPT",
 		"-A ZTAP-EGRESS -d 8.8.8.8/32 -j ACCEPT",
+		"-A ZTAP-EGRESS -d 8.8.8.0/24 -p icmp -j ACCEPT",
 		"COMMIT",
 	}
 
 	expectedV6 := []string{
 		"*filter",
 		"-A ZTAP-INGRESS -s 2001:db8::1/128 -p tcp --dport 443 -j ACCEPT",
+		"-A ZTAP-INGRESS -s 2001:db8::/64 -p ipv6-icmp -j ACCEPT",
 		"-A ZTAP-EGRESS -d 2606:4700:4700::1111/128 -j ACCEPT",
+		"-A ZTAP-EGRESS -d 2606:4700:4700::/48 -p ipv6-icmp -j ACCEPT",
 		"COMMIT",
 	}
 

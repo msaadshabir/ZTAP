@@ -19,6 +19,7 @@ const (
 	FWP_UINT32       uint32 = 3
 	FWP_UINT64       uint32 = 4
 	FWP_V4_ADDR_MASK uint32 = 19
+	FWP_V6_ADDR_MASK uint32 = 20
 )
 
 var (
@@ -122,6 +123,12 @@ type fwpValue0 struct {
 type fwpV4AddrMask struct {
 	addr uint32
 	mask uint32
+}
+
+type fwpV6AddrMask struct {
+	addr         [16]byte
+	prefixLength uint8
+	_            [3]byte
 }
 
 // realWFPEngine is the production implementation using fwpuclnt.dll.
@@ -244,13 +251,19 @@ func (e *realWFPEngine) AddFilter(filter *WFPSpec) error {
 	if len(filter.Conditions) > 0 {
 		conditions := make([]fwpmFilterCondition0, len(filter.Conditions))
 		v4MaskCount := 0
+		v6MaskCount := 0
 		for _, c := range filter.Conditions {
 			if _, ok := c.Value.(V4AddrMask); ok {
 				v4MaskCount++
 			}
+			if _, ok := c.Value.(V6AddrMask); ok {
+				v6MaskCount++
+			}
 		}
 		v4Masks := make([]fwpV4AddrMask, v4MaskCount)
+		v6Masks := make([]fwpV6AddrMask, v6MaskCount)
 		v4MaskIdx := 0
+		v6MaskIdx := 0
 
 		for i, c := range filter.Conditions {
 			conditions[i].fieldKey = c.FieldKey.toWindowsGUID()
@@ -264,6 +277,12 @@ func (e *realWFPEngine) AddFilter(filter *WFPSpec) error {
 				ptr := uintptr(unsafe.Pointer(&v4Masks[v4MaskIdx]))
 				*(*uintptr)(unsafe.Pointer(&conditions[i].conditionValue.value[0])) = ptr
 				v4MaskIdx++
+			case V6AddrMask:
+				conditions[i].conditionValue.type_ = FWP_V6_ADDR_MASK
+				v6Masks[v6MaskIdx] = fwpV6AddrMask{addr: v.Addr, prefixLength: v.PrefixLength}
+				ptr := uintptr(unsafe.Pointer(&v6Masks[v6MaskIdx]))
+				*(*uintptr)(unsafe.Pointer(&conditions[i].conditionValue.value[0])) = ptr
+				v6MaskIdx++
 			case uint32:
 				conditions[i].conditionValue.type_ = FWP_UINT32
 				*(*uint32)(unsafe.Pointer(&conditions[i].conditionValue.value[0])) = v

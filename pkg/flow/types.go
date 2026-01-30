@@ -20,9 +20,10 @@ const (
 
 // Protocol constants
 const (
-	ProtocolICMP = 1
-	ProtocolTCP  = 6
-	ProtocolUDP  = 17
+	ProtocolICMP   = 1
+	ProtocolICMPv6 = 58
+	ProtocolTCP    = 6
+	ProtocolUDP    = 17
 )
 
 // FlowEvent represents a network flow event from the eBPF program.
@@ -163,7 +164,7 @@ func protocolToString(proto uint8) string {
 		return "TCP"
 	case ProtocolUDP:
 		return "UDP"
-	case ProtocolICMP:
+	case ProtocolICMP, ProtocolICMPv6:
 		return "ICMP"
 	default:
 		return "UNKNOWN"

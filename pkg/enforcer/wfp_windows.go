@@ -4,6 +4,8 @@ package enforcer
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 
 	"ztap/pkg/logging"
@@ -14,13 +16,63 @@ var (
 	wfpActive   bool
 )
 
+func wfpStrictModeEnabled() bool {
+	return strings.TrimSpace(os.Getenv("ZTAP_WFP_STRICT")) == "1"
+}
+
+func wfpDefaultDenySpecs() []WFPSpec {
+	return []WFPSpec{
+		{
+			Name:        "ZTAP-DefaultDeny-Egress-V4",
+			Description: "Default deny egress (v4)",
+			LayerKey:    LayerALEAuthConnectV4,
+			SublayerKey: ZTAPSublayerGUID,
+			ProviderKey: &ZTAPProviderGUID,
+			Weight:      0,
+			ActionType:  FWP_ACTION_BLOCK,
+		},
+		{
+			Name:        "ZTAP-DefaultDeny-Egress-V6",
+			Description: "Default deny egress (v6)",
+			LayerKey:    LayerALEAuthConnectV6,
+			SublayerKey: ZTAPSublayerGUID,
+			ProviderKey: &ZTAPProviderGUID,
+			Weight:      0,
+			ActionType:  FWP_ACTION_BLOCK,
+		},
+		{
+			Name:        "ZTAP-DefaultDeny-Ingress-V4",
+			Description: "Default deny ingress (v4)",
+			LayerKey:    LayerALEAuthRecvAcceptV4,
+			SublayerKey: ZTAPSublayerGUID,
+			ProviderKey: &ZTAPProviderGUID,
+			Weight:      0,
+			ActionType:  FWP_ACTION_BLOCK,
+		},
+		{
+			Name:        "ZTAP-DefaultDeny-Ingress-V6",
+			Description: "Default deny ingress (v6)",
+			LayerKey:    LayerALEAuthRecvAcceptV6,
+			SublayerKey: ZTAPSublayerGUID,
+			ProviderKey: &ZTAPProviderGUID,
+			Weight:      0,
+			ActionType:  FWP_ACTION_BLOCK,
+		},
+	}
+}
+
 // EnforceWithWFP applies policies using Windows Filtering Platform.
 func EnforceWithWFP(opts EnforcementOptions) error {
 	activeWFPMu.Lock()
 	defer activeWFPMu.Unlock()
 
+	strict := wfpStrictModeEnabled()
+
 	if opts.DryRun {
 		logging.Info("[DRY-RUN] WFP: simulating policy translation and transaction", nil)
+		if strict {
+			logging.Info("[DRY-RUN] WFP: strict default-deny is enabled (ZTAP_WFP_STRICT=1)", nil)
+		}
 		for _, p := range opts.Policies {
 			safeName := sanitizeForLog(p.Metadata.Name)
 			specs, err := TranslatePolicyToWFP(p)
@@ -60,7 +112,9 @@ func EnforceWithWFP(opts EnforcementOptions) error {
 		logging.Warnf("failed to cleanup old WFP filters: %v", err)
 	}
 
-	// Translate and add filters
+	// Translate policies first so strict mode doesn't brick the host
+	// if all translation fails.
+	allSpecs := make([]WFPSpec, 0, len(opts.Policies))
 	for _, p := range opts.Policies {
 		safeName := sanitizeForLog(p.Metadata.Name)
 		specs, err := TranslatePolicyToWFP(p)
@@ -68,12 +122,22 @@ func EnforceWithWFP(opts EnforcementOptions) error {
 			logging.Warnf("skipping policy '%s' due to translation error: %v", safeName, err)
 			continue
 		}
+		allSpecs = append(allSpecs, specs...)
+	}
 
-		for _, spec := range specs {
+	if strict && len(allSpecs) > 0 {
+		for _, spec := range wfpDefaultDenySpecs() {
 			if err := engine.AddFilter(&spec); err != nil {
 				engine.AbortTransaction()
-				return fmt.Errorf("failed to add WFP filter for policy '%s': %w", safeName, err)
+				return fmt.Errorf("failed to add WFP default deny filter: %w", err)
 			}
+		}
+	}
+
+	for _, spec := range allSpecs {
+		if err := engine.AddFilter(&spec); err != nil {
+			engine.AbortTransaction()
+			return fmt.Errorf("failed to add WFP filter: %w", err)
 		}
 	}
 

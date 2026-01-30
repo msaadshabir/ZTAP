@@ -3,6 +3,7 @@
 package enforcer
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strings"
@@ -37,12 +38,20 @@ var (
 	}
 
 	LayerALEAuthConnectV4 = GUID{
-		Data1: 0xc38d3328, Data2: 0x5c62, Data3: 0x4a39,
-		Data4: [8]byte{0x83, 0x0e, 0xcd, 0x39, 0xda, 0x39, 0x05, 0xfb},
+		Data1: 0xc38d57d1, Data2: 0x05a7, Data3: 0x4c33,
+		Data4: [8]byte{0x90, 0x4f, 0x7f, 0xbc, 0xee, 0xe6, 0x0e, 0x82},
+	}
+	LayerALEAuthConnectV6 = GUID{
+		Data1: 0x4a72393b, Data2: 0x319f, Data3: 0x44bc,
+		Data4: [8]byte{0x84, 0xc3, 0xba, 0x54, 0xdc, 0xb3, 0xb6, 0xb4},
 	}
 	LayerALEAuthRecvAcceptV4 = GUID{
-		Data1: 0xec9038a3, Data2: 0x647f, Data3: 0x40f3,
-		Data4: [8]byte{0xa0, 0x04, 0x1c, 0x15, 0x0b, 0x31, 0xdb, 0x0a},
+		Data1: 0xe1cd9fe7, Data2: 0xf4b5, Data3: 0x4273,
+		Data4: [8]byte{0x96, 0xc0, 0x59, 0x2e, 0x48, 0x7b, 0x86, 0x50},
+	}
+	LayerALEAuthRecvAcceptV6 = GUID{
+		Data1: 0xa3b42c97, Data2: 0x9f04, Data3: 0x4672,
+		Data4: [8]byte{0xb8, 0x7e, 0xce, 0xe9, 0xc4, 0x83, 0x25, 0x7f},
 	}
 
 	ConditionIPRemoteAddress = GUID{
@@ -105,6 +114,13 @@ type V4AddrMask struct {
 	Mask uint32
 }
 
+// V6AddrMask represents an IPv6 address + prefix length used by WFP conditions.
+// For a single IP match, use PrefixLength = 128.
+type V6AddrMask struct {
+	Addr         [16]byte
+	PrefixLength uint8
+}
+
 // TranslatePolicyToWFP converts a ZTAP policy to a set of WFP filter specifications.
 func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 	var specs []WFPSpec
@@ -117,26 +133,46 @@ func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 				return nil, fmt.Errorf("invalid egress CIDR %s: %w", egress.To.IPBlock.CIDR, err)
 			}
 			ones, bits := ipnet.Mask.Size()
-			if bits != 32 || ones != 32 {
-				return nil, fmt.Errorf("egress CIDR %s is not supported on windows yet (only /32)", egress.To.IPBlock.CIDR)
+			isIPv6 := ip.To4() == nil
+			layerKey := LayerALEAuthConnectV4
+			var addrCond WFPCondition
+			if isIPv6 {
+				layerKey = LayerALEAuthConnectV6
+				var addr [16]byte
+				copy(addr[:], ipnet.IP.To16())
+				addrCond = WFPCondition{FieldKey: ConditionIPRemoteAddress, MatchType: FWP_MATCH_EQUAL, Value: V6AddrMask{Addr: addr, PrefixLength: uint8(ones)}}
+			} else {
+				if bits != 32 {
+					return nil, fmt.Errorf("invalid egress CIDR %s", egress.To.IPBlock.CIDR)
+				}
+				mask := ipMaskToUint32(ipnet.Mask)
+				destIP := ipToUint32(ipnet.IP.To4())
+				addrCond = WFPCondition{FieldKey: ConditionIPRemoteAddress, MatchType: FWP_MATCH_EQUAL, Value: V4AddrMask{Addr: destIP, Mask: mask}}
 			}
 
-			destIP := ipToUint32(ip.To4())
-
 			for _, port := range egress.Ports {
+				proto := strings.ToUpper(port.Protocol)
+				isICMP := proto == "ICMP"
+				protoNum := protocolToNum(port.Protocol)
+				if isIPv6 && isICMP {
+					protoNum = 58
+				}
+
+				conds := []WFPCondition{addrCond}
+				if !isICMP {
+					conds = append(conds, WFPCondition{FieldKey: ConditionIPRemotePort, MatchType: FWP_MATCH_EQUAL, Value: uint16(port.Port)})
+				}
+				conds = append(conds, WFPCondition{FieldKey: ConditionIPProtocol, MatchType: FWP_MATCH_EQUAL, Value: protoNum})
+
 				spec := WFPSpec{
 					Name:        fmt.Sprintf("ZTAP-Egress-%s", p.Metadata.Name),
 					Description: fmt.Sprintf("Allow egress to %s:%d", egress.To.IPBlock.CIDR, port.Port),
-					LayerKey:    LayerALEAuthConnectV4,
+					LayerKey:    layerKey,
 					SublayerKey: ZTAPSublayerGUID,
 					ProviderKey: &ZTAPProviderGUID,
 					Weight:      100,
 					ActionType:  FWP_ACTION_PERMIT,
-					Conditions: []WFPCondition{
-						{FieldKey: ConditionIPRemoteAddress, MatchType: FWP_MATCH_EQUAL, Value: V4AddrMask{Addr: destIP, Mask: 0xffffffff}},
-						{FieldKey: ConditionIPRemotePort, MatchType: FWP_MATCH_EQUAL, Value: uint16(port.Port)},
-						{FieldKey: ConditionIPProtocol, MatchType: FWP_MATCH_EQUAL, Value: protocolToNum(port.Protocol)},
-					},
+					Conditions:  conds,
 				}
 				specs = append(specs, spec)
 			}
@@ -151,26 +187,46 @@ func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 				return nil, fmt.Errorf("invalid ingress CIDR %s: %w", ingress.From.IPBlock.CIDR, err)
 			}
 			ones, bits := ipnet.Mask.Size()
-			if bits != 32 || ones != 32 {
-				return nil, fmt.Errorf("ingress CIDR %s is not supported on windows yet (only /32)", ingress.From.IPBlock.CIDR)
+			isIPv6 := ip.To4() == nil
+			layerKey := LayerALEAuthRecvAcceptV4
+			var addrCond WFPCondition
+			if isIPv6 {
+				layerKey = LayerALEAuthRecvAcceptV6
+				var addr [16]byte
+				copy(addr[:], ipnet.IP.To16())
+				addrCond = WFPCondition{FieldKey: ConditionIPRemoteAddress, MatchType: FWP_MATCH_EQUAL, Value: V6AddrMask{Addr: addr, PrefixLength: uint8(ones)}}
+			} else {
+				if bits != 32 {
+					return nil, fmt.Errorf("invalid ingress CIDR %s", ingress.From.IPBlock.CIDR)
+				}
+				mask := ipMaskToUint32(ipnet.Mask)
+				srcIP := ipToUint32(ipnet.IP.To4())
+				addrCond = WFPCondition{FieldKey: ConditionIPRemoteAddress, MatchType: FWP_MATCH_EQUAL, Value: V4AddrMask{Addr: srcIP, Mask: mask}}
 			}
 
-			srcIP := ipToUint32(ip.To4())
-
 			for _, port := range ingress.Ports {
+				proto := strings.ToUpper(port.Protocol)
+				isICMP := proto == "ICMP"
+				protoNum := protocolToNum(port.Protocol)
+				if isIPv6 && isICMP {
+					protoNum = 58
+				}
+
+				conds := []WFPCondition{addrCond}
+				if !isICMP {
+					conds = append(conds, WFPCondition{FieldKey: ConditionIPLocalPort, MatchType: FWP_MATCH_EQUAL, Value: uint16(port.Port)})
+				}
+				conds = append(conds, WFPCondition{FieldKey: ConditionIPProtocol, MatchType: FWP_MATCH_EQUAL, Value: protoNum})
+
 				spec := WFPSpec{
 					Name:        fmt.Sprintf("ZTAP-Ingress-%s", p.Metadata.Name),
 					Description: fmt.Sprintf("Allow ingress from %s to port %d", ingress.From.IPBlock.CIDR, port.Port),
-					LayerKey:    LayerALEAuthRecvAcceptV4,
+					LayerKey:    layerKey,
 					SublayerKey: ZTAPSublayerGUID,
 					ProviderKey: &ZTAPProviderGUID,
 					Weight:      100,
 					ActionType:  FWP_ACTION_PERMIT,
-					Conditions: []WFPCondition{
-						{FieldKey: ConditionIPRemoteAddress, MatchType: FWP_MATCH_EQUAL, Value: V4AddrMask{Addr: srcIP, Mask: 0xffffffff}},
-						{FieldKey: ConditionIPLocalPort, MatchType: FWP_MATCH_EQUAL, Value: uint16(port.Port)},
-						{FieldKey: ConditionIPProtocol, MatchType: FWP_MATCH_EQUAL, Value: protocolToNum(port.Protocol)},
-					},
+					Conditions:  conds,
 				}
 				specs = append(specs, spec)
 			}
@@ -185,7 +241,17 @@ func ipToUint32(ip net.IP) uint32 {
 		return 0
 	}
 	ip = ip.To4()
-	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+	if ip == nil {
+		return 0
+	}
+	return binary.LittleEndian.Uint32(ip)
+}
+
+func ipMaskToUint32(mask net.IPMask) uint32 {
+	if len(mask) != 4 {
+		return 0
+	}
+	return binary.LittleEndian.Uint32(mask)
 }
 
 func protocolToNum(proto string) uint8 {

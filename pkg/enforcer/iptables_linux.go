@@ -182,6 +182,13 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 					if proto == "" {
 						proto = "tcp"
 					}
+					if proto == "icmp" {
+						if target == &v6 {
+							proto = "ipv6-icmp"
+						}
+						_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -p %s -j ACCEPT\n", cidr, proto)
+						continue
+					}
 					_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port)
 				}
 			}
@@ -206,6 +213,13 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 					proto := strings.ToLower(port.Protocol)
 					if proto == "" {
 						proto = "tcp"
+					}
+					if proto == "icmp" {
+						if target == &v6 {
+							proto = "ipv6-icmp"
+						}
+						_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -p %s -j ACCEPT\n", cidr, proto)
+						continue
 					}
 					_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port)
 				}

@@ -55,19 +55,34 @@ func TestEBPFIntegrationLoadAndAttach(t *testing.T) {
 		t.Fatalf("failed to attach program: %v", err)
 	}
 
-	targetIP := net.ParseIP("10.1.2.0").To4()
-	if targetIP == nil {
-		t.Fatal("failed to parse target IPv4 address")
+	_, ipnet, err := net.ParseCIDR("10.1.2.0/24")
+	if err != nil {
+		t.Fatalf("parse cidr: %v", err)
 	}
+	mode := detectPolicyMapMode(enf.objs.PolicyMap)
+	protocol := protocolToNum("TCP")
 
-	key := policyKey{
-		IP:        ipToUint32(targetIP),
-		Port:      443,
-		Protocol:  protocolToNum("TCP"),
-		Direction: DirectionEgress,
+	var lookupKey any
+	if mode == policyMapModeLPMTrie {
+		ones, _ := ipnet.Mask.Size()
+		var ipBytes [4]byte
+		copy(ipBytes[:], ipnet.IP.To4())
+		lookupKey = &policyKeyLPM{
+			PrefixLen: uint32(lpmFixedBits + ones),
+			Meta:      packLPMMeta(DirectionEgress, protocol, 443),
+			CgroupID:  0,
+			IP:        ipBytes,
+		}
+	} else {
+		lookupKey = &policyKey{
+			IP:        ipToUint32(ipnet.IP.To4()),
+			Port:      443,
+			Protocol:  protocol,
+			Direction: DirectionEgress,
+		}
 	}
 	var value policyValue
-	if err := enf.objs.PolicyMap.Lookup(&key, &value); err != nil {
+	if err := enf.objs.PolicyMap.Lookup(lookupKey, &value); err != nil {
 		t.Fatalf("failed to lookup policy map: %v", err)
 	}
 
@@ -113,15 +128,35 @@ func TestEBPFIntegrationCgroupScopedMapKey(t *testing.T) {
 		t.Fatalf("failed to attach program: %v", err)
 	}
 
-	key := policyKey{
-		CgroupID:  cgid,
-		IP:        ipToUint32(net.ParseIP("10.1.2.0").To4()),
-		Port:      443,
-		Protocol:  protocolToNum("TCP"),
-		Direction: DirectionEgress,
+	mode := detectPolicyMapMode(enf.objs.PolicyMap)
+	protocol := protocolToNum("TCP")
+	_, ipnet, err := net.ParseCIDR("10.1.2.0/24")
+	if err != nil {
+		t.Fatalf("parse cidr: %v", err)
+	}
+
+	var lookupKey any
+	if mode == policyMapModeLPMTrie {
+		ones, _ := ipnet.Mask.Size()
+		var ipBytes [4]byte
+		copy(ipBytes[:], ipnet.IP.To4())
+		lookupKey = &policyKeyLPM{
+			PrefixLen: uint32(lpmFixedBits + ones),
+			Meta:      packLPMMeta(DirectionEgress, protocol, 443),
+			CgroupID:  cgid,
+			IP:        ipBytes,
+		}
+	} else {
+		lookupKey = &policyKey{
+			CgroupID:  cgid,
+			IP:        ipToUint32(ipnet.IP.To4()),
+			Port:      443,
+			Protocol:  protocol,
+			Direction: DirectionEgress,
+		}
 	}
 	var value policyValue
-	if err := enf.objs.PolicyMap.Lookup(&key, &value); err != nil {
+	if err := enf.objs.PolicyMap.Lookup(lookupKey, &value); err != nil {
 		t.Fatalf("failed to lookup policy map: %v", err)
 	}
 	if value.Action != 1 {
@@ -182,17 +217,34 @@ func TestEBPFIntegrationCgroupIsolationBetweenCgroups(t *testing.T) {
 		t.Fatalf("failed to attach program: %v", err)
 	}
 
-	keyA := policyKey{CgroupID: cgidA, IP: ipToUint32(net.ParseIP("10.1.2.0").To4()), Port: 443, Protocol: protocolToNum("TCP"), Direction: DirectionEgress}
-	keyB := policyKey{CgroupID: cgidB, IP: ipToUint32(net.ParseIP("10.1.2.0").To4()), Port: 443, Protocol: protocolToNum("TCP"), Direction: DirectionEgress}
+	mode := detectPolicyMapMode(enf.objs.PolicyMap)
+	protocol := protocolToNum("TCP")
+	_, ipnet, err := net.ParseCIDR("10.1.2.0/24")
+	if err != nil {
+		t.Fatalf("parse cidr: %v", err)
+	}
+
+	var keyA any
+	var keyB any
+	if mode == policyMapModeLPMTrie {
+		ones, _ := ipnet.Mask.Size()
+		var ipBytes [4]byte
+		copy(ipBytes[:], ipnet.IP.To4())
+		keyA = &policyKeyLPM{PrefixLen: uint32(lpmFixedBits + ones), Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: cgidA, IP: ipBytes}
+		keyB = &policyKeyLPM{PrefixLen: uint32(lpmFixedBits + ones), Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: cgidB, IP: ipBytes}
+	} else {
+		keyA = &policyKey{CgroupID: cgidA, IP: ipToUint32(ipnet.IP.To4()), Port: 443, Protocol: protocol, Direction: DirectionEgress}
+		keyB = &policyKey{CgroupID: cgidB, IP: ipToUint32(ipnet.IP.To4()), Port: 443, Protocol: protocol, Direction: DirectionEgress}
+	}
 
 	var value policyValue
-	if err := enf.objs.PolicyMap.Lookup(&keyA, &value); err != nil {
+	if err := enf.objs.PolicyMap.Lookup(keyA, &value); err != nil {
 		t.Fatalf("failed to lookup policy map for cgroup A: %v", err)
 	}
 	if value.Action != 1 {
 		t.Fatalf("expected allow for cgroup A, got %d", value.Action)
 	}
-	if err := enf.objs.PolicyMap.Lookup(&keyB, &value); err == nil {
+	if err := enf.objs.PolicyMap.Lookup(keyB, &value); err == nil {
 		t.Fatalf("expected policy map lookup for cgroup B to fail, but it succeeded")
 	}
 }
@@ -264,6 +316,54 @@ func TestEBPFIntegrationSelectedOnlySemantics(t *testing.T) {
 	evt = readFlowEvent(t, reader, uint16(denyPort), flow.ProtocolUDP, flow.DirectionEgress, 2*time.Second)
 	if evt.Action != flow.ActionAllowed {
 		t.Fatalf("expected allowed for non-enforced cgroup on missing rule, got %d", evt.Action)
+	}
+}
+
+func TestEBPFIntegrationCIDREndToEndEgress(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("integration test only runs on Linux")
+	}
+	if os.Geteuid() != 0 {
+		t.Skip("requires root privileges; re-run with sudo or CAP_BPF + CAP_NET_ADMIN")
+	}
+
+	compileTestBPF(t)
+
+	enf, err := NewEBPFEnforcer()
+	if err != nil {
+		t.Fatalf("failed to create enforcer: %v", err)
+	}
+	t.Cleanup(func() { _ = enf.Close() })
+
+	allowPort := 31011
+	policies := []policy.NetworkPolicy{allowUDPPolicy("allow-loopback", "127.0.0.0/24", allowPort)}
+	if err := enf.LoadPolicies(policies); err != nil {
+		t.Fatalf("failed to load policies: %v", err)
+	}
+
+	cgroupPath := createTestCgroup(t)
+	if err := enf.Attach(cgroupPath); err != nil {
+		t.Fatalf("failed to attach program: %v", err)
+	}
+
+	reader, err := ringbuf.NewReader(enf.objs.FlowEvents)
+	if err != nil {
+		t.Fatalf("failed to create ringbuf reader: %v", err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+
+	// In-range destination should be allowed.
+	runUDPSendHelperInCgroup(t, cgroupPath, fmt.Sprintf("127.0.0.2:%d", allowPort))
+	evt := readFlowEvent(t, reader, uint16(allowPort), flow.ProtocolUDP, flow.DirectionEgress, 2*time.Second)
+	if evt.Action != flow.ActionAllowed {
+		t.Fatalf("expected allowed for in-range CIDR destination, got %d", evt.Action)
+	}
+
+	// Out-of-range destination should be blocked (same port, different /24).
+	runUDPSendHelperInCgroup(t, cgroupPath, fmt.Sprintf("127.0.1.2:%d", allowPort))
+	evt = readFlowEvent(t, reader, uint16(allowPort), flow.ProtocolUDP, flow.DirectionEgress, 2*time.Second)
+	if evt.Action != flow.ActionBlocked {
+		t.Fatalf("expected blocked for out-of-range CIDR destination, got %d", evt.Action)
 	}
 }
 
@@ -548,14 +648,24 @@ func TestEBPFGracefulReload(t *testing.T) {
 	}
 
 	// Step 3: Verify the map content of the new enforcer
-	key := policyKey{
-		IP:        ipToUint32(net.ParseIP("10.0.0.2")),
-		Port:      443,
-		Protocol:  protocolToNum("TCP"),
-		Direction: DirectionEgress,
+	mode := detectPolicyMapMode(enf2.objs.PolicyMap)
+	protocol := protocolToNum("TCP")
+	_, ipnetNew, err := net.ParseCIDR("10.0.0.2/32")
+	if err != nil {
+		t.Fatalf("parse cidr: %v", err)
+	}
+
+	var key any
+	if mode == policyMapModeLPMTrie {
+		ones, _ := ipnetNew.Mask.Size()
+		var ipBytes [4]byte
+		copy(ipBytes[:], ipnetNew.IP.To4())
+		key = &policyKeyLPM{PrefixLen: uint32(lpmFixedBits + ones), Meta: packLPMMeta(DirectionEgress, protocol, 443), CgroupID: 0, IP: ipBytes}
+	} else {
+		key = &policyKey{IP: ipToUint32(ipnetNew.IP.To4()), Port: 443, Protocol: protocol, Direction: DirectionEgress}
 	}
 	var val policyValue
-	if err := enf2.objs.PolicyMap.Lookup(&key, &val); err != nil {
+	if err := enf2.objs.PolicyMap.Lookup(key, &val); err != nil {
 		t.Fatalf("New policy rule not found in map: %v", err)
 	}
 	if val.Action != 1 {
@@ -563,13 +673,20 @@ func TestEBPFGracefulReload(t *testing.T) {
 	}
 
 	// Verify old rule is NOT in the new map
-	oldKey := policyKey{
-		IP:        ipToUint32(net.ParseIP("10.0.0.1")),
-		Port:      80,
-		Protocol:  protocolToNum("TCP"),
-		Direction: DirectionEgress,
+	_, ipnetOld, err := net.ParseCIDR("10.0.0.1/32")
+	if err != nil {
+		t.Fatalf("parse cidr: %v", err)
 	}
-	if err := enf2.objs.PolicyMap.Lookup(&oldKey, &val); err == nil {
+	var oldKey any
+	if mode == policyMapModeLPMTrie {
+		ones, _ := ipnetOld.Mask.Size()
+		var ipBytes [4]byte
+		copy(ipBytes[:], ipnetOld.IP.To4())
+		oldKey = &policyKeyLPM{PrefixLen: uint32(lpmFixedBits + ones), Meta: packLPMMeta(DirectionEgress, protocol, 80), CgroupID: 0, IP: ipBytes}
+	} else {
+		oldKey = &policyKey{IP: ipToUint32(ipnetOld.IP.To4()), Port: 80, Protocol: protocol, Direction: DirectionEgress}
+	}
+	if err := enf2.objs.PolicyMap.Lookup(oldKey, &val); err == nil {
 		t.Error("Old policy rule still exists in the new map")
 	}
 }

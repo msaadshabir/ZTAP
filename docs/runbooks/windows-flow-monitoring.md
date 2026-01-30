@@ -60,8 +60,8 @@ powershell -NoProfile -Command "
 ### 3) Create a Windows-compatible policy
 
 Create a policy YAML that matches Windows WFP translation constraints:
-- `ipBlock.cidr` must be a **/32** today
-- `protocol` must be `TCP`/`UDP`/`ICMP`
+- `ipBlock.cidr` can be any valid IPv4/IPv6 CIDR; for this local test, use a host CIDR (`/32` for IPv4 or `/128` for IPv6).
+- `protocol` must be `TCP`/`UDP`/`ICMP` (for `ICMP`, the policy `port` is ignored during enforcement).
 
 Example (`policy-windows-local-egress.yaml`):
 

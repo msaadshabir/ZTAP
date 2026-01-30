@@ -11,7 +11,11 @@ typedef unsigned long long __u64;
 // BPF map types
 #define BPF_MAP_TYPE_HASH 1
 #define BPF_MAP_TYPE_ARRAY 2
+#define BPF_MAP_TYPE_LPM_TRIE 11
 #define BPF_MAP_TYPE_RINGBUF 27
+
+// BPF map flags
+#define BPF_F_NO_PREALLOC 1
 
 // BPF constants
 #define ETH_P_IP 0x0800
@@ -34,6 +38,8 @@ static void (*bpf_ringbuf_discard)(void *data, __u64 flags) = (void *)133;
 // Byte order conversion helpers (inline, not actual BPF helpers)
 #define bpf_htons(x) __builtin_bswap16(x)
 #define bpf_ntohs(x) __builtin_bswap16(x)
+#define bpf_htonl(x) __builtin_bswap32(x)
+#define bpf_ntohl(x) __builtin_bswap32(x)
 
 // Compiler directives
 #define __always_inline inline __attribute__((always_inline))
@@ -120,25 +126,28 @@ struct __sk_buff
     __u32 data_end;
 };
 
-// Policy key structure (must match Go struct)
-// Direction: 0 = egress (outbound), 1 = ingress (inbound)
+// Policy key structure for IPv4 LPM trie (must match Go struct policyKeyLPM).
+//
+// LPM keys begin with prefixlen (bits), followed by:
+//   meta(32) || cgroup_id(64) || ip(32)
+//
+// meta packs: (direction << 24) | (protocol << 16) | port
 struct policy_key
 {
+    __u32 prefixlen;
+    __u32 meta;
     __u64 cgroup_id;
-    __u32 ip;   // dest_ip for egress, src_ip for ingress
-    __u16 port; // dest_port for egress, dest_port for ingress (the port being accessed)
-    __u8 protocol;
-    __u8 direction; // 0 = egress, 1 = ingress
+    __u8 ip[4];
+    __u8 _padding[4];
 };
 
-// Policy key structure for IPv6
+// Policy key structure for IPv6 LPM trie (must match Go struct policyKeyV6LPM).
 struct policy_key_v6
 {
+    __u32 prefixlen;
+    __u32 meta;
     __u64 cgroup_id;
-    __u32 ip[4]; // dest_ip for egress, src_ip for ingress
-    __u16 port;  // dest_port for egress, dest_port for ingress
-    __u8 protocol;
-    __u8 direction; // 0 = egress, 1 = ingress
+    __u8 ip[16];
 };
 
 // Policy value structure (must match Go struct)
@@ -161,16 +170,18 @@ struct enforcement_config
 // Modern cilium/ebpf expects map definitions in .maps section with BTF type info
 struct
 {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
     __uint(max_entries, 10000);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
     __type(key, struct policy_key);
     __type(value, struct policy_value);
 } policy_map SEC(".maps");
 
 struct
 {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
     __uint(max_entries, 10000);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
     __type(key, struct policy_key_v6);
     __type(value, struct policy_value);
 } policy_map_v6 SEC(".maps");
@@ -371,6 +382,12 @@ static __always_inline int parse_ipv6(struct __sk_buff *skb, __u32 *src_ip, __u3
 #define DIRECTION_EGRESS 0
 #define DIRECTION_INGRESS 1
 
+#define LPM_FIXED_BITS 96
+#define LPM_LOOKUP_PREFIXLEN_V4 (LPM_FIXED_BITS + 32)
+#define LPM_LOOKUP_PREFIXLEN_V6 (LPM_FIXED_BITS + 128)
+
+#define PACK_META(direction, protocol, port) (((__u32)(direction) << 24) | ((__u32)(protocol) << 16) | (__u32)(port))
+
 // Main eBPF program for egress filtering
 SEC("cgroup_skb/egress")
 int filter_egress(struct __sk_buff *skb)
@@ -412,13 +429,15 @@ int filter_egress(struct __sk_buff *skb)
         }
 
         // Lookup policy in map (egress uses destination IP/port)
+        __u8 lookup_proto = protocol;
+        __u32 meta = PACK_META(DIRECTION_EGRESS, lookup_proto, dest_port);
+        __u32 ip_host = bpf_ntohl(dest_ip[0]);
         struct policy_key key = {
+            .prefixlen = LPM_LOOKUP_PREFIXLEN_V4,
+            .meta = meta,
             .cgroup_id = cgid,
-            .ip = dest_ip[0],
-            .port = dest_port,
-            .protocol = protocol,
-            .direction = DIRECTION_EGRESS,
         };
+        __builtin_memcpy(key.ip, &ip_host, sizeof(key.ip));
 
         struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
         if (!value)
@@ -460,14 +479,20 @@ int filter_egress(struct __sk_buff *skb)
             }
         }
 
+        __u8 lookup_proto = protocol;
+        if (lookup_proto == IPPROTO_ICMP)
+            lookup_proto = IPPROTO_ICMPV6;
+        __u32 meta = PACK_META(DIRECTION_EGRESS, lookup_proto, dest_port);
         struct policy_key_v6 key = {
+            .prefixlen = LPM_LOOKUP_PREFIXLEN_V6,
+            .meta = meta,
             .cgroup_id = cgid,
-            .port = dest_port,
-            .protocol = protocol,
-            .direction = DIRECTION_EGRESS,
         };
         for (int i = 0; i < 4; i++)
-            key.ip[i] = dest_ip[i];
+        {
+            __u32 part = bpf_ntohl(dest_ip[i]);
+            __builtin_memcpy(&key.ip[i * 4], &part, sizeof(part));
+        }
 
         struct policy_value *value = bpf_map_lookup_elem(&policy_map_v6, &key);
         if (!value)
@@ -539,13 +564,15 @@ int filter_ingress(struct __sk_buff *skb)
         }
 
         // Lookup policy in map (ingress uses source IP and destination port)
+        __u8 lookup_proto = protocol;
+        __u32 meta = PACK_META(DIRECTION_INGRESS, lookup_proto, dest_port);
+        __u32 ip_host = bpf_ntohl(src_ip[0]);
         struct policy_key key = {
+            .prefixlen = LPM_LOOKUP_PREFIXLEN_V4,
+            .meta = meta,
             .cgroup_id = cgid,
-            .ip = src_ip[0],
-            .port = dest_port,
-            .protocol = protocol,
-            .direction = DIRECTION_INGRESS,
         };
+        __builtin_memcpy(key.ip, &ip_host, sizeof(key.ip));
 
         struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
         if (!value)
@@ -587,14 +614,20 @@ int filter_ingress(struct __sk_buff *skb)
             }
         }
 
+        __u8 lookup_proto = protocol;
+        if (lookup_proto == IPPROTO_ICMP)
+            lookup_proto = IPPROTO_ICMPV6;
+        __u32 meta = PACK_META(DIRECTION_INGRESS, lookup_proto, dest_port);
         struct policy_key_v6 key = {
+            .prefixlen = LPM_LOOKUP_PREFIXLEN_V6,
+            .meta = meta,
             .cgroup_id = cgid,
-            .port = dest_port,
-            .protocol = protocol,
-            .direction = DIRECTION_INGRESS,
         };
         for (int i = 0; i < 4; i++)
-            key.ip[i] = src_ip[i];
+        {
+            __u32 part = bpf_ntohl(src_ip[i]);
+            __builtin_memcpy(&key.ip[i * 4], &part, sizeof(part));
+        }
 
         struct policy_value *value = bpf_map_lookup_elem(&policy_map_v6, &key);
         if (!value)
@@ -638,13 +671,14 @@ int filter_egress_permissive(struct __sk_buff *skb)
         return 1;
     }
 
+    __u32 meta = PACK_META(DIRECTION_EGRESS, protocol, dest_port);
+    __u32 ip_host = bpf_ntohl(dest_ip);
     struct policy_key key = {
+        .prefixlen = LPM_LOOKUP_PREFIXLEN_V4,
+        .meta = meta,
         .cgroup_id = bpf_get_current_cgroup_id(),
-        .ip = dest_ip,
-        .port = dest_port,
-        .protocol = protocol,
-        .direction = DIRECTION_EGRESS,
     };
+    __builtin_memcpy(key.ip, &ip_host, sizeof(key.ip));
 
     struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
     if (!value)
@@ -675,13 +709,14 @@ int filter_ingress_permissive(struct __sk_buff *skb)
         return 1;
     }
 
+    __u32 meta = PACK_META(DIRECTION_INGRESS, protocol, dest_port);
+    __u32 ip_host = bpf_ntohl(src_ip);
     struct policy_key key = {
+        .prefixlen = LPM_LOOKUP_PREFIXLEN_V4,
+        .meta = meta,
         .cgroup_id = bpf_get_current_cgroup_id(),
-        .ip = src_ip,
-        .port = dest_port,
-        .protocol = protocol,
-        .direction = DIRECTION_INGRESS,
     };
+    __builtin_memcpy(key.ip, &ip_host, sizeof(key.ip));
 
     struct policy_value *value = bpf_map_lookup_elem(&policy_map, &key);
     if (!value)

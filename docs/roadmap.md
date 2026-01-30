@@ -41,10 +41,48 @@
 - Pre-compiled eBPF binaries (built with bpf2go)
 - **Health/readiness probes** - REST `GET /healthz` (liveness) and `GET /readyz` (readiness); gRPC exposes standard `grpc.health.v1.Health` (`Check`, `Watch`)
 - **Policy dry-run mode** - `ztap enforce --dry-run` to preview rules without applying
-- **IPv6 support** - Extend eBPF and iptables enforcers to handle IPv6 CIDRs
+- **IPv6 support** - Extend eBPF, iptables, and Windows WFP enforcers to handle IPv6 CIDRs
+- **CIDR + ICMP parity** - Support arbitrary CIDRs and ICMP/ICMPv6 consistently across Linux (eBPF/iptables) and Windows (WFP)
 - **Graceful policy reload** - Update eBPF policies without dropping active connections via atomic `bpf_link` updates
 - **Certificate-based authentication** - mTLS client authentication for API access (implemented for REST + gRPC; optional gate that still uses bearer-token RBAC on top)
 - **Namespace/tenant isolation** - Multi-tenant policy scoping
 - **Compliance report generation** - PCI-DSS, SOC2, HIPAA policy mapping exports
 
 ## Planned
+
+### Enforcement & Policy Support
+- Improve label-based enforcement outside Kubernetes agent mode (automatic selector resolution and re-resolution over time).
+- Extend the policy spec toward Kubernetes NetworkPolicy parity (e.g., namespaceSelector, matchExpressions, ipBlock.except, named ports / port ranges).
+
+### Kubernetes Packaging
+
+- Ship a complete, production-ready Kubernetes install bundle (RBAC + agent DaemonSet + operator) and add dedicated unit tests for the operator reconcile loop.
+
+### Cloud Integrations
+
+- Add first-class CLI workflows for AWS Security Group sync (and inventory-based label resolution), and expand `ztap status` coverage for Azure/GCP.
+
+### Backup/Restore & Management Plane
+
+- Implement full backup/restore coverage (policies: current + revisions, discovery snapshot, effective config) instead of best-effort partial restores.
+- Expand REST/gRPC APIs beyond the current minimal surface (policy CRUD/history, user/role management, cluster operations).
+
+### Cluster (Production)
+
+- Add an etcd-backed PolicySync backend (store current policy + revisions in etcd; real multi-node distribution) and wire the CLI/runtime to use it instead of in-memory-only sync.
+
+### Runtime / Daemonization
+
+- Provide a long-running daemon/service mode (systemd/launchd/Windows service) so enforcement and cluster coordination survive process exits/reboots.
+
+### macOS pf Hardening
+
+- Make pf enforcement production-grade (apply/reload via pfctl, safe anchor management, and clean teardown/uninstall without leaving pf.conf modifications behind).
+
+### Audit Log Hardening
+
+- Strengthen audit log integrity guarantees beyond hash chaining (detect truncation, add HMAC/signing, and optionally support external anchoring or remote append-only sinks).
+
+### Project Hygiene (Security Tooling)
+
+- Add `SECURITY.md` (vulnerability reporting + supported versions), plus CONTRIBUTING / Code of Conduct / CHANGELOG for maintainability.

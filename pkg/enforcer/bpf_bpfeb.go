@@ -8,19 +8,36 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"structs"
 
 	"github.com/cilium/ebpf"
 )
 
+type bpfEnforcementConfig struct {
+	_            structs.HostLayout
+	SelectedOnly uint8
+	Padding      [3]uint8
+}
+
 type bpfPolicyKey struct {
+	_         structs.HostLayout
+	Prefixlen uint32
+	Meta      uint32
 	CgroupId  uint64
-	Ip        uint32
-	Port      uint16
-	Protocol  uint8
-	Direction uint8
+	Ip        [4]uint8
+	Padding   [4]uint8
+}
+
+type bpfPolicyKeyV6 struct {
+	_         structs.HostLayout
+	Prefixlen uint32
+	Meta      uint32
+	CgroupId  uint64
+	Ip        [16]uint8
 }
 
 type bpfPolicyValue struct {
+	_       structs.HostLayout
 	Action  uint8
 	Padding [3]uint8
 }
@@ -77,8 +94,11 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	FlowEvents *ebpf.MapSpec `ebpf:"flow_events"`
-	PolicyMap  *ebpf.MapSpec `ebpf:"policy_map"`
+	EnforcedCgroups      *ebpf.MapSpec `ebpf:"enforced_cgroups"`
+	EnforcementConfigMap *ebpf.MapSpec `ebpf:"enforcement_config_map"`
+	FlowEvents           *ebpf.MapSpec `ebpf:"flow_events"`
+	PolicyMap            *ebpf.MapSpec `ebpf:"policy_map"`
+	PolicyMapV6          *ebpf.MapSpec `ebpf:"policy_map_v6"`
 }
 
 // bpfVariableSpecs contains global variables before they are loaded into the kernel.
@@ -107,14 +127,20 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	FlowEvents *ebpf.Map `ebpf:"flow_events"`
-	PolicyMap  *ebpf.Map `ebpf:"policy_map"`
+	EnforcedCgroups      *ebpf.Map `ebpf:"enforced_cgroups"`
+	EnforcementConfigMap *ebpf.Map `ebpf:"enforcement_config_map"`
+	FlowEvents           *ebpf.Map `ebpf:"flow_events"`
+	PolicyMap            *ebpf.Map `ebpf:"policy_map"`
+	PolicyMapV6          *ebpf.Map `ebpf:"policy_map_v6"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
+		m.EnforcedCgroups,
+		m.EnforcementConfigMap,
 		m.FlowEvents,
 		m.PolicyMap,
+		m.PolicyMapV6,
 	)
 }
 

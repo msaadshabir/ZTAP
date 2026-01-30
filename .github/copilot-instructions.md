@@ -74,8 +74,8 @@ type FlowMonitor interface {
 
 Windows enforcement constraints (WFP):
 
-- IPv4 `ipBlock` rules with `/32` CIDRs (IPv6 WIP)
-- TCP/UDP only
+- IPv4/IPv6 `ipBlock.cidr` supports arbitrary CIDRs
+- TCP/UDP/ICMP supported (ICMP ignores `port` during enforcement)
 - Requires an elevated terminal (Administrator) to apply/tear down filters
 
 ## Documentation constraints
@@ -153,7 +153,7 @@ auditLogger.VerifyIntegrity() // Detects tampering
 
 ## Policy YAML Format
 
-The policy engine supports Kubernetes-style constructs (selectors, CIDRs, TCP/UDP/ICMP), but the Linux eBPF enforcer is currently more limited and will fail fast to avoid partial enforcement.
+The policy engine supports Kubernetes-style constructs (selectors, CIDRs, TCP/UDP/ICMP), but kernel enforcement backends may reject unsupported constructs (for example, label selectors require resolution into concrete IPs) to avoid partial enforcement.
 
 ```yaml
 apiVersion: ztap/v1
@@ -176,9 +176,9 @@ spec:
 
 Current Linux eBPF enforcement constraints:
 
-- Only IPv4 `ipBlock` rules with `/32` CIDRs or IPv6 with `/128` CIDRs
-- TCP/UDP/ICMP supported
-- `podSelector.matchLabels` targets are supported when translated into `/32` or `/128` `ipBlock` rules via discovery (e.g., `ztap agent` or `ztap enforce --resolve-labels` with `discovery.backend: k8s`)
+- IPv4/IPv6 `ipBlock.cidr` supports arbitrary CIDRs
+- TCP/UDP/ICMP supported (ICMP ignores `port` during enforcement)
+- `podSelector.matchLabels` targets are supported when translated into concrete `ipBlock` rules via discovery (e.g., `ztap agent` or `ztap enforce --resolve-labels` with `discovery.backend: k8s`)
 
 Note: this limitation is specific to kernel enforcement. Cloud sync backends can still translate selectors; for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels and syncs them into VPC firewall rules.
 

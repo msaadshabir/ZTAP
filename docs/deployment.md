@@ -168,9 +168,10 @@ docker exec -it ztap ztap enforce -f /tmp/web-to-db.yaml
 Notes:
 
 - On Linux, `ztap enforce` keeps running while enforcement is active. Press Ctrl+C to detach and exit.
-- The Linux eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
-  Policies that use non-/32 CIDRs will be rejected by the eBPF enforcer.
-  Policies that use `podSelector` targets can be enforced by resolving selectors into `/32` `ipBlock` rules first:
+- The Linux eBPF enforcer supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP.
+  - For `protocol: ICMP`, the policy `port` is accepted by validation but ignored during enforcement.
+  - If eBPF isn't available (or `ZTAP_FORCE_IPTABLES=1`), ZTAP falls back to iptables.
+  Policies that use `podSelector` targets can be enforced by resolving selectors into host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules first:
   - In-cluster: run `ztap agent`
   - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s` configured
     Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels).

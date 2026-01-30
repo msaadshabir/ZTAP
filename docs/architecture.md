@@ -66,7 +66,8 @@ ResolveLabels(labels map[string]string) ([]string, error)
 - **Windows**: Windows Filtering Platform (WFP)
   - Applies filters via `fwpuclnt.dll` (user-mode WFP API)
   - Uses a ZTAP provider/sublayer and a transactional apply/delete model
-  - Current enforcement subset matches Linux constraints: IPv4 `/32` + TCP/UDP
+  - Supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP (ICMP ignores `port`)
+  - Permit-only by default; optional strict default-deny can be enabled with `ZTAP_WFP_STRICT=1`
 
 **Key Functions**:
 
@@ -174,7 +175,7 @@ StartServer(port int) error
   - Resolves `matchLabels` to pod IPs using Kubernetes discovery:
     - single-namespace: `pkg/discovery/k8s_discovery.go`
     - multi-namespace/all namespaces: `pkg/discovery/k8s_discovery_all_namespaces.go` (tenant-scoped)
-  - Translates `podSelector.matchLabels` targets into concrete `/32` `ipBlock` rules and re-applies enforcement when the resolved Pod IP set changes
+  - Translates `podSelector.matchLabels` targets into concrete host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules and re-applies enforcement when the resolved Pod IP set changes
 
 ## Data Flow
 

@@ -241,9 +241,9 @@ ztap status
 Notes:
 
 - `ztap enforce` keeps running while enforcement is active. Press Ctrl+C to detach and exit.
-- The eBPF enforcer currently supports only IPv4 `ipBlock` rules with `/32` CIDRs and IPv6 `ipBlock` rules with `/128` CIDRs.
+- The eBPF enforcer supports arbitrary IPv4/IPv6 `ipBlock.cidr` values via LPM trie lookups.
   TCP, UDP, and ICMP protocols are supported.
-  Policies that use non-exact CIDRs (e.g. `/24`) will be rejected or effectively enforce only the network address to avoid unsafe partial enforcement.
+  - For `protocol: ICMP`, the policy `port` is accepted by validation but ignored during enforcement.
   Policies that use `podSelector` targets can be enforced on Linux by first resolving selectors into `/32` or `/128` `ipBlock` rules:
   - In-cluster: run `ztap agent` (Kubernetes discovery is used automatically)
   - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s` configured (kubeconfig-based)
@@ -397,7 +397,7 @@ sudo bpftool map dump id <id>
 ### Scalability
 
 - **Map Capacity**: 10,000 policy entries (configurable)
-- **Hash Lookup**: O(1) constant time
+- **LPM Trie Lookup**: longest-prefix match (fast; worst-case scales with prefix length)
 - **No Context Switch**: Runs entirely in kernel space
 
 ### Optimization Tips

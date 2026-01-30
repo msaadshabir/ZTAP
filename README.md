@@ -45,13 +45,15 @@ ztap enforce -f examples/web-to-db.yaml
 
 # Windows (WFP)
 # Note: run in an elevated terminal (Administrator).
-# The Windows WFP enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+# Supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP.
+# For `protocol: ICMP`, the policy `port` is accepted by validation but ignored during enforcement.
+# Optional strict default-deny can be enabled with: ZTAP_WFP_STRICT=1
 ztap enforce -f policy.yaml
 
 # Linux (eBPF)
 # Note: `ztap enforce` keeps running while enforcement is active.
-# The Linux eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
-# Policies that use `podSelector.matchLabels` can be enforced by resolving selectors into `/32` rules first:
+# Supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP (ICMP ignores `port`).
+# Policies that use `podSelector.matchLabels` can be enforced by resolving selectors into concrete `ipBlock` rules first:
 # - In-cluster: run `ztap agent`
 # - Local/CLI: run `ztap enforce --resolve-labels` with `discovery.backend: k8s`
 # In multi-namespace Kubernetes deployments:

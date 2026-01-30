@@ -81,7 +81,7 @@ kubectl apply -f deployments/kubernetes/ztap-operator.yaml
 
 Pod IP auto-discovery:
 
-- The agent resolves `podSelector.matchLabels` targets to live Pod IPs via the Kubernetes API and translates them into `/32` `ipBlock` rules for enforcement.
+- The agent resolves `podSelector.matchLabels` targets to live Pod IPs via the Kubernetes API and translates them into host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules for enforcement.
 - For local development (out-of-cluster), you can resolve selectors before enforcing with `ztap enforce --resolve-labels` when `discovery.backend: k8s` is configured (kubeconfig-based).
 
 Multi-namespace / multi-tenant notes:
@@ -258,7 +258,9 @@ See [eBPF Setup Guide](ebpf.md) for detailed Linux configuration.
 ZTAP uses Windows Filtering Platform (WFP) on Windows.
 
 - Run `ztap enforce` from an elevated terminal (Administrator).
-- The current Windows enforcement subset is intentionally small: IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+- Windows enforcement supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP.
+  - For `protocol: ICMP`, the policy `port` is accepted by validation but ignored during enforcement.
+  - By default, WFP installs permit rules only. Optional strict default-deny can be enabled with `ZTAP_WFP_STRICT=1` (use with care).
 - Flow monitoring on Windows uses WFP NetEvents and requires an elevated terminal. See `docs/runbooks/windows-flow-monitoring.md`.
 
 ### 5. AWS Integration (Optional)
@@ -402,7 +404,7 @@ ztap enforce -f examples/web-to-db.yaml
 
 # Linux (eBPF)
 # Note: this requires root and runs until Ctrl+C.
-# The Linux eBPF enforcer currently supports IPv4 `ipBlock` rules with `/32` CIDRs and TCP/UDP only.
+# Supports IPv4/IPv6 CIDRs and TCP/UDP/ICMP (ICMP ignores `port`).
 sudo ztap enforce -f policy.yaml
 
 # Output:
