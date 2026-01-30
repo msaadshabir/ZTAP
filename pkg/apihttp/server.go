@@ -179,9 +179,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	defer s.stopEnforcementRefresh()
 	defer func() {
 		if s.discovery != nil {
-			if err := s.discovery.Stop(); err != nil {
-				// Best-effort cleanup.
-			}
+			_ = s.discovery.Stop()
 		}
 	}()
 
