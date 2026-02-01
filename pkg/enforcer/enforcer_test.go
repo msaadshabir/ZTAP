@@ -144,11 +144,7 @@ func TestCreatePolicyFromYAML(t *testing.T) {
 	// Add egress rule using named types
 	egress := policy.EgressRule{
 		To: policy.EgressTarget{
-			IPBlock: struct {
-				CIDR string `yaml:"cidr"`
-			}{
-				CIDR: "10.0.0.0/8",
-			},
+			IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.0/8"},
 		},
 		Ports: []policy.PortSpec{
 			{Protocol: "TCP", Port: 443},
@@ -187,11 +183,7 @@ func TestCreatePolicyWithIngress(t *testing.T) {
 	// Add ingress rule using named types
 	ingress := policy.IngressRule{
 		From: policy.IngressSource{
-			IPBlock: struct {
-				CIDR string `yaml:"cidr"`
-			}{
-				CIDR: "192.168.0.0/16",
-			},
+			IPBlock: policy.IPBlockSpec{CIDR: "192.168.0.0/16"},
 		},
 		Ports: []policy.PortSpec{
 			{Protocol: "TCP", Port: 8080},
