@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net"
 	"net/netip"
@@ -164,7 +165,10 @@ func parsePortValue(raw any) (int, string, error) {
 	case int64:
 		return int(v), "", nil
 	case uint64:
-		return int(v), "", nil
+		if v > uint64(math.MaxInt) {
+			return 0, "", fmt.Errorf("port must be between 1 and 65535")
+		}
+		return int(v), "", nil // #nosec G115 -- bounded by MaxInt check above
 	case float64:
 		if v != float64(int(v)) {
 			return 0, "", fmt.Errorf("port must be an integer")
