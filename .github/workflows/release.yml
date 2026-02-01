@@ -172,6 +172,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and push ZTAP Operator image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: ./Dockerfile.operator
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ztap-operator:latest
+            ghcr.io/${{ github.repository_owner }}/ztap-operator:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/ztap-operator:${{ steps.version.outputs.VERSION_SHORT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build and push Anomaly Detector image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:

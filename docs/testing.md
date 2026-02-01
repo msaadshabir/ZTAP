@@ -128,7 +128,7 @@ Run prerequisites (Linux only):
 go test ./... -v
 ```
 
-This includes the Kubernetes operator/agent packages (WIP). Dedicated unit tests for the operator reconcile loop are not yet included.
+This includes the Kubernetes operator/agent packages. Dedicated unit tests for the operator reconcile loop are included in `pkg/operator/controllers/ztapnetworkpolicy_controller_test.go`.
 
 ### Specific Package
 

@@ -64,10 +64,25 @@ See [Deployment Guide](deployment.md) for detailed Docker deployment.
 
 ZTAP includes a Kubernetes operator and an in-cluster node agent path that publishes policies from a CRD and enforces them on nodes.
 
-Install the CRD and operator:
+Install the operator + agent bundle:
 
 ```bash
-# Build and push an operator image
+# Build images (operator + agent)
+docker build -t ztap:latest .
+docker build -f Dockerfile.operator -t ztap-operator:latest .
+
+# Push to your registry (or load into your local cluster)
+docker push ztap:latest
+docker push ztap-operator:latest
+
+# Apply the full bundle (Namespace + CRD + Operator + Agent)
+kubectl apply -f deployments/kubernetes/ztap-install.yaml
+```
+
+Install the CRD and operator separately (dev-only):
+
+```bash
+# Build an operator image
 docker build -f Dockerfile.operator -t ztap-operator:latest .
 
 # Apply the CRD and operator deployment

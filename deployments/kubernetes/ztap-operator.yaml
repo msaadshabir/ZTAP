@@ -10,6 +10,38 @@ metadata:
   namespace: ztap-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ztap-operator-leader-election
+  namespace: ztap-system
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ztap-operator-leader-election
+  namespace: ztap-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ztap-operator-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: ztap-operator
+    namespace: ztap-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: ztap-operator
@@ -24,10 +56,8 @@ rules:
       - get
       - list
       - watch
-      - create
       - update
       - patch
-      - delete
   - apiGroups:
       - ""
     resources:
@@ -60,7 +90,7 @@ metadata:
   name: ztap-operator
   namespace: ztap-system
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ztap-operator
@@ -70,6 +100,10 @@ spec:
         app: ztap-operator
     spec:
       serviceAccountName: ztap-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: manager
           image: ztap-operator:latest
@@ -77,11 +111,25 @@ spec:
           args:
             - --metrics-bind-address=:8080
             - --health-probe-bind-address=:8081
+            - --leader-elect
           ports:
             - name: metrics
               containerPort: 8080
             - name: healthz
               containerPort: 8081
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           livenessProbe:
             httpGet:
               path: /healthz
@@ -90,3 +138,14 @@ spec:
             httpGet:
               path: /readyz
               port: 8081
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ztap-operator
+  namespace: ztap-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ztap-operator

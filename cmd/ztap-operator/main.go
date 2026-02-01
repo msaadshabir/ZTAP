@@ -12,7 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	ztapv1alpha1 "ztap/pkg/operator/api/v1alpha1"
 	"ztap/pkg/operator/controllers"
@@ -44,12 +43,12 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                server.Options{BindAddress: metricsAddr},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "ztap-operator-leader-election",
-		WebhookServer:          webhook.NewServer(webhook.Options{Port: 9443}),
+		Scheme:                  scheme,
+		Metrics:                 server.Options{BindAddress: metricsAddr},
+		HealthProbeBindAddress:  probeAddr,
+		LeaderElection:          enableLeaderElection,
+		LeaderElectionID:        "ztap-operator-leader-election",
+		LeaderElectionNamespace: "ztap-system",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

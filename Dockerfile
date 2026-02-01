@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o ztap .
 FROM alpine:3.19
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates iptables
 
 # Create non-root user
 RUN addgroup -g 1000 ztap && \

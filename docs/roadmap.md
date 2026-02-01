@@ -49,12 +49,9 @@
 - **Compliance report generation** - PCI-DSS, SOC2, HIPAA policy mapping exports
 - Improve label-based enforcement outside Kubernetes agent mode (automatic selector resolution and re-resolution over time).
 - Kubernetes NetworkPolicy parity extensions: `namespaceSelector`, `matchExpressions`, `ipBlock.except`, named ports, and port ranges.
+- Ship a complete, production-ready Kubernetes install bundle (RBAC + agent DaemonSet + operator) and add dedicated unit tests for the operator reconcile loop. (DONE: see `deployments/kubernetes/ztap-install.yaml` and `pkg/operator/controllers/ztapnetworkpolicy_controller_test.go`)
 
 ## Planned
-
-### Kubernetes Packaging
-
-- Ship a complete, production-ready Kubernetes install bundle (RBAC + agent DaemonSet + operator) and add dedicated unit tests for the operator reconcile loop.
 
 ### Cloud Integrations
 

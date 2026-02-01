@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ztap-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ztap-agent
+  namespace: ztap-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ztap-agent
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ztap-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ztap-agent
+subjects:
+  - kind: ServiceAccount
+    name: ztap-agent
+    namespace: ztap-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ztap-agent
+  namespace: ztap-system
+spec:
+  selector:
+    matchLabels:
+      app: ztap-agent
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: ztap-agent
+    spec:
+      serviceAccountName: ztap-agent
+      hostNetwork: true
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "node-role.kubernetes.io/master"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: agent
+          image: ztap:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - agent
+            - --all-namespaces
+            - --cgroup=/sys/fs/cgroup
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+              readOnly: true
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+          livenessProbe:
+            exec:
+              command:
+                - /usr/local/bin/ztap
+                - status
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            exec:
+              command:
+                - /usr/local/bin/ztap
+                - status
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
