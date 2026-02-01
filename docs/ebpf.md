@@ -244,7 +244,7 @@ Notes:
 - The eBPF enforcer supports arbitrary IPv4/IPv6 `ipBlock.cidr` values via LPM trie lookups.
   TCP, UDP, and ICMP protocols are supported.
   - For `protocol: ICMP`, the policy `port` is accepted by validation but ignored during enforcement.
-  Policies that use `podSelector` targets can be enforced on Linux by resolving selectors into `/32` or `/128` `ipBlock` rules via discovery:
+  Policies that use selector targets (`podSelector` with optional `namespaceSelector`) can be enforced on Linux by resolving selectors into `/32` or `/128` `ipBlock` rules via discovery:
   - In-cluster: run `ztap agent` (Kubernetes discovery is used automatically)
   - Local/CLI: run `ztap enforce` with `discovery.backend: k8s` configured (kubeconfig-based)
     - `ztap enforce` refreshes selector resolution while it is running; tune with `--resolve-labels-interval` (default: `5s`; set to `0` to resolve once)

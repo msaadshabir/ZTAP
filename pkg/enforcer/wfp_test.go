@@ -279,3 +279,80 @@ func TestTranslatePolicyToWFP_ExpandedCIDRAndICMP(t *testing.T) {
 		t.Fatal("expected IPv6 ingress spec with V6AddrMask")
 	}
 }
+
+func TestTranslatePolicyToWFP_PortRange(t *testing.T) {
+	end := 8080
+	p := policy.NetworkPolicy{
+		Metadata: policy.NetworkPolicyMetadata{Name: "range"},
+		Spec: policy.NetworkPolicySpec{
+			Egress: []policy.EgressRule{{
+				To:    policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.0/24"}},
+				Ports: []policy.PortSpec{{Protocol: "TCP", Port: 8000, EndPort: &end}},
+			}},
+			Ingress: []policy.IngressRule{{
+				From:  policy.IngressSource{IPBlock: policy.IPBlockSpec{CIDR: "10.1.0.0/16"}},
+				Ports: []policy.PortSpec{{Protocol: "UDP", Port: 1000, EndPort: &end}},
+			}},
+		},
+	}
+
+	specs, err := TranslatePolicyToWFP(p)
+	if err != nil {
+		t.Fatalf("TranslatePolicyToWFP failed: %v", err)
+	}
+
+	var egressFound bool
+	var ingressFound bool
+	for _, spec := range specs {
+		if spec.LayerKey == LayerALEAuthConnectV4 {
+			egressFound = true
+			var hasGE, hasLE bool
+			for _, c := range spec.Conditions {
+				if c.FieldKey != ConditionIPRemotePort {
+					continue
+				}
+				switch c.MatchType {
+				case FWP_MATCH_GREATER_OR_EQUAL:
+					if v, ok := c.Value.(uint16); ok && v == 8000 {
+						hasGE = true
+					}
+				case FWP_MATCH_LESS_OR_EQUAL:
+					if v, ok := c.Value.(uint16); ok && v == uint16(end) {
+						hasLE = true
+					}
+				}
+			}
+			if !hasGE || !hasLE {
+				t.Fatalf("expected egress port range conditions, got %#v", spec.Conditions)
+			}
+		}
+		if spec.LayerKey == LayerALEAuthRecvAcceptV4 {
+			ingressFound = true
+			var hasGE, hasLE bool
+			for _, c := range spec.Conditions {
+				if c.FieldKey != ConditionIPLocalPort {
+					continue
+				}
+				switch c.MatchType {
+				case FWP_MATCH_GREATER_OR_EQUAL:
+					if v, ok := c.Value.(uint16); ok && v == 1000 {
+						hasGE = true
+					}
+				case FWP_MATCH_LESS_OR_EQUAL:
+					if v, ok := c.Value.(uint16); ok && v == uint16(end) {
+						hasLE = true
+					}
+				}
+			}
+			if !hasGE || !hasLE {
+				t.Fatalf("expected ingress port range conditions, got %#v", spec.Conditions)
+			}
+		}
+	}
+	if !egressFound {
+		t.Fatal("expected egress range spec")
+	}
+	if !ingressFound {
+		t.Fatal("expected ingress range spec")
+	}
+}

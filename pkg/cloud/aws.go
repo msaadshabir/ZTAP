@@ -115,7 +115,15 @@ func (c *AWSClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, sgID
 		// Convert to AWS Security Group rule
 		if egress.To.IPBlock.CIDR != "" {
 			for _, port := range egress.Ports {
-				err := c.authorizeEgress(ctx, sgID, egress.To.IPBlock.CIDR, port.Protocol, port.Port)
+				if port.PortName != "" {
+					return fmt.Errorf("named ports are not supported for AWS security group rules")
+				}
+				start := port.Port
+				end := port.Port
+				if port.EndPort != nil {
+					end = *port.EndPort
+				}
+				err := c.authorizeEgress(ctx, sgID, egress.To.IPBlock.CIDR, port.Protocol, start, end)
 				if err != nil {
 					return fmt.Errorf("failed to authorize egress: %w", err)
 				}
@@ -134,13 +142,23 @@ func (c *AWSClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, sgID
 }
 
 // authorizeEgress adds an egress rule to the Security Group
-func (c *AWSClient) authorizeEgress(ctx context.Context, sgID, cidr, protocol string, port int) error {
+func (c *AWSClient) authorizeEgress(ctx context.Context, sgID, cidr, protocol string, startPort int, endPort int) error {
 	// Convert protocol to lowercase (AWS uses lowercase)
 	proto := strings.ToLower(protocol)
-	if port < 0 || port > 65535 {
-		return fmt.Errorf("invalid port %d", port)
+	if startPort < 0 || startPort > 65535 {
+		return fmt.Errorf("invalid port %d", startPort)
 	}
-	p := int32(port) // #nosec G115 -- port is validated to be within uint16 range
+	if endPort < 0 || endPort > 65535 {
+		return fmt.Errorf("invalid port %d", endPort)
+	}
+	if endPort < startPort {
+		return fmt.Errorf("invalid port range %d-%d", startPort, endPort)
+	}
+	if endPort == 0 {
+		endPort = startPort
+	}
+	pFrom := int32(startPort) // #nosec G115 -- port is validated to be within uint16 range
+	pTo := int32(endPort)     // #nosec G115 -- port is validated to be within uint16 range
 
 	// Note: AWS Security Groups are stateful, so egress rules automatically allow responses
 	input := &ec2.AuthorizeSecurityGroupEgressInput{
@@ -148,8 +166,8 @@ func (c *AWSClient) authorizeEgress(ctx context.Context, sgID, cidr, protocol st
 		IpPermissions: []types.IpPermission{
 			{
 				IpProtocol: aws.String(proto),
-				FromPort:   aws.Int32(p),
-				ToPort:     aws.Int32(p),
+				FromPort:   aws.Int32(pFrom),
+				ToPort:     aws.Int32(pTo),
 				IpRanges: []types.IpRange{
 					{
 						CidrIp:      aws.String(cidr),
@@ -164,13 +182,13 @@ func (c *AWSClient) authorizeEgress(ctx context.Context, sgID, cidr, protocol st
 	if err != nil {
 		// Ignore "duplicate rule" errors
 		if strings.Contains(err.Error(), "already exists") {
-			logging.Infof("Rule already exists: %s:%d -> %s", protocol, port, cidr)
+			logging.Infof("Rule already exists: %s:%d-%d -> %s", protocol, startPort, endPort, cidr)
 			return nil
 		}
 		return err
 	}
 
-	logging.Infof("Authorized egress: %s:%d -> %s in %s", protocol, port, cidr, sgID)
+	logging.Infof("Authorized egress: %s:%d-%d -> %s in %s", protocol, startPort, endPort, cidr, sgID)
 	return nil
 }
 

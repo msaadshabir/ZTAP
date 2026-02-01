@@ -12,8 +12,8 @@ import (
 func ValidatePoliciesForLinux(policies []policy.NetworkPolicy) error {
 	for _, p := range policies {
 		for i, egress := range p.Spec.Egress {
-			if len(egress.To.PodSelector.MatchLabels) > 0 {
-				return fmt.Errorf("policy %s spec.egress[%d]: podSelector is not supported by enforcer yet (resolved labels should be used)", p.Metadata.Name, i)
+			if selectorHasData(egress.To.PodSelector) || selectorHasData(egress.To.NamespaceSelector) {
+				return fmt.Errorf("policy %s spec.egress[%d]: selectors are not supported by enforcer yet (resolved labels should be used)", p.Metadata.Name, i)
 			}
 			if egress.To.IPBlock.CIDR != "" {
 				_, _, err := net.ParseCIDR(egress.To.IPBlock.CIDR)
@@ -21,11 +21,16 @@ func ValidatePoliciesForLinux(policies []policy.NetworkPolicy) error {
 					return fmt.Errorf("policy %s spec.egress[%d].to.ipBlock.cidr: %w", p.Metadata.Name, i, err)
 				}
 			}
+			for j, port := range egress.Ports {
+				if port.PortName != "" {
+					return fmt.Errorf("policy %s spec.egress[%d].ports[%d].port: named ports must be resolved before enforcement", p.Metadata.Name, i, j)
+				}
+			}
 		}
 
 		for i, ingress := range p.Spec.Ingress {
-			if len(ingress.From.PodSelector.MatchLabels) > 0 {
-				return fmt.Errorf("policy %s spec.ingress[%d]: podSelector is not supported by enforcer yet", p.Metadata.Name, i)
+			if selectorHasData(ingress.From.PodSelector) || selectorHasData(ingress.From.NamespaceSelector) {
+				return fmt.Errorf("policy %s spec.ingress[%d]: selectors are not supported by enforcer yet", p.Metadata.Name, i)
 			}
 			if ingress.From.IPBlock.CIDR != "" {
 				_, _, err := net.ParseCIDR(ingress.From.IPBlock.CIDR)
@@ -33,10 +38,19 @@ func ValidatePoliciesForLinux(policies []policy.NetworkPolicy) error {
 					return fmt.Errorf("policy %s spec.ingress[%d].from.ipBlock.cidr: %w", p.Metadata.Name, i, err)
 				}
 			}
+			for j, port := range ingress.Ports {
+				if port.PortName != "" {
+					return fmt.Errorf("policy %s spec.ingress[%d].ports[%d].port: ingress named ports require subject-scoped enforcement", p.Metadata.Name, i, j)
+				}
+			}
 		}
 	}
 
 	return nil
+}
+
+func selectorHasData(selector policy.PodSelectorSpec) bool {
+	return len(selector.MatchLabels) > 0 || len(selector.MatchExpressions) > 0
 }
 
 // ValidatePoliciesForEBPF is kept for compatibility with callers that expect

@@ -81,10 +81,17 @@ kubectl apply -f deployments/kubernetes/ztap-operator.yaml
 
 Pod IP auto-discovery:
 
-- The agent resolves `podSelector.matchLabels` targets to live Pod IPs via the Kubernetes API and translates them into host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules for enforcement.
-- For local development (out-of-cluster), `ztap enforce` resolves `podSelector.matchLabels` automatically when `discovery.backend: k8s` is configured (kubeconfig-based), and refreshes resolution while it is running.
+- The agent resolves `podSelector` targets (matchLabels + matchExpressions), optionally scoped by `namespaceSelector`, to live Pod IPs via the Kubernetes API and translates them into host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules for enforcement.
+- For local development (out-of-cluster), `ztap enforce` resolves `podSelector` targets automatically when `discovery.backend: k8s` is configured (kubeconfig-based), and refreshes resolution while it is running.
   - Tune refresh with `--resolve-labels-interval` (default: `5s`; set to `0` to resolve once).
   - If a selector currently resolves to zero targets (e.g., rollouts/scale-to-zero), enforcement still starts; the rule is inactive until targets appear and resolution refreshes.
+
+Named ports and port ranges:
+
+- Port ranges are expressed with `endPort` (TCP/UDP only).
+- Named ports are supported for selector-based rules.
+  - Egress: resolved per destination pod.
+  - Ingress: requires Linux subject-scoped enforcement (per-pod cgroup) to resolve named ports.
 
 Minimal out-of-cluster discovery config:
 
@@ -342,7 +349,7 @@ export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
 
 Required permissions (at minimum):
 
-- List instances in the project (for `podSelector.matchLabels` resolution)
+- List instances in the project (for `podSelector` resolution)
 - List/create/update/delete VPC firewall rules in the target network
 
 Sync rules into a network:
@@ -367,9 +374,9 @@ ztap gcp firewall-sync examples/web-to-db.yaml --watch --watch-interval 2s \
   --network <vpc-network>
 ```
 
-Label-based rules:
+Selector-based rules:
 
-- `podSelector.matchLabels` targets are resolved against GCE instance labels.
+- `podSelector` targets (matchLabels + matchExpressions) are resolved against GCE instance labels.
 - Matching instances are discovered within the specified VPC network, and their NIC IPs are translated into single-host CIDRs (`/32` for IPv4, `/128` for IPv6) for use in firewall rules.
 
 Config file (config.yaml or ZTAP_CONFIG):

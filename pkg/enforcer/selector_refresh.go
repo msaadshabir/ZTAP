@@ -41,7 +41,7 @@ func WarnNoMatchPolicyTargets(disc policy.ServiceDiscovery, opts SelectorRefresh
 
 	resolver := policy.NewPolicyResolver(disc)
 	for _, sel := range selectors {
-		ips, err := resolver.ResolveLabelsScoped(opts.Scope, sel.labels)
+		ips, err := resolver.ResolvePeerTargets(opts.Scope, sel.podSelector, sel.namespaceSelector)
 		if err != nil {
 			if isNoMatches(err) {
 				logging.Warnf("podSelector %s resolved to no targets (rules will be inactive until targets exist)", sel.key)
@@ -90,7 +90,10 @@ func RunSelectorRefresh(
 
 	// Start watches.
 	for _, sel := range selectors {
-		ch, err := watchSelector(ctx, disc, opts.Scope, sel.labels)
+		if !selectorWatchable(sel) {
+			continue
+		}
+		ch, err := watchSelector(ctx, disc, opts.Scope, sel.podSelector.MatchLabels)
 		if err != nil {
 			continue
 		}
@@ -176,36 +179,34 @@ func RunSelectorRefresh(
 }
 
 type selectorSpec struct {
-	key    string
-	labels map[string]string
+	key               string
+	podSelector       policy.PodSelectorSpec
+	namespaceSelector policy.PodSelectorSpec
 }
 
 func uniqueTargetSelectors(policies []policy.NetworkPolicy) []selectorSpec {
-	seen := make(map[string]map[string]string)
-	add := func(labels map[string]string) {
-		if len(labels) == 0 {
+	seen := make(map[string]selectorSpec)
+	add := func(podSelector policy.PodSelectorSpec, namespaceSelector policy.PodSelectorSpec) {
+		if len(podSelector.MatchLabels) == 0 && len(podSelector.MatchExpressions) == 0 &&
+			len(namespaceSelector.MatchLabels) == 0 && len(namespaceSelector.MatchExpressions) == 0 {
 			return
 		}
-		k := policy.SelectorKey(labels)
+		k := selectorKeyWithNamespace(podSelector, namespaceSelector)
 		if k == "" {
 			return
 		}
 		if _, ok := seen[k]; ok {
 			return
 		}
-		cpy := make(map[string]string, len(labels))
-		for kk, vv := range labels {
-			cpy[kk] = vv
-		}
-		seen[k] = cpy
+		seen[k] = selectorSpec{key: k, podSelector: podSelector, namespaceSelector: namespaceSelector}
 	}
 
 	for _, p := range policies {
 		for _, e := range p.Spec.Egress {
-			add(e.To.PodSelector.MatchLabels)
+			add(e.To.PodSelector, e.To.NamespaceSelector)
 		}
 		for _, in := range p.Spec.Ingress {
-			add(in.From.PodSelector.MatchLabels)
+			add(in.From.PodSelector, in.From.NamespaceSelector)
 		}
 	}
 
@@ -217,17 +218,47 @@ func uniqueTargetSelectors(policies []policy.NetworkPolicy) []selectorSpec {
 
 	out := make([]selectorSpec, 0, len(keys))
 	for _, k := range keys {
-		out = append(out, selectorSpec{key: k, labels: seen[k]})
+		out = append(out, seen[k])
 	}
 	return out
+}
+
+func selectorKeyWithNamespace(podSelector policy.PodSelectorSpec, namespaceSelector policy.PodSelectorSpec) string {
+	podKey := policy.SelectorKeySpec(podSelector)
+	nsKey := policy.SelectorKeySpec(namespaceSelector)
+	if nsKey == "" {
+		return podKey
+	}
+	if podKey == "" {
+		return "ns=" + nsKey
+	}
+	return "ns=" + nsKey + "|pod=" + podKey
+}
+
+func selectorWatchable(sel selectorSpec) bool {
+	if len(sel.namespaceSelector.MatchLabels) > 0 || len(sel.namespaceSelector.MatchExpressions) > 0 {
+		return false
+	}
+	if len(sel.podSelector.MatchExpressions) > 0 {
+		return false
+	}
+	return len(sel.podSelector.MatchLabels) > 0
 }
 
 func resolvePoliciesWithScope(resolver *policy.PolicyResolver, scope string, policies []policy.NetworkPolicy) ([]policy.NetworkPolicy, error) {
 	scope = policyTenantScope(scope)
 	if scope != "" {
-		return resolver.ResolvePodSelectorsToIPBlocksScoped(scope, policies)
+		resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(scope, policies)
+		if err != nil {
+			return nil, err
+		}
+		return policy.NormalizePolicies(resolved)
 	}
-	return resolver.ResolvePodSelectorsToIPBlocks(policies)
+	resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+	if err != nil {
+		return nil, err
+	}
+	return policy.NormalizePolicies(resolved)
 }
 
 func watchSelector(ctx context.Context, disc policy.ServiceDiscovery, scope string, selector map[string]string) (<-chan []string, error) {

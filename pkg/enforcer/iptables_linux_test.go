@@ -89,7 +89,10 @@ func TestIptablesRestoreGeneration(t *testing.T) {
 		},
 	}
 
-	v4, v6 := enforcer.generateRestoreInput(policies)
+	v4, v6, err := enforcer.generateRestoreInput(policies)
+	if err != nil {
+		t.Fatalf("generateRestoreInput failed: %v", err)
+	}
 
 	expectedV4 := []string{
 		"*filter",
@@ -119,5 +122,31 @@ func TestIptablesRestoreGeneration(t *testing.T) {
 		if !strings.Contains(v6, expected) {
 			t.Errorf("Expected v6 restore input to contain: %s\nGot:\n%s", expected, v6)
 		}
+	}
+}
+
+func TestIptablesRestoreGeneration_PortRange(t *testing.T) {
+	end := 8080
+	enforcer := &IptablesEnforcer{runner: &mockIptablesRunner{}}
+	policies := []policy.NetworkPolicy{
+		{
+			Metadata: policy.NetworkPolicyMetadata{Name: "range"},
+			Spec: policy.NetworkPolicySpec{
+				Ingress: []policy.IngressRule{
+					{
+						From:  policy.IngressSource{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.1/32"}},
+						Ports: []policy.PortSpec{{Protocol: "TCP", Port: 8000, EndPort: &end}},
+					},
+				},
+			},
+		},
+	}
+
+	v4, _, err := enforcer.generateRestoreInput(policies)
+	if err != nil {
+		t.Fatalf("generateRestoreInput failed: %v", err)
+	}
+	if !strings.Contains(v4, "--dport 8000:8080") {
+		t.Fatalf("expected port range in v4 rules, got:\n%s", v4)
 	}
 }

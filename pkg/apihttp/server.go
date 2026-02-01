@@ -108,7 +108,8 @@ type ServerOptions struct {
 	FlowReaderFactory func() flow.FlowReader
 
 	// Discovery is an optional service discovery backend used for resolving
-	// podSelector.matchLabels targets when enforcement is started via the API.
+	// selector targets (podSelector with optional namespaceSelector) when
+	// enforcement is started via the API.
 	Discovery policy.ServiceDiscovery
 
 	// ResolveLabelsInterval controls re-resolution of podSelector targets over

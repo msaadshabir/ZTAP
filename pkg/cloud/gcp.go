@@ -169,7 +169,7 @@ func (c *GCPClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkP
 
 	networkURL := networkSelfLink(projectID, network)
 
-	var resolveLabels func(map[string]string) ([]string, error)
+	var resolveLabels func(policy.PodSelectorSpec) ([]string, error)
 	if hasPodSelectors(p) {
 		if c.instances == nil {
 			return fmt.Errorf("gcp instances client not configured for label resolution")
@@ -179,8 +179,8 @@ func (c *GCPClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkP
 			return fmt.Errorf("discovering gcp instances: %w", err)
 		}
 
-		resolveLabels = func(labels map[string]string) ([]string, error) {
-			return resolveAddresses(resources, labels), nil
+		resolveLabels = func(selector policy.PodSelectorSpec) ([]string, error) {
+			return resolveAddresses(resources, selector), nil
 		}
 	}
 
@@ -252,19 +252,30 @@ type gcpRuleSpec struct {
 	rule    *computepb.Firewall
 }
 
-func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolveLabels func(map[string]string) ([]string, error)) ([]gcpRuleSpec, error) {
+func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolveLabels func(policy.PodSelectorSpec) ([]string, error)) ([]gcpRuleSpec, error) {
 	var rules []gcpRuleSpec
 
 	for _, egress := range p.Spec.Egress {
 		cidr := strings.TrimSpace(egress.To.IPBlock.CIDR)
-		selector := egress.To.PodSelector.MatchLabels
+		selector := egress.To.PodSelector
+		if len(egress.To.NamespaceSelector.MatchLabels) > 0 || len(egress.To.NamespaceSelector.MatchExpressions) > 0 {
+			return nil, fmt.Errorf("namespaceSelector is not supported for gcp firewall rules")
+		}
 
-		if cidr == "" && len(selector) == 0 {
+		if cidr == "" && len(selector.MatchLabels) == 0 && len(selector.MatchExpressions) == 0 {
 			continue
 		}
 
 		for _, port := range egress.Ports {
-			if err := validatePort(port.Port); err != nil {
+			if port.PortName != "" {
+				return nil, fmt.Errorf("named ports are not supported for gcp firewall rules")
+			}
+			start := port.Port
+			end := port.Port
+			if port.EndPort != nil {
+				end = *port.EndPort
+			}
+			if err := validatePortRange(start, end); err != nil {
 				return nil, err
 			}
 			protoValue, err := normalizeGCPProtocol(port.Protocol)
@@ -277,16 +288,17 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 				return nil, err
 			}
 
+			portLabel := portRangeLabel(start, end)
 			rules = append(rules, gcpRuleSpec{
-				name:    sanitizeGCPRuleName(fmt.Sprintf("egress-%s-%d-%s", protoValue, port.Port, nameSuffix)),
-				sortKey: fmt.Sprintf("egress-%s-%05d-%s", protoValue, port.Port, sortSuffix),
+				name:    sanitizeGCPRuleName(fmt.Sprintf("egress-%s-%s-%s", protoValue, portLabel, nameSuffix)),
+				sortKey: fmt.Sprintf("egress-%s-%s-%s", protoValue, portLabel, sortSuffix),
 				rule: &computepb.Firewall{
 					Network:           proto.String(networkURL),
 					Direction:         proto.String("EGRESS"),
 					DestinationRanges: destRanges,
 					Allowed: []*computepb.Allowed{{
 						IPProtocol: proto.String(protoValue),
-						Ports:      []string{fmt.Sprintf("%d", port.Port)},
+						Ports:      []string{portRange(start, end)},
 					}},
 					Disabled:    proto.Bool(false),
 					Description: proto.String(gcpRuleDescription),
@@ -297,14 +309,25 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 
 	for _, ingress := range p.Spec.Ingress {
 		cidr := strings.TrimSpace(ingress.From.IPBlock.CIDR)
-		selector := ingress.From.PodSelector.MatchLabels
+		selector := ingress.From.PodSelector
+		if len(ingress.From.NamespaceSelector.MatchLabels) > 0 || len(ingress.From.NamespaceSelector.MatchExpressions) > 0 {
+			return nil, fmt.Errorf("namespaceSelector is not supported for gcp firewall rules")
+		}
 
-		if cidr == "" && len(selector) == 0 {
+		if cidr == "" && len(selector.MatchLabels) == 0 && len(selector.MatchExpressions) == 0 {
 			continue
 		}
 
 		for _, port := range ingress.Ports {
-			if err := validatePort(port.Port); err != nil {
+			if port.PortName != "" {
+				return nil, fmt.Errorf("named ports are not supported for gcp firewall rules")
+			}
+			start := port.Port
+			end := port.Port
+			if port.EndPort != nil {
+				end = *port.EndPort
+			}
+			if err := validatePortRange(start, end); err != nil {
 				return nil, err
 			}
 			protoValue, err := normalizeGCPProtocol(port.Protocol)
@@ -317,16 +340,17 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 				return nil, err
 			}
 
+			portLabel := portRangeLabel(start, end)
 			rules = append(rules, gcpRuleSpec{
-				name:    sanitizeGCPRuleName(fmt.Sprintf("ingress-%s-%d-%s", protoValue, port.Port, nameSuffix)),
-				sortKey: fmt.Sprintf("ingress-%s-%05d-%s", protoValue, port.Port, sortSuffix),
+				name:    sanitizeGCPRuleName(fmt.Sprintf("ingress-%s-%s-%s", protoValue, portLabel, nameSuffix)),
+				sortKey: fmt.Sprintf("ingress-%s-%s-%s", protoValue, portLabel, sortSuffix),
 				rule: &computepb.Firewall{
 					Network:      proto.String(networkURL),
 					Direction:    proto.String("INGRESS"),
 					SourceRanges: sourceRanges,
 					Allowed: []*computepb.Allowed{{
 						IPProtocol: proto.String(protoValue),
-						Ports:      []string{fmt.Sprintf("%d", port.Port)},
+						Ports:      []string{portRange(start, end)},
 					}},
 					Disabled:    proto.Bool(false),
 					Description: proto.String(gcpRuleDescription),
@@ -352,6 +376,19 @@ func normalizeGCPProtocol(protoValue string) (string, error) {
 	}
 }
 
+func validatePortRange(start int, end int) error {
+	if start <= 0 || start > 65535 {
+		return fmt.Errorf("invalid port %d", start)
+	}
+	if end <= 0 || end > 65535 {
+		return fmt.Errorf("invalid port %d", end)
+	}
+	if end < start {
+		return fmt.Errorf("invalid port range %d-%d", start, end)
+	}
+	return nil
+}
+
 func sanitizeGCPRuleName(name string) string {
 	var b strings.Builder
 	b.Grow(len(name))
@@ -371,11 +408,25 @@ func sanitizeGCPRuleName(name string) string {
 	return cleaned
 }
 
+func portRange(start int, end int) string {
+	if end <= start {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d-%d", start, end)
+}
+
+func portRangeLabel(start int, end int) string {
+	if end <= start {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d-%d", start, end)
+}
+
 func networkSelfLink(projectID, network string) string {
 	return fmt.Sprintf("projects/%s/global/networks/%s", projectID, network)
 }
 
-func (c *GCPClient) resolveTargetCIDRs(resolveLabels func(map[string]string) ([]string, error), cidr string, selector map[string]string) ([]string, string, string, error) {
+func (c *GCPClient) resolveTargetCIDRs(resolveLabels func(policy.PodSelectorSpec) ([]string, error), cidr string, selector policy.PodSelectorSpec) ([]string, string, string, error) {
 	if cidr != "" {
 		return []string{cidr}, compactCIDR(cidr), cidr, nil
 	}
@@ -401,28 +452,12 @@ func (c *GCPClient) resolveTargetCIDRs(resolveLabels func(map[string]string) ([]
 	return cidrs, fmt.Sprintf("sel-%s", labelKey), fmt.Sprintf("sel-%s", labelKey), nil
 }
 
-func selectorKey(labels map[string]string) string {
-	if len(labels) == 0 {
+func selectorKey(selector policy.PodSelectorSpec) string {
+	key := policy.SelectorKeySpec(selector)
+	if strings.TrimSpace(key) == "" {
 		return "any"
 	}
-	keys := make([]string, 0, len(labels))
-	for k := range labels {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var b strings.Builder
-	for i, k := range keys {
-		if i > 0 {
-			b.WriteString("-")
-		}
-		b.WriteString(sanitizeGCPRuleName(fmt.Sprintf("%s-%s", k, labels[k])))
-	}
-	out := b.String()
-	if out == "" {
-		return "any"
-	}
-	return out
+	return sanitizeGCPRuleName(key)
 }
 
 func ipsToCIDRs(ips []string) ([]string, error) {
@@ -460,12 +495,12 @@ func ipToCIDR(ip string) (string, error) {
 
 func hasPodSelectors(p policy.NetworkPolicy) bool {
 	for _, e := range p.Spec.Egress {
-		if len(e.To.PodSelector.MatchLabels) > 0 {
+		if len(e.To.PodSelector.MatchLabels) > 0 || len(e.To.PodSelector.MatchExpressions) > 0 {
 			return true
 		}
 	}
 	for _, in := range p.Spec.Ingress {
-		if len(in.From.PodSelector.MatchLabels) > 0 {
+		if len(in.From.PodSelector.MatchLabels) > 0 || len(in.From.PodSelector.MatchExpressions) > 0 {
 			return true
 		}
 	}
@@ -517,10 +552,10 @@ func (c *GCPClient) discoverResources(ctx context.Context, projectID, networkURL
 	return resources, nil
 }
 
-func resolveAddresses(resources []Resource, selector map[string]string) []string {
+func resolveAddresses(resources []Resource, selector policy.PodSelectorSpec) []string {
 	var addrs []string
 	for _, r := range resources {
-		if matchLabels(selector, r.Labels) {
+		if policy.MatchesSelector(r.Labels, selector) {
 			if r.PrivateIP != "" {
 				addrs = append(addrs, r.PrivateIP)
 			}
@@ -541,16 +576,4 @@ func resolveAddresses(resources []Resource, selector map[string]string) []string
 	}
 	sort.Strings(dedup)
 	return dedup
-}
-
-func matchLabels(selector, labels map[string]string) bool {
-	if len(selector) == 0 {
-		return true
-	}
-	for k, v := range selector {
-		if labels[k] != v {
-			return false
-		}
-	}
-	return true
 }

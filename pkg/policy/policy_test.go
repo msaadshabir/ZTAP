@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+func intPtr(v int) *int {
+	return &v
+}
+
 func TestLoadFromFile(t *testing.T) {
 	// Create temp directory
 	tmpDir := t.TempDir()
@@ -352,6 +356,46 @@ func TestValidate(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "valid pod selector matchExpressions",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "selector-expr"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{
+						MatchExpressions: []LabelSelectorRequirement{{Key: "app", Operator: "In", Values: []string{"web"}}},
+					},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 443}},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid namespaceSelector egress",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "ns-selector"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "api"}},
+					Egress: []EgressRule{
+						{
+							To: EgressTarget{
+								NamespaceSelector: PodSelectorSpec{MatchLabels: map[string]string{"team": "payments"}},
+							},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 443}},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
 			name: "missing apiVersion",
 			policy: NetworkPolicy{
 				Kind:     "NetworkPolicy",
@@ -424,6 +468,157 @@ func TestValidate(t *testing.T) {
 			},
 			expectError: true,
 			errorField:  "spec.ingress[0].from.ipBlock.cidr",
+		},
+		{
+			name: "ipBlock except outside cidr",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "bad-except"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8", Except: []string{"192.168.0.0/16"}}},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 443}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.egress[0].to.ipBlock.except[0]",
+		},
+		{
+			name: "ipBlock except family mismatch",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "except-family"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8", Except: []string{"2001:db8::/64"}}},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 443}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.egress[0].to.ipBlock.except[0]",
+		},
+		{
+			name: "invalid port range",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "bad-range"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 8080, EndPort: intPtr(8070)}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.egress[0].ports[0].endPort",
+		},
+		{
+			name: "named port valid with selector",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "named-port"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "api"}}},
+							Ports: []PortSpec{{Protocol: "TCP", PortName: "http"}},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "named port requires selector",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "named-port-ipblock"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
+							Ports: []PortSpec{{Protocol: "TCP", PortName: "http"}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.egress[0].ports",
+		},
+		{
+			name: "named port invalid for ICMP",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "icmp-named"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "api"}}},
+							Ports: []PortSpec{{Protocol: "ICMP", PortName: "ping"}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.egress[0].ports[0].port",
+		},
+		{
+			name: "endPort invalid for ICMP",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "icmp-range"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+					Ingress: []IngressRule{
+						{
+							From:  IngressSource{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
+							Ports: []PortSpec{{Protocol: "ICMP", Port: 8, EndPort: intPtr(9)}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.ingress[0].ports[0].endPort",
+		},
+		{
+			name: "named port with endPort",
+			policy: NetworkPolicy{
+				APIVersion: "ztap/v1",
+				Kind:       "NetworkPolicy",
+				Metadata:   NetworkPolicyMetadata{Name: "named-port-range"},
+				Spec: NetworkPolicySpec{
+					PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+					Egress: []EgressRule{
+						{
+							To:    EgressTarget{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "api"}}},
+							Ports: []PortSpec{{Protocol: "TCP", PortName: "http", EndPort: intPtr(8080)}},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorField:  "spec.egress[0].ports[0].endPort",
 		},
 		{
 			name: "invalid egress port",

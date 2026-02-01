@@ -1,6 +1,11 @@
 package v1alpha1
 
 import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -14,30 +19,107 @@ type ZtapNetworkPolicySpec struct {
 
 // PodSelectorSpec defines label-based pod selection.
 type PodSelectorSpec struct {
-	MatchLabels map[string]string `json:"matchLabels"`
+	MatchLabels      map[string]string          `json:"matchLabels,omitempty"`
+	MatchExpressions []LabelSelectorRequirement `json:"matchExpressions,omitempty"`
+}
+
+// LabelSelectorRequirement defines a selector requirement.
+type LabelSelectorRequirement struct {
+	Key      string   `json:"key"`
+	Operator string   `json:"operator"`
+	Values   []string `json:"values,omitempty"`
 }
 
 // IPBlockSpec defines CIDR-based IP selection.
 type IPBlockSpec struct {
-	CIDR string `json:"cidr"`
+	CIDR   string   `json:"cidr"`
+	Except []string `json:"except,omitempty"`
 }
 
 // PortSpec defines a protocol and port combination for network rules.
 type PortSpec struct {
 	Protocol string `json:"protocol"`
-	Port     int    `json:"port"`
+	Port     int    `json:"-"`
+	PortName string `json:"-"`
+	EndPort  *int   `json:"endPort,omitempty"`
+}
+
+type portSpecWire struct {
+	Protocol string `json:"protocol"`
+	Port     any    `json:"port"`
+	EndPort  *int   `json:"endPort,omitempty"`
+}
+
+func (p *PortSpec) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Protocol string          `json:"protocol"`
+		Port     json.RawMessage `json:"port"`
+		EndPort  *int            `json:"endPort,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	portNum, portName, err := parsePortJSON(raw.Port)
+	if err != nil {
+		return err
+	}
+	p.Protocol = raw.Protocol
+	p.Port = portNum
+	p.PortName = portName
+	p.EndPort = raw.EndPort
+	return nil
+}
+
+func (p PortSpec) MarshalJSON() ([]byte, error) {
+	out := portSpecWire{
+		Protocol: p.Protocol,
+		Port:     portValueForMarshal(p.Port, p.PortName),
+		EndPort:  p.EndPort,
+	}
+	return json.Marshal(out)
+}
+
+func parsePortJSON(raw json.RawMessage) (int, string, error) {
+	if len(raw) == 0 {
+		return 0, "", nil
+	}
+	var num int
+	if err := json.Unmarshal(raw, &num); err == nil {
+		return num, "", nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return 0, "", nil
+		}
+		if n, err := strconv.Atoi(s); err == nil {
+			return n, "", nil
+		}
+		return 0, s, nil
+	}
+	return 0, "", fmt.Errorf("port must be an integer or string")
+}
+
+func portValueForMarshal(port int, portName string) any {
+	if strings.TrimSpace(portName) != "" {
+		return portName
+	}
+	return port
 }
 
 // EgressTarget defines the destination for egress rules.
 type EgressTarget struct {
-	PodSelector *PodSelectorSpec `json:"podSelector,omitempty"`
-	IPBlock     *IPBlockSpec     `json:"ipBlock,omitempty"`
+	PodSelector       *PodSelectorSpec `json:"podSelector,omitempty"`
+	NamespaceSelector *PodSelectorSpec `json:"namespaceSelector,omitempty"`
+	IPBlock           *IPBlockSpec     `json:"ipBlock,omitempty"`
 }
 
 // IngressSource defines the source for ingress rules.
 type IngressSource struct {
-	PodSelector *PodSelectorSpec `json:"podSelector,omitempty"`
-	IPBlock     *IPBlockSpec     `json:"ipBlock,omitempty"`
+	PodSelector       *PodSelectorSpec `json:"podSelector,omitempty"`
+	NamespaceSelector *PodSelectorSpec `json:"namespaceSelector,omitempty"`
+	IPBlock           *IPBlockSpec     `json:"ipBlock,omitempty"`
 }
 
 // EgressRule defines an outbound traffic rule.
@@ -162,6 +244,10 @@ func (in *ZtapNetworkPolicySpec) DeepCopy() *ZtapNetworkPolicySpec {
 			out.PodSelector.MatchLabels[k] = v
 		}
 	}
+	if in.PodSelector.MatchExpressions != nil {
+		out.PodSelector.MatchExpressions = make([]LabelSelectorRequirement, len(in.PodSelector.MatchExpressions))
+		copy(out.PodSelector.MatchExpressions, in.PodSelector.MatchExpressions)
+	}
 
 	if in.Egress != nil {
 		out.Egress = make([]EgressRule, len(in.Egress))
@@ -200,7 +286,13 @@ func (in *EgressRule) DeepCopy() EgressRule {
 		Ports: make([]PortSpec, len(in.Ports)),
 		To:    in.To.DeepCopy(),
 	}
-	copy(out.Ports, in.Ports)
+	for i := range in.Ports {
+		out.Ports[i] = in.Ports[i]
+		if in.Ports[i].EndPort != nil {
+			v := *in.Ports[i].EndPort
+			out.Ports[i].EndPort = &v
+		}
+	}
 	return out
 }
 
@@ -209,7 +301,13 @@ func (in *IngressRule) DeepCopy() IngressRule {
 		Ports: make([]PortSpec, len(in.Ports)),
 		From:  in.From.DeepCopy(),
 	}
-	copy(out.Ports, in.Ports)
+	for i := range in.Ports {
+		out.Ports[i] = in.Ports[i]
+		if in.Ports[i].EndPort != nil {
+			v := *in.Ports[i].EndPort
+			out.Ports[i].EndPort = &v
+		}
+	}
 	return out
 }
 
@@ -223,10 +321,32 @@ func (in *EgressTarget) DeepCopy() EgressTarget {
 				ps.MatchLabels[k] = v
 			}
 		}
+		if in.PodSelector.MatchExpressions != nil {
+			ps.MatchExpressions = make([]LabelSelectorRequirement, len(in.PodSelector.MatchExpressions))
+			copy(ps.MatchExpressions, in.PodSelector.MatchExpressions)
+		}
 		out.PodSelector = &ps
+	}
+	if in.NamespaceSelector != nil {
+		ns := PodSelectorSpec{}
+		if in.NamespaceSelector.MatchLabels != nil {
+			ns.MatchLabels = make(map[string]string, len(in.NamespaceSelector.MatchLabels))
+			for k, v := range in.NamespaceSelector.MatchLabels {
+				ns.MatchLabels[k] = v
+			}
+		}
+		if in.NamespaceSelector.MatchExpressions != nil {
+			ns.MatchExpressions = make([]LabelSelectorRequirement, len(in.NamespaceSelector.MatchExpressions))
+			copy(ns.MatchExpressions, in.NamespaceSelector.MatchExpressions)
+		}
+		out.NamespaceSelector = &ns
 	}
 	if in.IPBlock != nil {
 		ip := *in.IPBlock
+		if in.IPBlock.Except != nil {
+			ip.Except = make([]string, len(in.IPBlock.Except))
+			copy(ip.Except, in.IPBlock.Except)
+		}
 		out.IPBlock = &ip
 	}
 	return out
@@ -242,10 +362,32 @@ func (in *IngressSource) DeepCopy() IngressSource {
 				ps.MatchLabels[k] = v
 			}
 		}
+		if in.PodSelector.MatchExpressions != nil {
+			ps.MatchExpressions = make([]LabelSelectorRequirement, len(in.PodSelector.MatchExpressions))
+			copy(ps.MatchExpressions, in.PodSelector.MatchExpressions)
+		}
 		out.PodSelector = &ps
+	}
+	if in.NamespaceSelector != nil {
+		ns := PodSelectorSpec{}
+		if in.NamespaceSelector.MatchLabels != nil {
+			ns.MatchLabels = make(map[string]string, len(in.NamespaceSelector.MatchLabels))
+			for k, v := range in.NamespaceSelector.MatchLabels {
+				ns.MatchLabels[k] = v
+			}
+		}
+		if in.NamespaceSelector.MatchExpressions != nil {
+			ns.MatchExpressions = make([]LabelSelectorRequirement, len(in.NamespaceSelector.MatchExpressions))
+			copy(ns.MatchExpressions, in.NamespaceSelector.MatchExpressions)
+		}
+		out.NamespaceSelector = &ns
 	}
 	if in.IPBlock != nil {
 		ip := *in.IPBlock
+		if in.IPBlock.Except != nil {
+			ip.Except = make([]string, len(in.IPBlock.Except))
+			copy(ip.Except, in.IPBlock.Except)
+		}
 		out.IPBlock = &ip
 	}
 	return out

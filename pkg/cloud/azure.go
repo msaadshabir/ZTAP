@@ -181,14 +181,23 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 		}
 
 		for _, port := range egress.Ports {
-			if err := validatePort(port.Port); err != nil {
+			if port.PortName != "" {
+				return nil, fmt.Errorf("named ports are not supported for Azure NSG rules")
+			}
+			start := port.Port
+			end := port.Port
+			if port.EndPort != nil {
+				end = *port.EndPort
+			}
+			if err := validateAzurePortRange(start, end); err != nil {
 				return nil, err
 			}
 
 			proto := normalizeProtocol(port.Protocol)
+			portLabel := azurePortRangeLabel(start, end)
 			rules = append(rules, ruleSpec{
-				name:    sanitizeRuleName(fmt.Sprintf("egress-%s-%d-%s", proto, port.Port, compactCIDR(cidr))),
-				sortKey: fmt.Sprintf("egress-%s-%05d-%s", proto, port.Port, cidr),
+				name:    sanitizeRuleName(fmt.Sprintf("egress-%s-%s-%s", proto, portLabel, compactCIDR(cidr))),
+				sortKey: fmt.Sprintf("egress-%s-%s-%s", proto, portLabel, cidr),
 				rule: armnetwork.SecurityRule{
 					Properties: &armnetwork.SecurityRulePropertiesFormat{
 						Access:                   ptrAccess(armnetwork.SecurityRuleAccessAllow),
@@ -197,7 +206,7 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 						SourceAddressPrefix:      ptrString(azureProtocolAsterisk),
 						DestinationAddressPrefix: ptrString(cidr),
 						SourcePortRange:          ptrString(azureProtocolAsterisk),
-						DestinationPortRange:     ptrString(portRange(port.Port)),
+						DestinationPortRange:     ptrString(azurePortRange(start, end)),
 						Description:              ptrString(managedRuleDescription),
 					},
 				},
@@ -212,14 +221,23 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 		}
 
 		for _, port := range ingress.Ports {
-			if err := validatePort(port.Port); err != nil {
+			if port.PortName != "" {
+				return nil, fmt.Errorf("named ports are not supported for Azure NSG rules")
+			}
+			start := port.Port
+			end := port.Port
+			if port.EndPort != nil {
+				end = *port.EndPort
+			}
+			if err := validateAzurePortRange(start, end); err != nil {
 				return nil, err
 			}
 
 			proto := normalizeProtocol(port.Protocol)
+			portLabel := azurePortRangeLabel(start, end)
 			rules = append(rules, ruleSpec{
-				name:    sanitizeRuleName(fmt.Sprintf("ingress-%s-%d-%s", proto, port.Port, compactCIDR(cidr))),
-				sortKey: fmt.Sprintf("ingress-%s-%05d-%s", proto, port.Port, cidr),
+				name:    sanitizeRuleName(fmt.Sprintf("ingress-%s-%s-%s", proto, portLabel, compactCIDR(cidr))),
+				sortKey: fmt.Sprintf("ingress-%s-%s-%s", proto, portLabel, cidr),
 				rule: armnetwork.SecurityRule{
 					Properties: &armnetwork.SecurityRulePropertiesFormat{
 						Access:                   ptrAccess(armnetwork.SecurityRuleAccessAllow),
@@ -228,7 +246,7 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 						SourceAddressPrefix:      ptrString(cidr),
 						DestinationAddressPrefix: ptrString(azureProtocolAsterisk),
 						SourcePortRange:          ptrString(azureProtocolAsterisk),
-						DestinationPortRange:     ptrString(portRange(port.Port)),
+						DestinationPortRange:     ptrString(azurePortRange(start, end)),
 						Description:              ptrString(managedRuleDescription),
 					},
 				},
@@ -243,9 +261,15 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 	return rules, nil
 }
 
-func validatePort(port int) error {
-	if port <= 0 || port > 65535 {
-		return fmt.Errorf("invalid port %d", port)
+func validateAzurePortRange(start int, end int) error {
+	if start <= 0 || start > 65535 {
+		return fmt.Errorf("invalid port %d", start)
+	}
+	if end <= 0 || end > 65535 {
+		return fmt.Errorf("invalid port %d", end)
+	}
+	if end < start {
+		return fmt.Errorf("invalid port range %d-%d", start, end)
 	}
 	return nil
 }
@@ -286,8 +310,18 @@ func normalizeProtocol(proto string) string {
 	}
 }
 
-func portRange(port int) string {
-	return fmt.Sprintf("%d", port)
+func azurePortRange(start int, end int) string {
+	if end <= start {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d-%d", start, end)
+}
+
+func azurePortRangeLabel(start int, end int) string {
+	if end <= start {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d-%d", start, end)
 }
 
 func compactCIDR(cidr string) string {

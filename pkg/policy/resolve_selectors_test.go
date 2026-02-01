@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -33,6 +35,93 @@ func (m *mockResolverDiscovery) Watch(ctx context.Context, labels map[string]str
 }
 
 func (m *mockResolverDiscovery) Stop() error {
+	return nil
+}
+
+type mockSelectorDiscovery struct {
+	responses map[string][]string
+}
+
+func (m *mockSelectorDiscovery) ResolveLabels(labels map[string]string) ([]string, error) {
+	key := SelectorKey(labels)
+	if ips, ok := m.responses[key]; ok {
+		return ips, nil
+	}
+	return nil, noMatchesErr{labels: labels}
+}
+
+func (m *mockSelectorDiscovery) ResolveSelector(selector PodSelectorSpec) ([]string, error) {
+	key := SelectorKeySpec(selector)
+	if ips, ok := m.responses[key]; ok {
+		return ips, nil
+	}
+	return nil, noMatchesErr{labels: selector.MatchLabels}
+}
+
+func (m *mockSelectorDiscovery) ResolveSelectorScoped(scope string, selector PodSelectorSpec) ([]string, error) {
+	return m.ResolveSelector(selector)
+}
+
+func (m *mockSelectorDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
+	return nil
+}
+
+func (m *mockSelectorDiscovery) DeregisterService(name string) error {
+	return nil
+}
+
+func (m *mockSelectorDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
+	return nil, nil
+}
+
+func (m *mockSelectorDiscovery) Stop() error {
+	return nil
+}
+
+type mockNamespaceDiscovery struct {
+	namespaces map[string][]string
+	scoped     map[string]map[string][]string
+}
+
+func (m *mockNamespaceDiscovery) ResolveLabels(labels map[string]string) ([]string, error) {
+	return nil, fmt.Errorf("unscoped lookup not supported")
+}
+
+func (m *mockNamespaceDiscovery) ResolveLabelsScoped(scope string, labels map[string]string) ([]string, error) {
+	key := SelectorKey(labels)
+	if byScope, ok := m.scoped[scope]; ok {
+		if ips, ok := byScope[key]; ok {
+			return ips, nil
+		}
+	}
+	return nil, noMatchesErr{labels: labels}
+}
+
+func (m *mockNamespaceDiscovery) ResolveNamespaces(selector PodSelectorSpec) ([]string, error) {
+	key := SelectorKeySpec(selector)
+	if namespaces, ok := m.namespaces[key]; ok {
+		return namespaces, nil
+	}
+	return nil, noMatchesErr{labels: selector.MatchLabels}
+}
+
+func (m *mockNamespaceDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
+	return nil
+}
+
+func (m *mockNamespaceDiscovery) DeregisterService(name string) error {
+	return nil
+}
+
+func (m *mockNamespaceDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
+	return nil, nil
+}
+
+func (m *mockNamespaceDiscovery) WatchScoped(ctx context.Context, scope string, labels map[string]string) (<-chan []string, error) {
+	return nil, nil
+}
+
+func (m *mockNamespaceDiscovery) Stop() error {
 	return nil
 }
 
@@ -308,5 +397,169 @@ func TestResolvePodSelectorsToIPBlocks_DedupAndSort(t *testing.T) {
 	actual := []string{p.Spec.Ingress[0].From.IPBlock.CIDR, p.Spec.Ingress[1].From.IPBlock.CIDR}
 	if !reflect.DeepEqual(expected, actual) {
 		t.Fatalf("Expected %v, got %v", expected, actual)
+	}
+}
+
+func TestResolvePodSelectorsToIPBlocks_MatchExpressions(t *testing.T) {
+	selector := PodSelectorSpec{
+		MatchExpressions: []LabelSelectorRequirement{{Key: "app", Operator: "In", Values: []string{"web"}}},
+	}
+	key := SelectorKeySpec(selector)
+	disc := &mockSelectorDiscovery{
+		responses: map[string][]string{key: {"10.0.0.3"}},
+	}
+	resolver := NewPolicyResolver(disc)
+
+	policies := []NetworkPolicy{
+		{
+			Metadata: NetworkPolicyMetadata{Name: "expr"},
+			Spec: NetworkPolicySpec{
+				PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "lb"}},
+				Egress: []EgressRule{
+					{
+						To:    EgressTarget{PodSelector: selector},
+						Ports: []PortSpec{{Protocol: "TCP", Port: 443}},
+					},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+	if err != nil {
+		t.Fatalf("ResolvePodSelectorsToIPBlocks failed: %v", err)
+	}
+	if got := resolved[0].Spec.Egress[0].To.IPBlock.CIDR; got != "10.0.0.3/32" {
+		t.Fatalf("expected resolved CIDR 10.0.0.3/32, got %s", got)
+	}
+}
+
+func TestResolvePodSelectorsToIPBlocks_NamespaceSelector(t *testing.T) {
+	selector := PodSelectorSpec{MatchLabels: map[string]string{"app": "db"}}
+	nsSelector := PodSelectorSpec{MatchLabels: map[string]string{"team": "payments"}}
+	key := SelectorKey(selector.MatchLabels)
+	nsKey := SelectorKeySpec(nsSelector)
+	disc := &mockNamespaceDiscovery{
+		namespaces: map[string][]string{nsKey: {"ns-a", "ns-b"}},
+		scoped: map[string]map[string][]string{
+			"ns-a": {key: {"10.0.0.10"}},
+			"ns-b": {key: {"10.0.0.11"}},
+		},
+	}
+	resolver := NewPolicyResolver(disc)
+
+	policies := []NetworkPolicy{
+		{
+			Metadata: NetworkPolicyMetadata{Name: "ns"},
+			Spec: NetworkPolicySpec{
+				PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+				Egress: []EgressRule{
+					{
+						To: EgressTarget{
+							PodSelector:       selector,
+							NamespaceSelector: nsSelector,
+						},
+						Ports: []PortSpec{{Protocol: "TCP", Port: 5432}},
+					},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped("default", policies)
+	if err != nil {
+		t.Fatalf("ResolvePodSelectorsToIPBlocksScoped failed: %v", err)
+	}
+	if len(resolved) != 1 || len(resolved[0].Spec.Egress) != 2 {
+		t.Fatalf("expected 2 egress rules, got %d", len(resolved[0].Spec.Egress))
+	}
+	got := []string{resolved[0].Spec.Egress[0].To.IPBlock.CIDR, resolved[0].Spec.Egress[1].To.IPBlock.CIDR}
+	sort.Strings(got)
+	expected := []string{"10.0.0.10/32", "10.0.0.11/32"}
+	if !reflect.DeepEqual(expected, got) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+}
+
+type mockPodDiscovery struct {
+	pods []PodInfo
+}
+
+func (m *mockPodDiscovery) ResolveLabels(labels map[string]string) ([]string, error) {
+	return nil, fmt.Errorf("unexpected ResolveLabels call")
+}
+
+func (m *mockPodDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
+	return nil
+}
+
+func (m *mockPodDiscovery) DeregisterService(name string) error {
+	return nil
+}
+
+func (m *mockPodDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
+	return nil, nil
+}
+
+func (m *mockPodDiscovery) Stop() error {
+	return nil
+}
+
+func (m *mockPodDiscovery) ResolvePods(selector PodSelectorSpec) ([]PodInfo, error) {
+	return m.pods, nil
+}
+
+func (m *mockPodDiscovery) ResolvePodsScoped(scope string, selector PodSelectorSpec) ([]PodInfo, error) {
+	return m.pods, nil
+}
+
+func TestResolvePodSelectorsToIPBlocks_NamedPortEgress(t *testing.T) {
+	pods := []PodInfo{
+		{IP: "10.0.0.1", Ports: []PodPort{{Name: "http", Port: 8080, Protocol: "TCP"}}},
+		{IP: "10.0.0.2", Ports: []PodPort{{Name: "http", Port: 9090, Protocol: "TCP"}}},
+		{IP: "10.0.0.3", Ports: []PodPort{{Name: "metrics", Port: 9091, Protocol: "TCP"}}},
+	}
+	resolver := NewPolicyResolver(&mockPodDiscovery{pods: pods})
+
+	policies := []NetworkPolicy{
+		{
+			Metadata: NetworkPolicyMetadata{Name: "named-egress"},
+			Spec: NetworkPolicySpec{
+				PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+				Egress: []EgressRule{
+					{
+						To:    EgressTarget{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "api"}}},
+						Ports: []PortSpec{{Protocol: "TCP", PortName: "http"}},
+					},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+	if err != nil {
+		t.Fatalf("ResolvePodSelectorsToIPBlocks failed: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 policy, got %d", len(resolved))
+	}
+	if len(resolved[0].Spec.Egress) != 2 {
+		t.Fatalf("expected 2 egress rules, got %d", len(resolved[0].Spec.Egress))
+	}
+
+	got := make(map[string]int)
+	for _, rule := range resolved[0].Spec.Egress {
+		if len(rule.Ports) != 1 {
+			t.Fatalf("expected 1 port per rule, got %d", len(rule.Ports))
+		}
+		if strings.TrimSpace(rule.Ports[0].PortName) != "" {
+			t.Fatalf("expected named port to be resolved, got %q", rule.Ports[0].PortName)
+		}
+		got[rule.To.IPBlock.CIDR] = rule.Ports[0].Port
+	}
+
+	expected := map[string]int{"10.0.0.1/32": 8080, "10.0.0.2/32": 9090}
+	if !reflect.DeepEqual(expected, got) {
+		t.Fatalf("expected %v, got %v", expected, got)
 	}
 }

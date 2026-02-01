@@ -152,3 +152,36 @@ func TestAzureSyncPolicyInvalidPort(t *testing.T) {
 		t.Fatalf("expected no upserts, got %d", len(mock.upserts))
 	}
 }
+
+func TestAzureSyncPolicyPortRange(t *testing.T) {
+	end := 8080
+	mock := &mockSecurityRulesClient{}
+	client := &AzureClient{rules: mock, rulePrefix: defaultAzureRulePrefix, priorityBase: defaultPriorityBase}
+
+	np := policy.NetworkPolicy{
+		APIVersion: "ztap/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   policy.NetworkPolicyMetadata{Name: "range"},
+		Spec: policy.NetworkPolicySpec{
+			PodSelector: policy.PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+			Egress: []policy.EgressRule{{
+				To:    policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.0/24"}},
+				Ports: []policy.PortSpec{{Protocol: "TCP", Port: 8000, EndPort: &end}},
+			}},
+		},
+	}
+
+	if err := client.SyncPolicy(context.Background(), np, "rg", "nsg"); err != nil {
+		t.Fatalf("SyncPolicy returned error: %v", err)
+	}
+	if len(mock.upserts) != 1 {
+		t.Fatalf("expected 1 upsert, got %d", len(mock.upserts))
+	}
+	rule := mock.upserts[0]
+	if rule.Properties == nil || rule.Properties.DestinationPortRange == nil {
+		t.Fatalf("expected destination port range")
+	}
+	if *rule.Properties.DestinationPortRange != "8000-8080" {
+		t.Fatalf("unexpected port range: %s", *rule.Properties.DestinationPortRange)
+	}
+}

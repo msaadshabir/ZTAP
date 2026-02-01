@@ -49,6 +49,11 @@ func policiesSupportedByEBPF(policies []policy.NetworkPolicy, bpfObjectPath stri
 	// restrict to host CIDRs only.
 	for _, p := range policies {
 		for _, egress := range p.Spec.Egress {
+			for _, port := range egress.Ports {
+				if port.PortName != "" || port.EndPort != nil {
+					return false
+				}
+			}
 			cidr := egress.To.IPBlock.CIDR
 			if cidr == "" {
 				continue
@@ -72,6 +77,11 @@ func policiesSupportedByEBPF(policies []policy.NetworkPolicy, bpfObjectPath stri
 			}
 		}
 		for _, ingress := range p.Spec.Ingress {
+			for _, port := range ingress.Ports {
+				if port.PortName != "" || port.EndPort != nil {
+					return false
+				}
+			}
 			cidr := ingress.From.IPBlock.CIDR
 			if cidr == "" {
 				continue

@@ -48,12 +48,9 @@
 - **Namespace/tenant isolation** - Multi-tenant policy scoping
 - **Compliance report generation** - PCI-DSS, SOC2, HIPAA policy mapping exports
 - Improve label-based enforcement outside Kubernetes agent mode (automatic selector resolution and re-resolution over time).
+- Kubernetes NetworkPolicy parity extensions: `namespaceSelector`, `matchExpressions`, `ipBlock.except`, named ports, and port ranges.
 
 ## Planned
-
-### Enforcement & Policy Support
-
-- Extend the policy spec toward Kubernetes NetworkPolicy parity (e.g., namespaceSelector, matchExpressions, ipBlock.except, named ports / port ranges).
 
 ### Kubernetes Packaging
 

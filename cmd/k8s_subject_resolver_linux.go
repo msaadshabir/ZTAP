@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"ztap/pkg/enforcer"
+	"ztap/pkg/policy"
 )
 
 type k8sSubjectResolver struct {
@@ -33,13 +34,17 @@ func newK8sSubjectResolver(client kubernetes.Interface, cgroupRoot string) enfor
 	return &k8sSubjectResolver{client: client, cgroupRoot: cgroupRoot}
 }
 
-func (r *k8sSubjectResolver) ResolveCgroupIDs(ctx context.Context, tenant string, podSelector map[string]string) ([]uint64, error) {
+func (r *k8sSubjectResolver) ResolveCgroupIDs(ctx context.Context, tenant string, podSelector policy.PodSelectorSpec) ([]uint64, error) {
 	tenant = strings.TrimSpace(tenant)
 	if tenant == "" {
 		tenant = "default"
 	}
 
-	sel := labels.Set(podSelector).AsSelector().String()
+	selector, err := selectorFromPolicy(podSelector)
+	if err != nil {
+		return nil, err
+	}
+	sel := selector.String()
 	pods, err := r.client.CoreV1().Pods(tenant).List(ctx, metav1.ListOptions{LabelSelector: sel})
 	if err != nil {
 		return nil, err
@@ -52,16 +57,8 @@ func (r *k8sSubjectResolver) ResolveCgroupIDs(ctx context.Context, tenant string
 	seen := make(map[uint64]struct{}, len(pods.Items))
 	for i := range pods.Items {
 		pod := &pods.Items[i]
-		containerIDs := extractContainerIDs(pod)
-		for _, cid := range containerIDs {
-			cgPath, err := findContainerCgroupPath(r.cgroupRoot, pod, cid)
-			if err != nil {
-				continue
-			}
-			cgid, err := cgroupIDFromPath(cgPath)
-			if err != nil {
-				continue
-			}
+		podIDs := resolvePodCgroupIDs(pod, r.cgroupRoot)
+		for _, cgid := range podIDs {
 			if _, ok := seen[cgid]; ok {
 				continue
 			}
@@ -75,6 +72,105 @@ func (r *k8sSubjectResolver) ResolveCgroupIDs(ctx context.Context, tenant string
 
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids, nil
+}
+
+func (r *k8sSubjectResolver) ResolveSubjectPorts(ctx context.Context, tenant string, podSelector policy.PodSelectorSpec) ([]enforcer.SubjectPortInfo, error) {
+	tenant = strings.TrimSpace(tenant)
+	if tenant == "" {
+		tenant = "default"
+	}
+
+	selector, err := selectorFromPolicy(podSelector)
+	if err != nil {
+		return nil, err
+	}
+	sel := selector.String()
+	pods, err := r.client.CoreV1().Pods(tenant).List(ctx, metav1.ListOptions{LabelSelector: sel})
+	if err != nil {
+		return nil, err
+	}
+	if len(pods.Items) == 0 {
+		return []enforcer.SubjectPortInfo{}, nil
+	}
+
+	infos := make([]enforcer.SubjectPortInfo, 0)
+	seen := make(map[uint64]struct{})
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		ports := podPortsFromSpec(pod)
+		podIDs := resolvePodCgroupIDs(pod, r.cgroupRoot)
+		for _, cgid := range podIDs {
+			if _, ok := seen[cgid]; ok {
+				continue
+			}
+			seen[cgid] = struct{}{}
+			infos = append(infos, enforcer.SubjectPortInfo{CgroupID: cgid, Ports: ports, PodName: pod.Name})
+		}
+	}
+	if len(infos) == 0 {
+		return nil, fmt.Errorf("matched %d pods but resolved 0 cgroup IDs (namespace=%s selector=%s)", len(pods.Items), tenant, sel)
+	}
+	return infos, nil
+}
+
+func resolvePodCgroupIDs(pod *corev1.Pod, cgroupRoot string) []uint64 {
+	containerIDs := extractContainerIDs(pod)
+	ids := make([]uint64, 0, len(containerIDs))
+	seen := make(map[uint64]struct{}, len(containerIDs))
+	for _, cid := range containerIDs {
+		cgPath, err := findContainerCgroupPath(cgroupRoot, pod, cid)
+		if err != nil {
+			continue
+		}
+		cgid, err := cgroupIDFromPath(cgPath)
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[cgid]; ok {
+			continue
+		}
+		seen[cgid] = struct{}{}
+		ids = append(ids, cgid)
+	}
+	return ids
+}
+
+func podPortsFromSpec(pod *corev1.Pod) []policy.PodPort {
+	ports := make([]policy.PodPort, 0)
+	for _, container := range pod.Spec.Containers {
+		for _, port := range container.Ports {
+			name := strings.TrimSpace(port.Name)
+			if name == "" {
+				continue
+			}
+			proto := strings.ToUpper(string(port.Protocol))
+			if proto == "" {
+				proto = "TCP"
+			}
+			ports = append(ports, policy.PodPort{
+				Name:     name,
+				Protocol: proto,
+				Port:     int(port.ContainerPort),
+			})
+		}
+	}
+	return ports
+}
+
+func selectorFromPolicy(selector policy.PodSelectorSpec) (labels.Selector, error) {
+	if len(selector.MatchExpressions) == 0 {
+		return labels.Set(selector.MatchLabels).AsSelector(), nil
+	}
+	reqs := make([]metav1.LabelSelectorRequirement, 0, len(selector.MatchExpressions))
+	for _, expr := range selector.MatchExpressions {
+		reqs = append(reqs, metav1.LabelSelectorRequirement{
+			Key:      expr.Key,
+			Operator: metav1.LabelSelectorOperator(expr.Operator),
+			Values:   expr.Values,
+		})
+	}
+	labelSelector := &metav1.LabelSelector{MatchLabels: selector.MatchLabels, MatchExpressions: reqs}
+	return metav1.LabelSelectorAsSelector(labelSelector)
 }
 
 func extractContainerIDs(pod *corev1.Pod) []string {

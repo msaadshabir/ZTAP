@@ -450,7 +450,7 @@ spec:
 			name:      "Invalid Policy",
 			args:      []string{"policy", "validate", "-f", invalidPath},
 			wantError: true,
-			wantOut:   "invalid CIDR address",
+			wantOut:   "invalid CIDR",
 		},
 		{
 			name:      "Missing File",

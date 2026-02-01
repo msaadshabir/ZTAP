@@ -171,12 +171,12 @@ Notes:
 - The Linux eBPF enforcer supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP.
   - For `protocol: ICMP`, the policy `port` is accepted by validation but ignored during enforcement.
   - If eBPF isn't available (or `ZTAP_FORCE_IPTABLES=1`), ZTAP falls back to iptables.
-  Policies that use `podSelector` targets can be enforced by resolving selectors into host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules via discovery:
+  Policies that use selector targets (`podSelector` with optional `namespaceSelector`) can be enforced by resolving selectors into host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules via discovery:
   - In-cluster: run `ztap agent`
   - Local/CLI: run `ztap enforce` with `discovery.backend: k8s` configured
     - Tune refresh with `--resolve-labels-interval` (default: `5s`; set to `0` to resolve once)
     - If a selector currently resolves to zero targets, enforcement still starts; the rule becomes active when targets appear and resolution refreshes
-    Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels).
+    Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector` via GCE instance labels).
 
 Kubernetes multi-namespace agent mode:
 

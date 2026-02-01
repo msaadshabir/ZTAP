@@ -17,3 +17,15 @@ func TestSelectorKey_StableOrdering(t *testing.T) {
 		t.Fatalf("expected stable ordering, got %q", got)
 	}
 }
+
+func TestSelectorKeySpec_WithExpressions(t *testing.T) {
+	selector := PodSelectorSpec{
+		MatchLabels: map[string]string{"app": "web"},
+		MatchExpressions: []LabelSelectorRequirement{
+			{Key: "tier", Operator: "In", Values: []string{"api", "web"}},
+		},
+	}
+	if got := SelectorKeySpec(selector); got != "app=web|tier:In:api,web" {
+		t.Fatalf("expected selector key with expressions, got %q", got)
+	}
+}

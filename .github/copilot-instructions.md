@@ -178,9 +178,9 @@ Current Linux eBPF enforcement constraints:
 
 - IPv4/IPv6 `ipBlock.cidr` supports arbitrary CIDRs
 - TCP/UDP/ICMP supported (ICMP ignores `port` during enforcement)
-- `podSelector.matchLabels` targets are supported when translated into concrete `ipBlock` rules via discovery (e.g., `ztap agent` or `ztap enforce` with `discovery.backend: k8s`)
+- Selector targets (`podSelector` with optional `namespaceSelector`) are supported when translated into concrete `ipBlock` rules via discovery (e.g., `ztap agent` or `ztap enforce` with `discovery.backend: k8s`)
 
-Note: this limitation is specific to kernel enforcement. Cloud sync backends can still translate selectors; for example, `ztap gcp firewall-sync` resolves `podSelector.matchLabels` via GCE instance labels and syncs them into VPC firewall rules.
+Note: this limitation is specific to kernel enforcement. Cloud sync backends can still translate selectors; for example, `ztap gcp firewall-sync` resolves `podSelector` via GCE instance labels and syncs them into VPC firewall rules.
 
 ## Code Standards
 

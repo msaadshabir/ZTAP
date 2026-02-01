@@ -115,17 +115,17 @@ func EnforceWithEBPF(opts EnforcementOptions) {
 }
 
 // EnforceWithPF (macOS) - uses pfctl to manage rules
-func EnforceWithPF(opts EnforcementOptions) {
+func EnforceWithPF(opts EnforcementOptions) error {
 	fmt.Printf("Applying %d pf-based policies on macOS\n", len(opts.Policies))
 
 	if os.Getenv("ZTAP_SKIP_PF") == "1" {
 		logging.Warn("Skipping pf enforcement due to ZTAP_SKIP_PF environment override", nil)
-		return
+		return nil
 	}
 
 	if os.Geteuid() != 0 {
 		logging.Warn("pf enforcement requires root privileges; skipping rule application", nil)
-		return
+		return nil
 	}
 
 	if opts.DryRun {
@@ -147,8 +147,15 @@ func EnforceWithPF(opts EnforcementOptions) {
 			}
 			if egress.To.IPBlock.CIDR != "" {
 				for _, port := range egress.Ports {
-					anchorContent += fmt.Sprintf("pass out quick proto %s from any to %s port = %d\n",
-						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(egress.To.IPBlock.CIDR), port.Port)
+					if port.PortName != "" {
+						return fmt.Errorf("named ports are not supported by pf enforcement")
+					}
+					portExpr := fmt.Sprintf("%d", port.Port)
+					if port.EndPort != nil {
+						portExpr = fmt.Sprintf("%d:%d", port.Port, *port.EndPort)
+					}
+					anchorContent += fmt.Sprintf("pass out quick proto %s from any to %s port = %s\n",
+						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(egress.To.IPBlock.CIDR), portExpr)
 				}
 			}
 		}
@@ -162,8 +169,15 @@ func EnforceWithPF(opts EnforcementOptions) {
 			}
 			if ingress.From.IPBlock.CIDR != "" {
 				for _, port := range ingress.Ports {
-					anchorContent += fmt.Sprintf("pass in quick proto %s from %s to any port = %d\n",
-						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(ingress.From.IPBlock.CIDR), port.Port)
+					if port.PortName != "" {
+						return fmt.Errorf("named ports are not supported by pf enforcement")
+					}
+					portExpr := fmt.Sprintf("%d", port.Port)
+					if port.EndPort != nil {
+						portExpr = fmt.Sprintf("%d:%d", port.Port, *port.EndPort)
+					}
+					anchorContent += fmt.Sprintf("pass in quick proto %s from %s to any port = %s\n",
+						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(ingress.From.IPBlock.CIDR), portExpr)
 				}
 			}
 		}
@@ -172,17 +186,17 @@ func EnforceWithPF(opts EnforcementOptions) {
 	if opts.DryRun {
 		safeAnchorContent := sanitizeForLogPlain(anchorContent)
 		fmt.Printf("[DRY-RUN] Would have written the following to /etc/pf.anchors/ztap:\n%s\n", safeAnchorContent)
-		return
+		return nil
 	}
 
 	anchorFile := "/etc/pf.anchors/ztap"
 	if err := os.MkdirAll(filepath.Dir(anchorFile), 0o750); err != nil {
 		logging.Warnf("failed to create pf anchors directory: %v", err)
-		return
+		return err
 	}
 	if err := os.WriteFile(anchorFile, []byte(anchorContent), 0o600); err != nil {
 		logging.Warnf("failed to write pf anchor file: %v", err)
-		return
+		return err
 	}
 
 	// Ensure anchor is loaded in pf.conf
@@ -198,4 +212,5 @@ func EnforceWithPF(opts EnforcementOptions) {
 	}
 
 	fmt.Println("Note: Full enforcement requires sudo. See docs for production setup.")
+	return nil
 }

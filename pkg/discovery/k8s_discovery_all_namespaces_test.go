@@ -8,6 +8,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"ztap/pkg/policy"
 )
 
 func TestK8sDiscoveryAllNamespaces_ResolveLabelsScoped(t *testing.T) {
@@ -115,5 +117,37 @@ func TestK8sDiscoveryAllNamespaces_WatchScopedIsNamespaceScoped(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("timed out waiting for watch close")
+	}
+}
+
+func TestK8sDiscoveryAllNamespaces_ResolveNamespaces(t *testing.T) {
+	//nolint:staticcheck // NewClientset requires applyconfigs not generated in this repo.
+	client := fake.NewSimpleClientset()
+	disc, err := NewK8sDiscoveryAllNamespaces(client)
+	if err != nil {
+		t.Fatalf("Failed to create discovery: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := disc.Start(ctx); err != nil {
+		t.Fatalf("Failed to start discovery: %v", err)
+	}
+
+	_, _ = client.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "payments", Labels: map[string]string{"team": "payments"}},
+	}, metav1.CreateOptions{})
+	_, _ = client.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "core", Labels: map[string]string{"team": "core"}},
+	}, metav1.CreateOptions{})
+
+	time.Sleep(100 * time.Millisecond)
+
+	namespaces, err := disc.ResolveNamespaces(policy.PodSelectorSpec{MatchLabels: map[string]string{"team": "payments"}})
+	if err != nil {
+		t.Fatalf("ResolveNamespaces failed: %v", err)
+	}
+	if len(namespaces) != 1 || namespaces[0] != "payments" {
+		t.Fatalf("expected [payments], got %v", namespaces)
 	}
 }

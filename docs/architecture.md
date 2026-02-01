@@ -172,10 +172,10 @@ StartServer(port int) error
 - **Node Agent** (`ztap agent`)
   - Watches the ConfigMap policy store via a Kubernetes-backed PolicySync (`pkg/cluster/policy_sync_k8s.go`)
   - Enforces policies via the existing `PolicyEnforcer`
-  - Resolves `matchLabels` to pod IPs using Kubernetes discovery:
+  - Resolves selectors (`matchLabels` + `matchExpressions`, optionally with `namespaceSelector`) to pod IPs using Kubernetes discovery:
     - single-namespace: `pkg/discovery/k8s_discovery.go`
     - multi-namespace/all namespaces: `pkg/discovery/k8s_discovery_all_namespaces.go` (tenant-scoped)
-  - Translates `podSelector.matchLabels` targets into concrete host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules and re-applies enforcement when the resolved Pod IP set changes
+  - Translates `podSelector` targets into concrete host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules and re-applies enforcement when the resolved Pod IP set changes
 
 ## Data Flow
 

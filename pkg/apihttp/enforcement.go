@@ -92,6 +92,12 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 		}
 		policies = resolved
 	}
+	normalized, err := policy.NormalizePolicies(policies)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("failed to normalize ipBlocks: %w", err))
+		return
+	}
+	policies = normalized
 
 	named := make([]policy.NamedPolicy, 0, len(basePolicies))
 	for _, p := range basePolicies {
@@ -309,10 +315,13 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	enforcer.EnforceWithPF(enforcer.EnforcementOptions{
+	if err := enforcer.EnforceWithPF(enforcer.EnforcementOptions{
 		Policies: policies,
 		Context:  ctx,
-	})
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to enforce via pf: %w", err))
+		return
+	}
 	_ = s.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": platform, "count": len(policies)})
 	s.emitAlert(alert.Alert{
 		Source:   "api-http",
@@ -358,17 +367,5 @@ func (s *Server) handleEnforcementStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func policiesNeedTargetResolution(policies []policy.NetworkPolicy) bool {
-	for _, p := range policies {
-		for _, e := range p.Spec.Egress {
-			if len(e.To.PodSelector.MatchLabels) > 0 {
-				return true
-			}
-		}
-		for _, in := range p.Spec.Ingress {
-			if len(in.From.PodSelector.MatchLabels) > 0 {
-				return true
-			}
-		}
-	}
-	return false
+	return policy.NeedsTargetResolution(policies)
 }

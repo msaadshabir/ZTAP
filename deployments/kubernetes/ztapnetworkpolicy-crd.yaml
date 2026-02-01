@@ -36,14 +36,39 @@ spec:
               properties:
                 podSelector:
                   type: object
-                  required:
-                    - matchLabels
                   properties:
                     matchLabels:
                       type: object
                       minProperties: 1
                       additionalProperties:
                         type: string
+                    matchExpressions:
+                      type: array
+                      minItems: 1
+                      items:
+                        type: object
+                        required:
+                          - key
+                          - operator
+                        properties:
+                          key:
+                            type: string
+                          operator:
+                            type: string
+                            enum:
+                              - In
+                              - NotIn
+                              - Exists
+                              - DoesNotExist
+                          values:
+                            type: array
+                            items:
+                              type: string
+                  anyOf:
+                    - required:
+                        - matchLabels
+                    - required:
+                        - matchExpressions
                 egress:
                   type: array
                   items:
@@ -57,14 +82,74 @@ spec:
                         properties:
                           podSelector:
                             type: object
-                            required:
-                              - matchLabels
                             properties:
                               matchLabels:
                                 type: object
                                 minProperties: 1
                                 additionalProperties:
                                   type: string
+                              matchExpressions:
+                                type: array
+                                minItems: 1
+                                items:
+                                  type: object
+                                  required:
+                                    - key
+                                    - operator
+                                  properties:
+                                    key:
+                                      type: string
+                                    operator:
+                                      type: string
+                                      enum:
+                                        - In
+                                        - NotIn
+                                        - Exists
+                                        - DoesNotExist
+                                    values:
+                                      type: array
+                                      items:
+                                        type: string
+                            anyOf:
+                              - required:
+                                  - matchLabels
+                              - required:
+                                  - matchExpressions
+                          namespaceSelector:
+                            type: object
+                            properties:
+                              matchLabels:
+                                type: object
+                                minProperties: 1
+                                additionalProperties:
+                                  type: string
+                              matchExpressions:
+                                type: array
+                                minItems: 1
+                                items:
+                                  type: object
+                                  required:
+                                    - key
+                                    - operator
+                                  properties:
+                                    key:
+                                      type: string
+                                    operator:
+                                      type: string
+                                      enum:
+                                        - In
+                                        - NotIn
+                                        - Exists
+                                        - DoesNotExist
+                                    values:
+                                      type: array
+                                      items:
+                                        type: string
+                            anyOf:
+                              - required:
+                                  - matchLabels
+                              - required:
+                                  - matchExpressions
                           ipBlock:
                             type: object
                             required:
@@ -72,30 +157,82 @@ spec:
                             properties:
                               cidr:
                                 type: string
+                              except:
+                                type: array
+                                items:
+                                  type: string
                         oneOf:
                           - required:
-                              - podSelector
-                          - required:
                               - ipBlock
+                            not:
+                              anyOf:
+                                - required:
+                                    - podSelector
+                                - required:
+                                    - namespaceSelector
+                          - required:
+                              - podSelector
+                            not:
+                              anyOf:
+                                - required:
+                                    - namespaceSelector
+                                - required:
+                                    - ipBlock
+                          - required:
+                              - namespaceSelector
+                            not:
+                              anyOf:
+                                - required:
+                                    - podSelector
+                                - required:
+                                    - ipBlock
+                          - required:
+                              - podSelector
+                              - namespaceSelector
+                            not:
+                              required:
+                                - ipBlock
                       ports:
                         type: array
                         minItems: 1
                         items:
-                          type: object
-                          required:
-                            - protocol
-                            - port
-                          properties:
-                            protocol:
-                              type: string
-                              enum:
-                                - TCP
-                                - UDP
-                                - ICMP
-                            port:
-                              type: integer
-                              minimum: 1
-                              maximum: 65535
+                          oneOf:
+                            - type: object
+                              required:
+                                - protocol
+                                - port
+                              properties:
+                                protocol:
+                                  type: string
+                                  enum:
+                                    - TCP
+                                    - UDP
+                                    - ICMP
+                                port:
+                                  type: integer
+                                  minimum: 1
+                                  maximum: 65535
+                                endPort:
+                                  type: integer
+                                  minimum: 1
+                                  maximum: 65535
+                            - type: object
+                              required:
+                                - protocol
+                                - port
+                              properties:
+                                protocol:
+                                  type: string
+                                  enum:
+                                    - TCP
+                                    - UDP
+                                    - ICMP
+                                port:
+                                  type: string
+                                  pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+                              not:
+                                required:
+                                  - endPort
                 ingress:
                   type: array
                   items:
@@ -109,14 +246,74 @@ spec:
                         properties:
                           podSelector:
                             type: object
-                            required:
-                              - matchLabels
                             properties:
                               matchLabels:
                                 type: object
                                 minProperties: 1
                                 additionalProperties:
                                   type: string
+                              matchExpressions:
+                                type: array
+                                minItems: 1
+                                items:
+                                  type: object
+                                  required:
+                                    - key
+                                    - operator
+                                  properties:
+                                    key:
+                                      type: string
+                                    operator:
+                                      type: string
+                                      enum:
+                                        - In
+                                        - NotIn
+                                        - Exists
+                                        - DoesNotExist
+                                    values:
+                                      type: array
+                                      items:
+                                        type: string
+                            anyOf:
+                              - required:
+                                  - matchLabels
+                              - required:
+                                  - matchExpressions
+                          namespaceSelector:
+                            type: object
+                            properties:
+                              matchLabels:
+                                type: object
+                                minProperties: 1
+                                additionalProperties:
+                                  type: string
+                              matchExpressions:
+                                type: array
+                                minItems: 1
+                                items:
+                                  type: object
+                                  required:
+                                    - key
+                                    - operator
+                                  properties:
+                                    key:
+                                      type: string
+                                    operator:
+                                      type: string
+                                      enum:
+                                        - In
+                                        - NotIn
+                                        - Exists
+                                        - DoesNotExist
+                                    values:
+                                      type: array
+                                      items:
+                                        type: string
+                            anyOf:
+                              - required:
+                                  - matchLabels
+                              - required:
+                                  - matchExpressions
                           ipBlock:
                             type: object
                             required:
@@ -124,30 +321,82 @@ spec:
                             properties:
                               cidr:
                                 type: string
+                              except:
+                                type: array
+                                items:
+                                  type: string
                         oneOf:
                           - required:
-                              - podSelector
-                          - required:
                               - ipBlock
+                            not:
+                              anyOf:
+                                - required:
+                                    - podSelector
+                                - required:
+                                    - namespaceSelector
+                          - required:
+                              - podSelector
+                            not:
+                              anyOf:
+                                - required:
+                                    - namespaceSelector
+                                - required:
+                                    - ipBlock
+                          - required:
+                              - namespaceSelector
+                            not:
+                              anyOf:
+                                - required:
+                                    - podSelector
+                                - required:
+                                    - ipBlock
+                          - required:
+                              - podSelector
+                              - namespaceSelector
+                            not:
+                              required:
+                                - ipBlock
                       ports:
                         type: array
                         minItems: 1
                         items:
-                          type: object
-                          required:
-                            - protocol
-                            - port
-                          properties:
-                            protocol:
-                              type: string
-                              enum:
-                                - TCP
-                                - UDP
-                                - ICMP
-                            port:
-                              type: integer
-                              minimum: 1
-                              maximum: 65535
+                          oneOf:
+                            - type: object
+                              required:
+                                - protocol
+                                - port
+                              properties:
+                                protocol:
+                                  type: string
+                                  enum:
+                                    - TCP
+                                    - UDP
+                                    - ICMP
+                                port:
+                                  type: integer
+                                  minimum: 1
+                                  maximum: 65535
+                                endPort:
+                                  type: integer
+                                  minimum: 1
+                                  maximum: 65535
+                            - type: object
+                              required:
+                                - protocol
+                                - port
+                              properties:
+                                protocol:
+                                  type: string
+                                  enum:
+                                    - TCP
+                                    - UDP
+                                    - ICMP
+                                port:
+                                  type: string
+                                  pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+                              not:
+                                required:
+                                  - endPort
             status:
               type: object
               properties:

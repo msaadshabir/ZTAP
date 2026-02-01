@@ -30,3 +30,7 @@ func StopLinuxEnforcement() error {
 func CanUseEBPF() bool {
 	return false
 }
+
+func policiesSupportedByEBPF(_ []policy.NetworkPolicy, _ string) bool {
+	return false
+}

@@ -80,6 +80,11 @@ var enforceCmd = &cobra.Command{
 				}
 			}
 		}
+		normalized, err := policy.NormalizePolicies(policies)
+		if err != nil {
+			logging.Fatalf("Failed to normalize ipBlocks: %v", err)
+		}
+		policies = normalized
 
 		policyName := filepath.Base(policyFile)
 		named := make([]policy.NamedPolicy, 0, len(basePolicies))
@@ -205,7 +210,9 @@ var enforceCmd = &cobra.Command{
 
 		fmt.Println("Enforcing via pf (macOS)...")
 		opts := enforcer.EnforcementOptions{Policies: policies, DryRun: dryRun, Context: ctx}
-		enforcer.EnforceWithPF(opts)
+		if err := enforcer.EnforceWithPF(opts); err != nil {
+			logging.Fatalf("Failed to enforce via pf: %v", err)
+		}
 		if dryRun {
 			fmt.Println("Dry-run complete. No rules were loaded into pf.")
 		}
@@ -225,17 +232,5 @@ func init() {
 }
 
 func policiesNeedTargetResolution(policies []policy.NetworkPolicy) bool {
-	for _, p := range policies {
-		for _, e := range p.Spec.Egress {
-			if len(e.To.PodSelector.MatchLabels) > 0 {
-				return true
-			}
-		}
-		for _, in := range p.Spec.Ingress {
-			if len(in.From.PodSelector.MatchLabels) > 0 {
-				return true
-			}
-		}
-	}
-	return false
+	return policy.NeedsTargetResolution(policies)
 }

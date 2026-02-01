@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -27,5 +28,29 @@ func SelectorKey(labels map[string]string) string {
 		b.WriteByte('=')
 		b.WriteString(labels[k])
 	}
+	return b.String()
+}
+
+// SelectorKeySpec returns a deterministic string representation of a selector spec.
+func SelectorKeySpec(selector PodSelectorSpec) string {
+	labelKey := SelectorKey(selector.MatchLabels)
+	if len(selector.MatchExpressions) == 0 {
+		return labelKey
+	}
+
+	exprs := make([]string, 0, len(selector.MatchExpressions))
+	for _, expr := range selector.MatchExpressions {
+		values := append([]string(nil), expr.Values...)
+		sort.Strings(values)
+		exprs = append(exprs, fmt.Sprintf("%s:%s:%s", expr.Key, expr.Operator, strings.Join(values, ",")))
+	}
+	sort.Strings(exprs)
+
+	var b strings.Builder
+	if labelKey != "" {
+		b.WriteString(labelKey)
+		b.WriteByte('|')
+	}
+	b.WriteString(strings.Join(exprs, "|"))
 	return b.String()
 }

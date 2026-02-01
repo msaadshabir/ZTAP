@@ -224,3 +224,41 @@ func TestGCPSyncPolicyWithPodSelector(t *testing.T) {
 		t.Fatalf("unexpected network url: %s", fw.lastNetwork)
 	}
 }
+
+func TestGCPSyncPolicyPortRange(t *testing.T) {
+	end := 8080
+	fw := &mockFirewalls{}
+	client := &GCPClient{firewalls: fw, rulePrefix: defaultGCPRulePrefix, priorityBase: defaultGCPPriorityBase}
+
+	np := policy.NetworkPolicy{
+		APIVersion: "ztap/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   policy.NetworkPolicyMetadata{Name: "range"},
+		Spec: policy.NetworkPolicySpec{
+			Egress: []policy.EgressRule{{
+				To:    policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.0/24"}},
+				Ports: []policy.PortSpec{{Protocol: "TCP", Port: 8000, EndPort: &end}},
+			}},
+		},
+	}
+
+	if err := client.SyncPolicy(context.Background(), np, "demo", "default"); err != nil {
+		t.Fatalf("SyncPolicy returned error: %v", err)
+	}
+	if len(fw.inserts) != 1 {
+		t.Fatalf("expected 1 insert, got %d", len(fw.inserts))
+	}
+	rule := fw.inserts[0]
+	if rule.GetDirection() != "EGRESS" {
+		t.Fatalf("unexpected direction: %s", rule.GetDirection())
+	}
+	if len(rule.GetAllowed()) != 1 || len(rule.GetAllowed()[0].Ports) != 1 {
+		t.Fatalf("unexpected allowed ports: %#v", rule.GetAllowed())
+	}
+	if got := rule.GetAllowed()[0].Ports[0]; got != "8000-8080" {
+		t.Fatalf("expected port range 8000-8080, got %s", got)
+	}
+	if !strings.Contains(rule.GetName(), "8000-8080") {
+		t.Fatalf("expected rule name to include range, got %s", rule.GetName())
+	}
+}

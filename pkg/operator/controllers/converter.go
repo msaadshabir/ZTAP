@@ -20,7 +20,8 @@ func ToInternalPolicy(ztnp *v1alpha1.ZtapNetworkPolicy) policy.NetworkPolicy {
 		},
 		Spec: policy.NetworkPolicySpec{
 			PodSelector: policy.PodSelectorSpec{
-				MatchLabels: ztnp.Spec.PodSelector.MatchLabels,
+				MatchLabels:      ztnp.Spec.PodSelector.MatchLabels,
+				MatchExpressions: convertMatchExpressions(ztnp.Spec.PodSelector.MatchExpressions),
 			},
 		},
 	}
@@ -70,12 +71,20 @@ func convertEgressTarget(t v1alpha1.EgressTarget) policy.EgressTarget {
 	target := policy.EgressTarget{}
 	if t.PodSelector != nil {
 		target.PodSelector = policy.PodSelectorSpec{
-			MatchLabels: t.PodSelector.MatchLabels,
+			MatchLabels:      t.PodSelector.MatchLabels,
+			MatchExpressions: convertMatchExpressions(t.PodSelector.MatchExpressions),
+		}
+	}
+	if t.NamespaceSelector != nil {
+		target.NamespaceSelector = policy.PodSelectorSpec{
+			MatchLabels:      t.NamespaceSelector.MatchLabels,
+			MatchExpressions: convertMatchExpressions(t.NamespaceSelector.MatchExpressions),
 		}
 	}
 	if t.IPBlock != nil {
 		target.IPBlock = policy.IPBlockSpec{
-			CIDR: t.IPBlock.CIDR,
+			CIDR:   t.IPBlock.CIDR,
+			Except: append([]string(nil), t.IPBlock.Except...),
 		}
 	}
 	return target
@@ -85,12 +94,20 @@ func convertIngressSource(s v1alpha1.IngressSource) policy.IngressSource {
 	source := policy.IngressSource{}
 	if s.PodSelector != nil {
 		source.PodSelector = policy.PodSelectorSpec{
-			MatchLabels: s.PodSelector.MatchLabels,
+			MatchLabels:      s.PodSelector.MatchLabels,
+			MatchExpressions: convertMatchExpressions(s.PodSelector.MatchExpressions),
+		}
+	}
+	if s.NamespaceSelector != nil {
+		source.NamespaceSelector = policy.PodSelectorSpec{
+			MatchLabels:      s.NamespaceSelector.MatchLabels,
+			MatchExpressions: convertMatchExpressions(s.NamespaceSelector.MatchExpressions),
 		}
 	}
 	if s.IPBlock != nil {
 		source.IPBlock = policy.IPBlockSpec{
-			CIDR: s.IPBlock.CIDR,
+			CIDR:   s.IPBlock.CIDR,
+			Except: append([]string(nil), s.IPBlock.Except...),
 		}
 	}
 	return source
@@ -105,7 +122,20 @@ func convertPorts(ports []v1alpha1.PortSpec) []policy.PortSpec {
 		res[i] = policy.PortSpec{
 			Protocol: p.Protocol,
 			Port:     p.Port,
+			PortName: p.PortName,
+			EndPort:  p.EndPort,
 		}
 	}
 	return res
+}
+
+func convertMatchExpressions(exprs []v1alpha1.LabelSelectorRequirement) []policy.LabelSelectorRequirement {
+	if len(exprs) == 0 {
+		return nil
+	}
+	out := make([]policy.LabelSelectorRequirement, len(exprs))
+	for i, expr := range exprs {
+		out[i] = policy.LabelSelectorRequirement{Key: expr.Key, Operator: expr.Operator, Values: append([]string(nil), expr.Values...)}
+	}
+	return out
 }

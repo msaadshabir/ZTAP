@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ztap/pkg/policy"
 )
 
 // ServiceDiscovery interface for different backends
@@ -69,6 +71,56 @@ func (d *InMemoryDiscovery) ResolveLabels(labels map[string]string) ([]string, e
 	}
 	sort.Strings(ips)
 	return ips, nil
+}
+
+// ResolvePods returns pod info for services matching selector.
+func (d *InMemoryDiscovery) ResolvePods(selector policy.PodSelectorSpec) ([]policy.PodInfo, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	infos := make([]policy.PodInfo, 0, len(d.services))
+	for _, service := range d.services {
+		if policy.MatchesSelector(service.Labels, selector) {
+			infos = append(infos, policy.PodInfo{
+				IP:     service.IP,
+				Labels: copyLabelMap(service.Labels),
+			})
+		}
+	}
+
+	if len(infos) == 0 {
+		return nil, &NoMatchesError{Resource: "services", Labels: copyLabelMap(selector.MatchLabels)}
+	}
+	return infos, nil
+}
+
+// ResolvePodsScoped ignores scope for in-memory discovery.
+func (d *InMemoryDiscovery) ResolvePodsScoped(scope string, selector policy.PodSelectorSpec) ([]policy.PodInfo, error) {
+	return d.ResolvePods(selector)
+}
+
+// ResolveSelector finds all IPs matching the given selector (matchLabels + matchExpressions).
+func (d *InMemoryDiscovery) ResolveSelector(selector policy.PodSelectorSpec) ([]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ips := make([]string, 0, len(d.services))
+	for _, service := range d.services {
+		if policy.MatchesSelector(service.Labels, selector) {
+			ips = append(ips, service.IP)
+		}
+	}
+
+	if len(ips) == 0 {
+		return nil, &NoMatchesError{Resource: "services", Labels: copyLabelMap(selector.MatchLabels)}
+	}
+	sort.Strings(ips)
+	return ips, nil
+}
+
+// ResolveSelectorScoped ignores scope for in-memory discovery.
+func (d *InMemoryDiscovery) ResolveSelectorScoped(scope string, selector policy.PodSelectorSpec) ([]string, error) {
+	return d.ResolveSelector(selector)
 }
 
 // RegisterService adds a service to the discovery
@@ -398,6 +450,46 @@ func (c *CacheDiscovery) ResolveLabels(labels map[string]string) ([]string, erro
 	c.mu.Unlock()
 
 	return ips, nil
+}
+
+// ResolveSelector delegates selector resolution when supported by backend.
+func (c *CacheDiscovery) ResolveSelector(selector policy.PodSelectorSpec) ([]string, error) {
+	if backend, ok := c.backend.(policy.SelectorResolver); ok {
+		return backend.ResolveSelector(selector)
+	}
+	return nil, fmt.Errorf("selector resolution not supported by backend")
+}
+
+// ResolveSelectorScoped delegates scoped selector resolution when supported by backend.
+func (c *CacheDiscovery) ResolveSelectorScoped(scope string, selector policy.PodSelectorSpec) ([]string, error) {
+	if backend, ok := c.backend.(policy.SelectorResolver); ok {
+		return backend.ResolveSelectorScoped(scope, selector)
+	}
+	return nil, fmt.Errorf("scoped selector resolution not supported by backend")
+}
+
+// ResolveNamespaces delegates namespace selector resolution when supported by backend.
+func (c *CacheDiscovery) ResolveNamespaces(selector policy.PodSelectorSpec) ([]string, error) {
+	if backend, ok := c.backend.(policy.NamespaceResolver); ok {
+		return backend.ResolveNamespaces(selector)
+	}
+	return nil, fmt.Errorf("namespace selector resolution not supported by backend")
+}
+
+// ResolvePods delegates pod resolution when supported by backend.
+func (c *CacheDiscovery) ResolvePods(selector policy.PodSelectorSpec) ([]policy.PodInfo, error) {
+	if backend, ok := c.backend.(policy.PodResolver); ok {
+		return backend.ResolvePods(selector)
+	}
+	return nil, fmt.Errorf("pod resolution not supported by backend")
+}
+
+// ResolvePodsScoped delegates scoped pod resolution when supported by backend.
+func (c *CacheDiscovery) ResolvePodsScoped(scope string, selector policy.PodSelectorSpec) ([]policy.PodInfo, error) {
+	if backend, ok := c.backend.(policy.PodResolver); ok {
+		return backend.ResolvePodsScoped(scope, selector)
+	}
+	return nil, fmt.Errorf("scoped pod resolution not supported by backend")
 }
 
 // RegisterService delegates to backend

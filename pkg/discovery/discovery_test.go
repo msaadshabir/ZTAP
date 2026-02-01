@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"ztap/pkg/policy"
 )
 
 func TestInMemoryDiscovery_RegisterAndResolve(t *testing.T) {
@@ -344,5 +346,21 @@ func TestMatchLabels(t *testing.T) {
 				t.Errorf("Expected %v, got %v", tt.expectedMatch, result)
 			}
 		})
+	}
+}
+
+func TestInMemoryDiscovery_ResolveSelectorMatchExpressions(t *testing.T) {
+	disc := NewInMemoryDiscovery()
+	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web", "tier": "frontend"})
+
+	selector := policy.PodSelectorSpec{
+		MatchExpressions: []policy.LabelSelectorRequirement{{Key: "app", Operator: "In", Values: []string{"web"}}},
+	}
+	ips, err := disc.ResolveSelector(selector)
+	if err != nil {
+		t.Fatalf("ResolveSelector failed: %v", err)
+	}
+	if len(ips) != 1 || ips[0] != "10.0.1.1" {
+		t.Fatalf("expected [10.0.1.1], got %v", ips)
 	}
 }

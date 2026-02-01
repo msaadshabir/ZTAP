@@ -266,9 +266,12 @@ func (pe *PolicyEnforcer) applyUpdate(ctx context.Context, update cluster.Policy
 }
 
 func (pe *PolicyEnforcer) enforceUpdates(ctx context.Context, updates []cluster.PolicyUpdate) error {
-	flat, scoped, err := pe.compilePolicies(ctx, updates)
+	flat, scoped, requiresSubject, err := pe.compilePolicies(ctx, updates)
 	if err != nil {
 		return err
+	}
+	if requiresSubject && !IsLinux() {
+		return fmt.Errorf("ingress named ports require Linux subject-scoped enforcement")
 	}
 
 	if IsLinux() {
@@ -278,7 +281,18 @@ func (pe *PolicyEnforcer) enforceUpdates(ctx context.Context, updates []cluster.
 		}
 
 		if pe.subjectResolver != nil {
+			if requiresSubject {
+				if !CanUseEBPF() {
+					return fmt.Errorf("ingress named ports require eBPF enforcement, but eBPF is unavailable")
+				}
+				if !policiesSupportedByEBPF(flat, "") {
+					return fmt.Errorf("ingress named ports require eBPF enforcement, but policies are not eBPF-compatible")
+				}
+			}
 			return EnforceWithEBPFIfAvailableScoped(ScopedEnforcementOptions{Policies: scoped, DryRun: pe.dryRun, CgroupPath: pe.cgroupPath, Context: ctx})
+		}
+		if requiresSubject {
+			return fmt.Errorf("ingress named ports require subject-scoped enforcement")
 		}
 		return EnforceWithEBPFIfAvailable(EnforcementOptions{Policies: flat, DryRun: pe.dryRun, CgroupPath: pe.cgroupPath, Context: ctx})
 	}
@@ -286,9 +300,10 @@ func (pe *PolicyEnforcer) enforceUpdates(ctx context.Context, updates []cluster.
 	return pe.enforceMacOS(flat)
 }
 
-func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster.PolicyUpdate) ([]policy.NetworkPolicy, []ScopedPolicy, error) {
+func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster.PolicyUpdate) ([]policy.NetworkPolicy, []ScopedPolicy, bool, error) {
 	flat := make([]policy.NetworkPolicy, 0)
 	scopedOut := make([]ScopedPolicy, 0)
+	requiresSubject := false
 
 	resolver := policy.NewPolicyResolver(pe.discovery)
 	_, discoveryScoped := pe.discovery.(policy.ScopedServiceDiscovery)
@@ -297,7 +312,7 @@ func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster
 		tenant := cluster.NormalizeTenant(update.Tenant)
 		policies, err := policy.LoadFromBytes(update.YAML)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		if len(policies) == 0 {
 			continue
@@ -307,13 +322,13 @@ func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster
 			if discoveryScoped {
 				resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(tenant, policies)
 				if err != nil {
-					return nil, nil, fmt.Errorf("resolving pod selectors (tenant %s): %w", tenant, err)
+					return nil, nil, false, fmt.Errorf("resolving pod selectors (tenant %s): %w", tenant, err)
 				}
 				policies = resolved
 			} else {
 				resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
 				if err != nil {
-					return nil, nil, fmt.Errorf("resolving pod selectors: %w", err)
+					return nil, nil, false, fmt.Errorf("resolving pod selectors: %w", err)
 				}
 				policies = resolved
 			}
@@ -321,16 +336,71 @@ func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster
 
 		for _, p := range policies {
 			if err := p.Validate(); err != nil {
-				return nil, nil, err
+				return nil, nil, false, err
 			}
+			if policyHasIngressNamedPorts(p) {
+				requiresSubject = true
+			}
+		}
 
+		normalized, err := policy.NormalizePolicies(policies)
+		if err != nil {
+			return nil, nil, false, err
+		}
+
+		if requiresSubject {
+			resolver, ok := pe.subjectResolver.(SubjectPortResolver)
+			if !ok || pe.subjectResolver == nil {
+				return nil, nil, false, fmt.Errorf("ingress named ports require subject-scoped enforcement")
+			}
+			for _, p := range normalized {
+				if !policyHasIngressNamedPorts(p) {
+					flat = append(flat, p)
+					var subjectIDs []uint64
+					ids, err := pe.subjectResolver.ResolveCgroupIDs(ctx, tenant, p.Spec.PodSelector)
+					if err != nil {
+						return nil, nil, false, err
+					}
+					subjectIDs = ids
+					scopedOut = append(scopedOut, ScopedPolicy{Tenant: tenant, Policy: p, SubjectCgroupIDs: subjectIDs})
+					continue
+				}
+
+				subjects, err := resolver.ResolveSubjectPorts(ctx, tenant, p.Spec.PodSelector)
+				if err != nil {
+					return nil, nil, false, err
+				}
+				if len(subjects) == 0 {
+					continue
+				}
+				for _, subject := range subjects {
+					portMap, err := policy.BuildNamedPortMap(subject.Ports)
+					if err != nil {
+						logging.Warnf("named ports for subject %s in policy %s are ambiguous: %v", subject.PodName, p.Metadata.Name, err)
+						continue
+					}
+					resolvedPolicy, missing := resolveIngressNamedPorts(p, portMap)
+					if len(missing) > 0 {
+						logging.Warnf("policy %s: named ports %v not found on subject %s", p.Metadata.Name, missing, subject.PodName)
+					}
+					if len(resolvedPolicy.Spec.Egress) == 0 && len(resolvedPolicy.Spec.Ingress) == 0 {
+						continue
+					}
+					flat = append(flat, resolvedPolicy)
+					scopedOut = append(scopedOut, ScopedPolicy{Tenant: tenant, Policy: resolvedPolicy, SubjectCgroupIDs: []uint64{subject.CgroupID}})
+				}
+			}
+			continue
+		}
+
+		for _, p := range normalized {
 			flat = append(flat, p)
 
 			var subjectIDs []uint64
 			if pe.subjectResolver != nil {
-				ids, err := pe.subjectResolver.ResolveCgroupIDs(ctx, tenant, p.Spec.PodSelector.MatchLabels)
+				ids, err := pe.subjectResolver.ResolveCgroupIDs(ctx, tenant, p.Spec.PodSelector)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, false, err
 				}
 				subjectIDs = ids
 			}
@@ -338,7 +408,7 @@ func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster
 		}
 	}
 
-	return flat, scopedOut, nil
+	return flat, scopedOut, requiresSubject, nil
 }
 
 func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
@@ -375,16 +445,16 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 				tenant := cluster.NormalizeTenant(update.Tenant)
 				policies, _ := policy.LoadFromBytes(update.YAML)
 				for _, p := range policies {
-					if len(p.Spec.PodSelector.MatchLabels) > 0 {
-						key := fmt.Sprintf("%s|subject|%s", tenant, policy.SelectorKey(p.Spec.PodSelector.MatchLabels))
+					if len(p.Spec.PodSelector.MatchLabels) > 0 && len(p.Spec.PodSelector.MatchExpressions) == 0 {
+						key := fmt.Sprintf("%s|subject|%s", tenant, policy.SelectorKeySpec(p.Spec.PodSelector))
 						selectors[key] = struct {
 							tenant string
 							labels map[string]string
 						}{tenant: tenant, labels: p.Spec.PodSelector.MatchLabels}
 					}
 					for _, egress := range p.Spec.Egress {
-						if len(egress.To.PodSelector.MatchLabels) > 0 {
-							key := fmt.Sprintf("%s|egress|%s", tenant, policy.SelectorKey(egress.To.PodSelector.MatchLabels))
+						if len(egress.To.PodSelector.MatchLabels) > 0 && len(egress.To.PodSelector.MatchExpressions) == 0 {
+							key := fmt.Sprintf("%s|egress|%s", tenant, policy.SelectorKeySpec(egress.To.PodSelector))
 							selectors[key] = struct {
 								tenant string
 								labels map[string]string
@@ -392,8 +462,8 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 						}
 					}
 					for _, ingress := range p.Spec.Ingress {
-						if len(ingress.From.PodSelector.MatchLabels) > 0 {
-							key := fmt.Sprintf("%s|ingress|%s", tenant, policy.SelectorKey(ingress.From.PodSelector.MatchLabels))
+						if len(ingress.From.PodSelector.MatchLabels) > 0 && len(ingress.From.PodSelector.MatchExpressions) == 0 {
+							key := fmt.Sprintf("%s|ingress|%s", tenant, policy.SelectorKeySpec(ingress.From.PodSelector))
 							selectors[key] = struct {
 								tenant string
 								labels map[string]string
@@ -455,8 +525,7 @@ func (pe *PolicyEnforcer) enforceMacOS(policies []policy.NetworkPolicy) error {
 		Policies: policies,
 		DryRun:   pe.dryRun,
 	}
-	EnforceWithPF(opts)
-	return nil
+	return EnforceWithPF(opts)
 }
 
 // GetEnforcedVersions returns a map of policy identifiers to enforced versions.

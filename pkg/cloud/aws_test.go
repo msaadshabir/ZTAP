@@ -191,11 +191,39 @@ func TestSyncPolicyAuthorizeError(t *testing.T) {
 	}
 }
 
+func TestSyncPolicyWithPortRange(t *testing.T) {
+	end := 8080
+	mock := &mockEC2Client{}
+	client := &AWSClient{ec2API: mock, region: "us-east-1"}
+
+	np := policy.NetworkPolicy{Metadata: policy.NetworkPolicyMetadata{Name: "range"}}
+	np.Spec.Egress = []policy.EgressRule{
+		{
+			To:    policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.0/24"}},
+			Ports: []policy.PortSpec{{Protocol: "TCP", Port: 8000, EndPort: &end}},
+		},
+	}
+
+	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+		t.Fatalf("SyncPolicy returned error: %v", err)
+	}
+	if len(mock.authorizeInputs) != 1 {
+		t.Fatalf("expected 1 authorize call, got %d", len(mock.authorizeInputs))
+	}
+	perm := mock.authorizeInputs[0].IpPermissions[0]
+	if perm.FromPort == nil || *perm.FromPort != 8000 {
+		t.Fatalf("expected FromPort 8000, got %#v", perm.FromPort)
+	}
+	if perm.ToPort == nil || *perm.ToPort != 8080 {
+		t.Fatalf("expected ToPort 8080, got %#v", perm.ToPort)
+	}
+}
+
 func TestAuthorizeEgressDuplicate(t *testing.T) {
 	mock := &mockEC2Client{authorizeErr: errors.New("rule already exists")}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
-	if err := client.authorizeEgress(context.Background(), "sg-789", "10.0.0.0/24", "TCP", 80); err != nil {
+	if err := client.authorizeEgress(context.Background(), "sg-789", "10.0.0.0/24", "TCP", 80, 80); err != nil {
 		t.Fatalf("expected duplicate error to be ignored, got %v", err)
 	}
 }

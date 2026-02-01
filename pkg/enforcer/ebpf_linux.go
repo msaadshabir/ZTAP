@@ -393,6 +393,12 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 		}
 
 		for _, port := range egress.Ports {
+			if port.PortName != "" {
+				return fmt.Errorf("named ports are not supported by eBPF enforcement")
+			}
+			if port.EndPort != nil {
+				return fmt.Errorf("port ranges are not supported by eBPF enforcement")
+			}
 			portValue, err := toUint16Port(port.Port)
 			if err != nil {
 				return err
@@ -513,6 +519,12 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 		}
 
 		for _, port := range ingress.Ports {
+			if port.PortName != "" {
+				return fmt.Errorf("named ports are not supported by eBPF enforcement")
+			}
+			if port.EndPort != nil {
+				return fmt.Errorf("port ranges are not supported by eBPF enforcement")
+			}
 			portValue, err := toUint16Port(port.Port)
 			if err != nil {
 				return err

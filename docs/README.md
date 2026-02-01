@@ -107,6 +107,6 @@ ZTAP can reconcile NetworkPolicy objects into GCP VPC firewall rules (using Appl
 - Flags: `--dry-run`, `--watch`, `--watch-interval`
 - Config: see `gcp.*` in `config.yaml.example`
 
-Label-based rules:
+Selector-based rules:
 
-- `podSelector.matchLabels` targets are resolved against GCE instance labels within the specified VPC network.
+- `podSelector` targets (matchLabels + matchExpressions) are resolved against GCE instance labels within the specified VPC network.

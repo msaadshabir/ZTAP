@@ -81,7 +81,8 @@ type ServerOptions struct {
 	FlowReaderFactory func() flow.FlowReader
 
 	// Discovery is an optional service discovery backend used for resolving
-	// podSelector.matchLabels targets when enforcement is started via the API.
+	// selector targets (podSelector with optional namespaceSelector) when
+	// enforcement is started via the API.
 	Discovery policy.ServiceDiscovery
 
 	// ResolveLabelsInterval controls re-resolution of podSelector targets over
@@ -278,19 +279,7 @@ func (s *Server) ensureDiscoveryStarted() error {
 }
 
 func policiesNeedTargetResolution(policies []policy.NetworkPolicy) bool {
-	for _, p := range policies {
-		for _, e := range p.Spec.Egress {
-			if len(e.To.PodSelector.MatchLabels) > 0 {
-				return true
-			}
-		}
-		for _, in := range p.Spec.Ingress {
-			if len(in.From.PodSelector.MatchLabels) > 0 {
-				return true
-			}
-		}
-	}
-	return false
+	return policy.NeedsTargetResolution(policies)
 }
 
 type ctxKey int
@@ -797,6 +786,11 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 		}
 		policies = resolved
 	}
+	normalized, err := policy.NormalizePolicies(policies)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to normalize ipBlocks: %w", err).Error())
+	}
+	policies = normalized
 
 	named := make([]policy.NamedPolicy, 0, len(basePolicies))
 	for _, p := range basePolicies {
@@ -921,7 +915,9 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 	if srvCtx == nil {
 		srvCtx = context.Background()
 	}
-	enforcer.EnforceWithPF(enforcer.EnforcementOptions{Policies: policies, Context: srvCtx})
+	if err := enforcer.EnforceWithPF(enforcer.EnforcementOptions{Policies: policies, Context: srvCtx}); err != nil {
+		return nil, fmt.Errorf("failed to enforce via pf: %w", err)
+	}
 	e.srv.stopEnforcementRefreshLocked()
 	_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
 	e.srv.emitAlert(alert.Alert{Source: "api-grpc", Severity: alert.SeverityInfo, Title: "policy enforced", Message: fmt.Sprintf("%s enforced on %s", policyKey, platform), DedupKey: fmt.Sprintf("%s:%s:success", policyKey, platform), Details: map[string]any{"platform": platform, "count": len(policies)}})

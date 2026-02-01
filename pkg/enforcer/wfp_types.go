@@ -23,7 +23,9 @@ const (
 	FWP_ACTION_BLOCK  uint32 = 0x00000001
 	FWP_ACTION_PERMIT uint32 = 0x00000002
 
-	FWP_MATCH_EQUAL uint32 = 0
+	FWP_MATCH_EQUAL            uint32 = 0
+	FWP_MATCH_GREATER_OR_EQUAL uint32 = 3
+	FWP_MATCH_LESS_OR_EQUAL    uint32 = 4
 )
 
 // ZTAP WFP GUIDs
@@ -151,6 +153,14 @@ func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 			}
 
 			for _, port := range egress.Ports {
+				if port.PortName != "" {
+					return nil, fmt.Errorf("named ports are not supported by WFP translation")
+				}
+				start := port.Port
+				end := port.Port
+				if port.EndPort != nil {
+					end = *port.EndPort
+				}
 				proto := strings.ToUpper(port.Protocol)
 				isICMP := proto == "ICMP"
 				protoNum := protocolToNum(port.Protocol)
@@ -160,13 +170,26 @@ func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 
 				conds := []WFPCondition{addrCond}
 				if !isICMP {
-					conds = append(conds, WFPCondition{FieldKey: ConditionIPRemotePort, MatchType: FWP_MATCH_EQUAL, Value: uint16(port.Port)})
+					if end < start {
+						return nil, fmt.Errorf("invalid port range %d-%d", start, end)
+					}
+					if start == end {
+						conds = append(conds, WFPCondition{FieldKey: ConditionIPRemotePort, MatchType: FWP_MATCH_EQUAL, Value: uint16(start)})
+					} else {
+						conds = append(conds,
+							WFPCondition{FieldKey: ConditionIPRemotePort, MatchType: FWP_MATCH_GREATER_OR_EQUAL, Value: uint16(start)},
+							WFPCondition{FieldKey: ConditionIPRemotePort, MatchType: FWP_MATCH_LESS_OR_EQUAL, Value: uint16(end)},
+						)
+					}
 				}
 				conds = append(conds, WFPCondition{FieldKey: ConditionIPProtocol, MatchType: FWP_MATCH_EQUAL, Value: protoNum})
-
+				portLabel := fmt.Sprintf("%d", start)
+				if end > start {
+					portLabel = fmt.Sprintf("%d-%d", start, end)
+				}
 				spec := WFPSpec{
 					Name:        fmt.Sprintf("ZTAP-Egress-%s", p.Metadata.Name),
-					Description: fmt.Sprintf("Allow egress to %s:%d", egress.To.IPBlock.CIDR, port.Port),
+					Description: fmt.Sprintf("Allow egress to %s:%s", egress.To.IPBlock.CIDR, portLabel),
 					LayerKey:    layerKey,
 					SublayerKey: ZTAPSublayerGUID,
 					ProviderKey: &ZTAPProviderGUID,
@@ -205,6 +228,14 @@ func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 			}
 
 			for _, port := range ingress.Ports {
+				if port.PortName != "" {
+					return nil, fmt.Errorf("named ports are not supported by WFP translation")
+				}
+				start := port.Port
+				end := port.Port
+				if port.EndPort != nil {
+					end = *port.EndPort
+				}
 				proto := strings.ToUpper(port.Protocol)
 				isICMP := proto == "ICMP"
 				protoNum := protocolToNum(port.Protocol)
@@ -214,13 +245,26 @@ func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 
 				conds := []WFPCondition{addrCond}
 				if !isICMP {
-					conds = append(conds, WFPCondition{FieldKey: ConditionIPLocalPort, MatchType: FWP_MATCH_EQUAL, Value: uint16(port.Port)})
+					if end < start {
+						return nil, fmt.Errorf("invalid port range %d-%d", start, end)
+					}
+					if start == end {
+						conds = append(conds, WFPCondition{FieldKey: ConditionIPLocalPort, MatchType: FWP_MATCH_EQUAL, Value: uint16(start)})
+					} else {
+						conds = append(conds,
+							WFPCondition{FieldKey: ConditionIPLocalPort, MatchType: FWP_MATCH_GREATER_OR_EQUAL, Value: uint16(start)},
+							WFPCondition{FieldKey: ConditionIPLocalPort, MatchType: FWP_MATCH_LESS_OR_EQUAL, Value: uint16(end)},
+						)
+					}
 				}
 				conds = append(conds, WFPCondition{FieldKey: ConditionIPProtocol, MatchType: FWP_MATCH_EQUAL, Value: protoNum})
-
+				portLabel := fmt.Sprintf("%d", start)
+				if end > start {
+					portLabel = fmt.Sprintf("%d-%d", start, end)
+				}
 				spec := WFPSpec{
 					Name:        fmt.Sprintf("ZTAP-Ingress-%s", p.Metadata.Name),
-					Description: fmt.Sprintf("Allow ingress from %s to port %d", ingress.From.IPBlock.CIDR, port.Port),
+					Description: fmt.Sprintf("Allow ingress from %s to port %s", ingress.From.IPBlock.CIDR, portLabel),
 					LayerKey:    layerKey,
 					SublayerKey: ZTAPSublayerGUID,
 					ProviderKey: &ZTAPProviderGUID,

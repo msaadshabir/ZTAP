@@ -123,7 +123,10 @@ func (e *IptablesEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	v4Rules, v6Rules := e.generateRestoreInput(policies)
+	v4Rules, v6Rules, err := e.generateRestoreInput(policies)
+	if err != nil {
+		return err
+	}
 
 	if e.dryRun {
 		logging.Infof("[DRY-RUN] iptables: would apply v4 and v6 rules via iptables-restore")
@@ -145,7 +148,7 @@ func (e *IptablesEnforcer) LoadPolicies(policies []policy.NetworkPolicy) error {
 	return nil
 }
 
-func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy) (string, string) {
+func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy) (string, string, error) {
 	var v4, v6 strings.Builder
 
 	setupChains := func(b *strings.Builder) {
@@ -178,6 +181,9 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 				_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -j ACCEPT\n", cidr)
 			} else {
 				for _, port := range ingress.Ports {
+					if port.PortName != "" {
+						return "", "", fmt.Errorf("policy %s: named ports are not supported by iptables translator", p.Metadata.Name)
+					}
 					proto := strings.ToLower(port.Protocol)
 					if proto == "" {
 						proto = "tcp"
@@ -189,7 +195,19 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 						_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -p %s -j ACCEPT\n", cidr, proto)
 						continue
 					}
-					_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port)
+					start := port.Port
+					end := port.Port
+					if port.EndPort != nil {
+						end = *port.EndPort
+					}
+					if start <= 0 || end <= 0 {
+						return "", "", fmt.Errorf("policy %s: invalid port in ingress rule", p.Metadata.Name)
+					}
+					if end != start {
+						_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -p %s --dport %d:%d -j ACCEPT\n", cidr, proto, start, end)
+						continue
+					}
+					_, _ = fmt.Fprintf(target, "-A ZTAP-INGRESS -s %s -p %s --dport %d -j ACCEPT\n", cidr, proto, start)
 				}
 			}
 		}
@@ -210,6 +228,9 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 				_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -j ACCEPT\n", cidr)
 			} else {
 				for _, port := range egress.Ports {
+					if port.PortName != "" {
+						return "", "", fmt.Errorf("policy %s: named ports are not supported by iptables translator", p.Metadata.Name)
+					}
 					proto := strings.ToLower(port.Protocol)
 					if proto == "" {
 						proto = "tcp"
@@ -221,7 +242,19 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 						_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -p %s -j ACCEPT\n", cidr, proto)
 						continue
 					}
-					_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -p %s --dport %d -j ACCEPT\n", cidr, proto, port.Port)
+					start := port.Port
+					end := port.Port
+					if port.EndPort != nil {
+						end = *port.EndPort
+					}
+					if start <= 0 || end <= 0 {
+						return "", "", fmt.Errorf("policy %s: invalid port in egress rule", p.Metadata.Name)
+					}
+					if end != start {
+						_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -p %s --dport %d:%d -j ACCEPT\n", cidr, proto, start, end)
+						continue
+					}
+					_, _ = fmt.Fprintf(target, "-A ZTAP-EGRESS -d %s -p %s --dport %d -j ACCEPT\n", cidr, proto, start)
 				}
 			}
 		}
@@ -237,5 +270,5 @@ func (e *IptablesEnforcer) generateRestoreInput(policies []policy.NetworkPolicy)
 
 	v4.WriteString("COMMIT\n")
 	v6.WriteString("COMMIT\n")
-	return v4.String(), v6.String()
+	return v4.String(), v6.String(), nil
 }
