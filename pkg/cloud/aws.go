@@ -551,15 +551,30 @@ func awsRuleKeyFor(cidr, protocol string, start, end int) (awsRuleKey, error) {
 		}
 		ipv6 = ip.To4() == nil
 	}
+	fromPort, err := portToInt32(start)
+	if err != nil {
+		return awsRuleKey{}, err
+	}
+	toPort, err := portToInt32(end)
+	if err != nil {
+		return awsRuleKey{}, err
+	}
 	proto := strings.ToLower(strings.TrimSpace(protocol))
 	key := awsRuleKey{
 		protocol: proto,
-		fromPort: int32(start),
-		toPort:   int32(end),
+		fromPort: fromPort,
+		toPort:   toPort,
 		cidr:     trimmed,
 		ipv6:     ipv6,
 	}
 	return key, nil
+}
+
+func portToInt32(port int) (int32, error) {
+	if port <= 0 || port > 65535 {
+		return 0, fmt.Errorf("invalid port %d", port)
+	}
+	return int32(port), nil
 }
 
 func ipsToHostCIDRs(ips []string) ([]string, error) {

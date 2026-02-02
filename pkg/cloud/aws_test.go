@@ -152,19 +152,22 @@ func TestSyncPolicyWithIPBlock(t *testing.T) {
 		t.Fatalf("expected 2 authorize calls, got %d", len(mock.authorizeInputs))
 	}
 
-	first := mock.authorizeInputs[0]
-	if aws.ToString(first.GroupId) != "sg-123" {
-		t.Fatalf("unexpected group id: %s", aws.ToString(first.GroupId))
+	protocols := map[string]bool{}
+	for _, call := range mock.authorizeInputs {
+		if aws.ToString(call.GroupId) != "sg-123" {
+			t.Fatalf("unexpected group id: %s", aws.ToString(call.GroupId))
+		}
+		if len(call.IpPermissions) != 1 {
+			t.Fatalf("expected 1 IP permission, got %d", len(call.IpPermissions))
+		}
+		perm := call.IpPermissions[0]
+		if aws.ToString(perm.IpRanges[0].CidrIp) != "10.0.0.0/24" {
+			t.Fatalf("unexpected CIDR: %s", aws.ToString(perm.IpRanges[0].CidrIp))
+		}
+		protocols[aws.ToString(perm.IpProtocol)] = true
 	}
-	if len(first.IpPermissions) != 1 {
-		t.Fatalf("expected 1 IP permission, got %d", len(first.IpPermissions))
-	}
-	perm := first.IpPermissions[0]
-	if aws.ToString(perm.IpProtocol) != "tcp" {
-		t.Fatalf("expected protocol tcp, got %s", aws.ToString(perm.IpProtocol))
-	}
-	if aws.ToString(perm.IpRanges[0].CidrIp) != "10.0.0.0/24" {
-		t.Fatalf("unexpected CIDR: %s", aws.ToString(perm.IpRanges[0].CidrIp))
+	if !protocols["tcp"] || !protocols["udp"] {
+		t.Fatalf("expected tcp and udp protocols, got %#v", protocols)
 	}
 }
 
