@@ -99,6 +99,19 @@ ZTAP can reconcile NetworkPolicy objects into Azure NSG security rules:
 - Command: `ztap azure nsg-sync <policy-file> --subscription-id ... --resource-group ... --nsg ...`
 - Config: see `azure.*` in `config.yaml.example`
 
+## AWS Security Group Sync
+
+ZTAP can reconcile NetworkPolicy egress rules into an AWS Security Group.
+
+- Command: `ztap aws sg-sync <policy-file> --security-group-id ... --region ...`
+- Flags: `--dry-run`, `--watch`, `--watch-interval`, `--replace-egress`, `--force`/`--yes`
+- Config: see `aws.*` in `config.yaml.example`
+
+Selector-based rules:
+
+- `podSelector` targets (matchLabels + matchExpressions) are resolved against EC2 instance tags.
+- Matching instance private IPs are translated into single-host CIDRs (`/32` for IPv4, `/128` for IPv6) for use in egress rules.
+
 ## GCP Firewall Sync
 
 ZTAP can reconcile NetworkPolicy objects into GCP VPC firewall rules (using Application Default Credentials).

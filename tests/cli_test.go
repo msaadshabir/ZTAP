@@ -69,6 +69,39 @@ func TestCLIHelp(t *testing.T) {
 	}
 }
 
+func TestCLICloudHelp(t *testing.T) {
+	skipIfInCI(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	output, err := runCLI(ctx, "aws", "--help")
+	if err != nil {
+		t.Fatalf("aws help failed: %v\noutput: %s", err, output)
+	}
+	if !containsAny(output, "sg-sync") {
+		t.Fatalf("expected aws help to mention sg-sync: %s", output)
+	}
+
+	output, err = runCLI(ctx, "aws", "sg-sync", "--help")
+	if err != nil {
+		t.Fatalf("aws sg-sync help failed: %v\noutput: %s", err, output)
+	}
+	if !containsAny(output, "security-group-id") {
+		t.Fatalf("expected sg-sync help to mention security-group-id: %s", output)
+	}
+	if !containsAny(output, "--yes") {
+		t.Fatalf("expected sg-sync help to mention --yes alias: %s", output)
+	}
+
+	output, err = runCLI(ctx, "status", "--help")
+	if err != nil {
+		t.Fatalf("status help failed: %v\noutput: %s", err, output)
+	}
+	if !containsAny(output, "--gcp", "gcp") {
+		t.Fatalf("expected status help to mention gcp: %s", output)
+	}
+}
+
 func TestCLIComplianceExportSmoke(t *testing.T) {
 	skipIfInCI(t)
 	tmpDir := t.TempDir()

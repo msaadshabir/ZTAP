@@ -27,8 +27,26 @@ type securityRulesClient interface {
 	Delete(ctx context.Context, resourceGroup, nsgName, ruleName string) error
 }
 
+type azureInterfacesClient interface {
+	List(ctx context.Context, resourceGroup string) ([]*armnetwork.Interface, error)
+	ListAll(ctx context.Context) ([]*armnetwork.Interface, error)
+}
+
+type azurePublicIPsClient interface {
+	List(ctx context.Context, resourceGroup string) ([]*armnetwork.PublicIPAddress, error)
+	ListAll(ctx context.Context) ([]*armnetwork.PublicIPAddress, error)
+}
+
 type azureRulesClient struct {
 	client *armnetwork.SecurityRulesClient
+}
+
+type azureInterfacesClientImpl struct {
+	client *armnetwork.InterfacesClient
+}
+
+type azurePublicIPsClientImpl struct {
+	client *armnetwork.PublicIPAddressesClient
 }
 
 func (c *azureRulesClient) List(ctx context.Context, resourceGroup, nsgName string) ([]*armnetwork.SecurityRule, error) {
@@ -66,9 +84,63 @@ func (c *azureRulesClient) Delete(ctx context.Context, resourceGroup, nsgName, r
 	return err
 }
 
+func (c *azureInterfacesClientImpl) List(ctx context.Context, resourceGroup string) ([]*armnetwork.Interface, error) {
+	pager := c.client.NewListPager(resourceGroup, nil)
+	var out []*armnetwork.Interface
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page.Value...)
+	}
+	return out, nil
+}
+
+func (c *azureInterfacesClientImpl) ListAll(ctx context.Context) ([]*armnetwork.Interface, error) {
+	pager := c.client.NewListAllPager(nil)
+	var out []*armnetwork.Interface
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page.Value...)
+	}
+	return out, nil
+}
+
+func (c *azurePublicIPsClientImpl) List(ctx context.Context, resourceGroup string) ([]*armnetwork.PublicIPAddress, error) {
+	pager := c.client.NewListPager(resourceGroup, nil)
+	var out []*armnetwork.PublicIPAddress
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page.Value...)
+	}
+	return out, nil
+}
+
+func (c *azurePublicIPsClientImpl) ListAll(ctx context.Context) ([]*armnetwork.PublicIPAddress, error) {
+	pager := c.client.NewListAllPager(nil)
+	var out []*armnetwork.PublicIPAddress
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page.Value...)
+	}
+	return out, nil
+}
+
 // AzureClient manages Azure NSG synchronization.
 type AzureClient struct {
 	rules        securityRulesClient
+	interfaces   azureInterfacesClient
+	publicIPs    azurePublicIPsClient
 	rulePrefix   string
 	priorityBase int32
 }
@@ -101,6 +173,17 @@ func NewAzureClientWithOptions(ctx context.Context, subscriptionID string, opts 
 		rulePrefix:   defaultAzureRulePrefix,
 		priorityBase: defaultPriorityBase,
 	}
+
+	interfacesClient, err := armnetwork.NewInterfacesClient(subscriptionID, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create interfaces client: %w", err)
+	}
+	publicIPsClient, err := armnetwork.NewPublicIPAddressesClient(subscriptionID, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create public IPs client: %w", err)
+	}
+	client.interfaces = &azureInterfacesClientImpl{client: interfacesClient}
+	client.publicIPs = &azurePublicIPsClientImpl{client: publicIPsClient}
 
 	if strings.TrimSpace(opts.RulePrefix) != "" {
 		client.rulePrefix = strings.TrimSpace(opts.RulePrefix)
@@ -163,6 +246,107 @@ func (c *AzureClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, re
 	}
 
 	return nil
+}
+
+// DiscoverResources lists Azure network interfaces and associated IPs.
+func (c *AzureClient) DiscoverResources(ctx context.Context, resourceGroup string) ([]Resource, error) {
+	if c.interfaces == nil {
+		return nil, fmt.Errorf("azure interfaces client not configured for discovery")
+	}
+
+	var nics []*armnetwork.Interface
+	var err error
+	if strings.TrimSpace(resourceGroup) == "" {
+		nics, err = c.interfaces.ListAll(ctx)
+	} else {
+		nics, err = c.interfaces.List(ctx, resourceGroup)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing network interfaces: %w", err)
+	}
+
+	publicByID, err := c.listPublicIPs(ctx, resourceGroup)
+	if err != nil {
+		return nil, err
+	}
+
+	resources := make([]Resource, 0)
+	for _, nic := range nics {
+		if nic == nil || nic.Properties == nil {
+			continue
+		}
+		labels := map[string]string{}
+		if nic.Tags != nil {
+			labels = make(map[string]string, len(nic.Tags))
+			for k, v := range nic.Tags {
+				if v == nil {
+					continue
+				}
+				labels[k] = *v
+			}
+		}
+		name := ""
+		if nic.Name != nil {
+			name = *nic.Name
+		}
+		id := ""
+		if nic.ID != nil {
+			id = *nic.ID
+		}
+
+		for _, ipcfg := range nic.Properties.IPConfigurations {
+			if ipcfg == nil || ipcfg.Properties == nil {
+				continue
+			}
+			privateIP := ""
+			if ipcfg.Properties.PrivateIPAddress != nil {
+				privateIP = *ipcfg.Properties.PrivateIPAddress
+			}
+			publicIP := ""
+			if ipcfg.Properties.PublicIPAddress != nil && ipcfg.Properties.PublicIPAddress.ID != nil {
+				if mapped, ok := publicByID[*ipcfg.Properties.PublicIPAddress.ID]; ok {
+					publicIP = mapped
+				}
+			}
+
+			resources = append(resources, Resource{
+				ID:        id,
+				Name:      name,
+				Type:      "NIC",
+				PrivateIP: privateIP,
+				PublicIP:  publicIP,
+				Labels:    labels,
+			})
+		}
+	}
+
+	return resources, nil
+}
+
+func (c *AzureClient) listPublicIPs(ctx context.Context, resourceGroup string) (map[string]string, error) {
+	if c.publicIPs == nil {
+		return map[string]string{}, nil
+	}
+
+	var pips []*armnetwork.PublicIPAddress
+	var err error
+	if strings.TrimSpace(resourceGroup) == "" {
+		pips, err = c.publicIPs.ListAll(ctx)
+	} else {
+		pips, err = c.publicIPs.List(ctx, resourceGroup)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing public IPs: %w", err)
+	}
+
+	lookup := make(map[string]string, len(pips))
+	for _, pip := range pips {
+		if pip == nil || pip.ID == nil || pip.Properties == nil || pip.Properties.IPAddress == nil {
+			continue
+		}
+		lookup[*pip.ID] = *pip.Properties.IPAddress
+	}
+	return lookup, nil
 }
 
 type ruleSpec struct {

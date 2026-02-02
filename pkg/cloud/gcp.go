@@ -162,6 +162,15 @@ func (c *GCPClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, proj
 	return c.SyncPolicyWithOptions(ctx, p, projectID, network, GCPPolicySyncOptions{})
 }
 
+// DiscoverResources lists GCE instances for the specified project/network.
+func (c *GCPClient) DiscoverResources(ctx context.Context, projectID, network string) ([]Resource, error) {
+	if c.instances == nil {
+		return nil, fmt.Errorf("gcp instances client not configured for discovery")
+	}
+	networkURL := networkSelfLink(projectID, network)
+	return c.discoverResources(ctx, projectID, networkURL)
+}
+
 // SyncPolicyWithOptions reconciles firewall rules with optional dry-run behavior.
 func (c *GCPClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkPolicy, projectID, network string, opts GCPPolicySyncOptions) error {
 	safeName := sanitizePolicyName(p.Metadata.Name)

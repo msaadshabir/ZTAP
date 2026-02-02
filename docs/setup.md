@@ -313,6 +313,25 @@ export AWS_REGION="us-east-1"
 ztap status --aws --region us-east-1
 ```
 
+AWS Security Group sync:
+
+```bash
+# Sync policy egress rules into a Security Group
+ztap aws sg-sync examples/web-to-db.yaml \
+  --region us-east-1 \
+  --security-group-id sg-1234567890
+
+# Preview changes only
+ztap aws sg-sync examples/web-to-db.yaml --dry-run \
+  --region us-east-1 \
+  --security-group-id sg-1234567890
+
+# Takeover mode (destructive): clear existing egress rules first
+ztap aws sg-sync examples/web-to-db.yaml --replace-egress --yes \
+  --region us-east-1 \
+  --security-group-id sg-1234567890
+```
+
 ### 6. Azure NSG Synchronization (Optional)
 
 ZTAP can reconcile ZTAP NetworkPolicy objects into Azure NSG security rules.
@@ -483,6 +502,18 @@ ztap status
 
 # Include AWS resources
 ztap status --aws --region us-east-1
+
+# Include Azure resources (requires azure.subscription_id in config.yaml or ZTAP_AZURE_SUBSCRIPTION_ID)
+ztap status --azure
+
+# Scope Azure discovery (optional)
+ztap status --azure --azure-resource-group <rg>
+
+# Include GCP resources (requires gcp.project_id and gcp.network in config.yaml)
+ztap status --gcp
+
+# Override GCP discovery scope (optional)
+ztap status --gcp --gcp-project-id <project> --gcp-network <vpc-network>
 ```
 
 ### 4. Start Metrics Server

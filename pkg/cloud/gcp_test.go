@@ -262,3 +262,34 @@ func TestGCPSyncPolicyPortRange(t *testing.T) {
 		t.Fatalf("expected rule name to include range, got %s", rule.GetName())
 	}
 }
+
+func TestGCPDiscoverResources(t *testing.T) {
+	projectID := "demo"
+	network := "default"
+	networkURL := networkSelfLink(projectID, network)
+
+	instances := &mockInstances{
+		instances: []*computepb.Instance{
+			{
+				Name:   proto.String("vm1"),
+				Id:     proto.Uint64(1),
+				Labels: map[string]string{"app": "web"},
+				NetworkInterfaces: []*computepb.NetworkInterface{
+					{Network: proto.String(networkURL), NetworkIP: proto.String("10.10.0.5")},
+				},
+			},
+		},
+	}
+
+	client := &GCPClient{instances: instances, rulePrefix: defaultGCPRulePrefix, priorityBase: defaultGCPPriorityBase}
+	resources, err := client.DiscoverResources(context.Background(), projectID, network)
+	if err != nil {
+		t.Fatalf("DiscoverResources returned error: %v", err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(resources))
+	}
+	if resources[0].PrivateIP != "10.10.0.5" {
+		t.Fatalf("unexpected private IP: %s", resources[0].PrivateIP)
+	}
+}

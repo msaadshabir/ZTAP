@@ -23,8 +23,8 @@ type mockEC2Client struct {
 	describeSGOutput *ec2.DescribeSecurityGroupsOutput
 	describeSGErr    error
 
-	revokeInput *ec2.RevokeSecurityGroupEgressInput
-	revokeErr   error
+	revokeInputs []*ec2.RevokeSecurityGroupEgressInput
+	revokeErr    error
 }
 
 func (m *mockEC2Client) DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
@@ -44,7 +44,7 @@ func (m *mockEC2Client) DescribeSecurityGroups(ctx context.Context, params *ec2.
 }
 
 func (m *mockEC2Client) RevokeSecurityGroupEgress(ctx context.Context, params *ec2.RevokeSecurityGroupEgressInput, optFns ...func(*ec2.Options)) (*ec2.RevokeSecurityGroupEgressOutput, error) {
-	m.revokeInput = params
+	m.revokeInputs = append(m.revokeInputs, params)
 	if m.revokeErr != nil {
 		return nil, m.revokeErr
 	}
@@ -126,7 +126,7 @@ func TestDiscoverResourcesError(t *testing.T) {
 }
 
 func TestSyncPolicyWithIPBlock(t *testing.T) {
-	mock := &mockEC2Client{}
+	mock := &mockEC2Client{describeSGOutput: &ec2.DescribeSecurityGroupsOutput{SecurityGroups: []types.SecurityGroup{{GroupId: aws.String("sg-123")}}}}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
 	var np policy.NetworkPolicy
@@ -169,7 +169,7 @@ func TestSyncPolicyWithIPBlock(t *testing.T) {
 }
 
 func TestSyncPolicyAuthorizeError(t *testing.T) {
-	mock := &mockEC2Client{authorizeErr: errors.New("api failure")}
+	mock := &mockEC2Client{authorizeErr: errors.New("api failure"), describeSGOutput: &ec2.DescribeSecurityGroupsOutput{SecurityGroups: []types.SecurityGroup{{GroupId: aws.String("sg-456")}}}}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
 	var np policy.NetworkPolicy
@@ -193,7 +193,7 @@ func TestSyncPolicyAuthorizeError(t *testing.T) {
 
 func TestSyncPolicyWithPortRange(t *testing.T) {
 	end := 8080
-	mock := &mockEC2Client{}
+	mock := &mockEC2Client{describeSGOutput: &ec2.DescribeSecurityGroupsOutput{SecurityGroups: []types.SecurityGroup{{GroupId: aws.String("sg-123")}}}}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
 	np := policy.NetworkPolicy{Metadata: policy.NetworkPolicyMetadata{Name: "range"}}
@@ -219,12 +219,255 @@ func TestSyncPolicyWithPortRange(t *testing.T) {
 	}
 }
 
+func TestSyncPolicyWithSelectorResolution(t *testing.T) {
+	mock := &mockEC2Client{
+		describeSGOutput: &ec2.DescribeSecurityGroupsOutput{
+			SecurityGroups: []types.SecurityGroup{{GroupId: aws.String("sg-123")}},
+		},
+		describeInstancesOutput: &ec2.DescribeInstancesOutput{
+			Reservations: []types.Reservation{
+				{
+					Instances: []types.Instance{
+						{
+							InstanceId:       aws.String("i-1"),
+							PrivateIpAddress: aws.String("10.0.0.10"),
+							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
+							Tags: []types.Tag{
+								{Key: aws.String("app"), Value: aws.String("web")},
+								{Key: aws.String("tier"), Value: aws.String("frontend")},
+							},
+						},
+						{
+							InstanceId:       aws.String("i-2"),
+							PrivateIpAddress: aws.String("10.0.0.11"),
+							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
+							Tags: []types.Tag{
+								{Key: aws.String("app"), Value: aws.String("db")},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	client := &AWSClient{ec2API: mock, region: "us-east-1"}
+
+	np := policy.NetworkPolicy{Metadata: policy.NetworkPolicyMetadata{Name: "selector"}}
+	np.Spec.Egress = []policy.EgressRule{
+		{
+			To: policy.EgressTarget{
+				PodSelector: policy.PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}},
+			},
+			Ports: []policy.PortSpec{{Protocol: "TCP", Port: 443}},
+		},
+	}
+
+	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+		t.Fatalf("SyncPolicy returned error: %v", err)
+	}
+
+	if len(mock.authorizeInputs) != 1 {
+		t.Fatalf("expected 1 authorize call, got %d", len(mock.authorizeInputs))
+	}
+
+	perm := mock.authorizeInputs[0].IpPermissions[0]
+	if len(perm.IpRanges) != 1 {
+		t.Fatalf("expected 1 ip range, got %d", len(perm.IpRanges))
+	}
+	if aws.ToString(perm.IpRanges[0].CidrIp) != "10.0.0.10/32" {
+		t.Fatalf("unexpected cidr: %s", aws.ToString(perm.IpRanges[0].CidrIp))
+	}
+}
+
+func TestSyncPolicyRevokesStaleManagedRules(t *testing.T) {
+	managedDesc := awsPolicyDescriptionPrefix("cleanup")
+	stale := types.IpPermission{
+		IpProtocol: aws.String("tcp"),
+		FromPort:   aws.Int32(443),
+		ToPort:     aws.Int32(443),
+		IpRanges: []types.IpRange{
+			{CidrIp: aws.String("10.0.0.9/32"), Description: aws.String(managedDesc)},
+		},
+	}
+
+	mock := &mockEC2Client{
+		describeSGOutput: &ec2.DescribeSecurityGroupsOutput{
+			SecurityGroups: []types.SecurityGroup{{
+				GroupId:             aws.String("sg-123"),
+				IpPermissionsEgress: []types.IpPermission{stale},
+			}},
+		},
+	}
+
+	client := &AWSClient{ec2API: mock, region: "us-east-1"}
+
+	np := policy.NetworkPolicy{Metadata: policy.NetworkPolicyMetadata{Name: "cleanup"}}
+	np.Spec.Egress = []policy.EgressRule{
+		{
+			To:    policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.10/32"}},
+			Ports: []policy.PortSpec{{Protocol: "TCP", Port: 443}},
+		},
+	}
+
+	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+		t.Fatalf("SyncPolicy returned error: %v", err)
+	}
+
+	if len(mock.revokeInputs) != 1 {
+		t.Fatalf("expected 1 revoke call, got %d", len(mock.revokeInputs))
+	}
+}
+
+func TestSyncPolicyReplaceEgress(t *testing.T) {
+	mock := &mockEC2Client{
+		describeSGOutput: &ec2.DescribeSecurityGroupsOutput{
+			SecurityGroups: []types.SecurityGroup{{
+				GroupId: aws.String("sg-123"),
+				IpPermissionsEgress: []types.IpPermission{
+					{IpProtocol: aws.String("tcp"), FromPort: aws.Int32(80), ToPort: aws.Int32(80)},
+				},
+			}},
+		},
+	}
+
+	client := &AWSClient{ec2API: mock, region: "us-east-1"}
+
+	np := policy.NetworkPolicy{Metadata: policy.NetworkPolicyMetadata{Name: "replace"}}
+	np.Spec.Egress = []policy.EgressRule{
+		{
+			To:    policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.10/32"}},
+			Ports: []policy.PortSpec{{Protocol: "TCP", Port: 443}},
+		},
+	}
+
+	_, err := client.SyncPolicyWithOptions(context.Background(), np, "sg-123", AWSPolicySyncOptions{ReplaceEgress: true})
+	if err != nil {
+		t.Fatalf("SyncPolicyWithOptions returned error: %v", err)
+	}
+
+	if len(mock.revokeInputs) == 0 {
+		t.Fatalf("expected revoke call when replace-egress is enabled")
+	}
+}
+
+func TestSyncPolicyReplaceEgressReauthorizesExistingDesiredRule(t *testing.T) {
+	managedDesc := awsPolicyDescriptionPrefix("replace")
+	existingDesired := types.IpPermission{
+		IpProtocol: aws.String("tcp"),
+		FromPort:   aws.Int32(443),
+		ToPort:     aws.Int32(443),
+		IpRanges: []types.IpRange{
+			{CidrIp: aws.String("10.0.0.10/32"), Description: aws.String(managedDesc)},
+		},
+	}
+
+	mock := &mockEC2Client{
+		describeSGOutput: &ec2.DescribeSecurityGroupsOutput{
+			SecurityGroups: []types.SecurityGroup{{
+				GroupId:             aws.String("sg-123"),
+				IpPermissionsEgress: []types.IpPermission{existingDesired},
+			}},
+		},
+	}
+
+	client := &AWSClient{ec2API: mock, region: "us-east-1"}
+
+	np := policy.NetworkPolicy{Metadata: policy.NetworkPolicyMetadata{Name: "replace"}}
+	np.Spec.Egress = []policy.EgressRule{
+		{
+			To:    policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.10/32"}},
+			Ports: []policy.PortSpec{{Protocol: "TCP", Port: 443}},
+		},
+	}
+
+	_, err := client.SyncPolicyWithOptions(context.Background(), np, "sg-123", AWSPolicySyncOptions{ReplaceEgress: true})
+	if err != nil {
+		t.Fatalf("SyncPolicyWithOptions returned error: %v", err)
+	}
+	if len(mock.authorizeInputs) != 1 {
+		t.Fatalf("expected 1 authorize call (rule must be re-added), got %d", len(mock.authorizeInputs))
+	}
+}
+
+func TestSyncPolicyDryRun(t *testing.T) {
+	mock := &mockEC2Client{describeSGOutput: &ec2.DescribeSecurityGroupsOutput{SecurityGroups: []types.SecurityGroup{{GroupId: aws.String("sg-123")}}}}
+	client := &AWSClient{ec2API: mock, region: "us-east-1"}
+
+	np := policy.NetworkPolicy{Metadata: policy.NetworkPolicyMetadata{Name: "dry"}}
+	np.Spec.Egress = []policy.EgressRule{
+		{
+			To:    policy.EgressTarget{IPBlock: policy.IPBlockSpec{CIDR: "10.0.0.10/32"}},
+			Ports: []policy.PortSpec{{Protocol: "TCP", Port: 443}},
+		},
+	}
+
+	_, err := client.SyncPolicyWithOptions(context.Background(), np, "sg-123", AWSPolicySyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("SyncPolicyWithOptions returned error: %v", err)
+	}
+	if len(mock.authorizeInputs) != 0 {
+		t.Fatalf("expected no authorize calls in dry-run, got %d", len(mock.authorizeInputs))
+	}
+}
+
 func TestAuthorizeEgressDuplicate(t *testing.T) {
-	mock := &mockEC2Client{authorizeErr: errors.New("rule already exists")}
+	mock := &mockEC2Client{authorizeErr: errors.New("rule already exists"), describeSGOutput: &ec2.DescribeSecurityGroupsOutput{SecurityGroups: []types.SecurityGroup{{GroupId: aws.String("sg-789")}}}}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
 	if err := client.authorizeEgress(context.Background(), "sg-789", "10.0.0.0/24", "TCP", 80, 80); err != nil {
 		t.Fatalf("expected duplicate error to be ignored, got %v", err)
+	}
+}
+
+func TestSyncPolicyWithSelectorExpressions(t *testing.T) {
+	mock := &mockEC2Client{
+		describeSGOutput: &ec2.DescribeSecurityGroupsOutput{
+			SecurityGroups: []types.SecurityGroup{{GroupId: aws.String("sg-123")}},
+		},
+		describeInstancesOutput: &ec2.DescribeInstancesOutput{
+			Reservations: []types.Reservation{
+				{
+					Instances: []types.Instance{
+						{
+							InstanceId:       aws.String("i-1"),
+							PrivateIpAddress: aws.String("10.0.0.20"),
+							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
+							Tags: []types.Tag{
+								{Key: aws.String("env"), Value: aws.String("prod")},
+								{Key: aws.String("role"), Value: aws.String("api")},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	client := &AWSClient{ec2API: mock, region: "us-east-1"}
+
+	np := policy.NetworkPolicy{Metadata: policy.NetworkPolicyMetadata{Name: "expr"}}
+	np.Spec.Egress = []policy.EgressRule{
+		{
+			To: policy.EgressTarget{
+				PodSelector: policy.PodSelectorSpec{
+					MatchExpressions: []policy.LabelSelectorRequirement{{Key: "env", Operator: "In", Values: []string{"prod"}}},
+				},
+			},
+			Ports: []policy.PortSpec{{Protocol: "TCP", Port: 443}},
+		},
+	}
+
+	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+		t.Fatalf("SyncPolicy returned error: %v", err)
+	}
+
+	if len(mock.authorizeInputs) != 1 {
+		t.Fatalf("expected 1 authorize call, got %d", len(mock.authorizeInputs))
+	}
+	perm := mock.authorizeInputs[0].IpPermissions[0]
+	if aws.ToString(perm.IpRanges[0].CidrIp) != "10.0.0.20/32" {
+		t.Fatalf("unexpected cidr: %s", aws.ToString(perm.IpRanges[0].CidrIp))
 	}
 }
 
@@ -251,11 +494,11 @@ func TestRevokeAllEgress(t *testing.T) {
 		t.Fatalf("RevokeAllEgress returned error: %v", err)
 	}
 
-	if mock.revokeInput == nil {
+	if len(mock.revokeInputs) == 0 {
 		t.Fatal("expected revoke call, got nil")
 	}
-	if aws.ToString(mock.revokeInput.GroupId) != "sg-123" {
-		t.Fatalf("unexpected group id in revoke: %s", aws.ToString(mock.revokeInput.GroupId))
+	if aws.ToString(mock.revokeInputs[0].GroupId) != "sg-123" {
+		t.Fatalf("unexpected group id in revoke: %s", aws.ToString(mock.revokeInputs[0].GroupId))
 	}
 }
 
@@ -274,8 +517,8 @@ func TestRevokeAllEgressNoRules(t *testing.T) {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 
-	if mock.revokeInput != nil {
-		t.Fatalf("expected no revoke call, got %#v", mock.revokeInput)
+	if len(mock.revokeInputs) != 0 {
+		t.Fatalf("expected no revoke call, got %#v", mock.revokeInputs)
 	}
 }
 

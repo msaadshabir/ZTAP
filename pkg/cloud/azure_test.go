@@ -20,6 +20,34 @@ type mockSecurityRulesClient struct {
 	deleteErr error
 }
 
+type mockAzureInterfaces struct {
+	items []*armnetwork.Interface
+	all   []*armnetwork.Interface
+	err   error
+}
+
+func (m *mockAzureInterfaces) List(ctx context.Context, resourceGroup string) ([]*armnetwork.Interface, error) {
+	return m.items, m.err
+}
+
+func (m *mockAzureInterfaces) ListAll(ctx context.Context) ([]*armnetwork.Interface, error) {
+	return m.all, m.err
+}
+
+type mockAzurePublicIPs struct {
+	items []*armnetwork.PublicIPAddress
+	all   []*armnetwork.PublicIPAddress
+	err   error
+}
+
+func (m *mockAzurePublicIPs) List(ctx context.Context, resourceGroup string) ([]*armnetwork.PublicIPAddress, error) {
+	return m.items, m.err
+}
+
+func (m *mockAzurePublicIPs) ListAll(ctx context.Context) ([]*armnetwork.PublicIPAddress, error) {
+	return m.all, m.err
+}
+
 func (m *mockSecurityRulesClient) List(ctx context.Context, resourceGroup, nsgName string) ([]*armnetwork.SecurityRule, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
@@ -183,5 +211,53 @@ func TestAzureSyncPolicyPortRange(t *testing.T) {
 	}
 	if *rule.Properties.DestinationPortRange != "8000-8080" {
 		t.Fatalf("unexpected port range: %s", *rule.Properties.DestinationPortRange)
+	}
+}
+
+func TestAzureDiscoverResources(t *testing.T) {
+	privateIP := "10.0.0.5"
+	publicIPID := "/subscriptions/123/resourceGroups/rg/providers/Microsoft.Network/publicIPAddresses/pip1"
+	publicIP := "203.0.113.5"
+
+	interfaces := &mockAzureInterfaces{items: []*armnetwork.Interface{
+		{
+			ID:   ptrString("/subscriptions/123/resourceGroups/rg/providers/Microsoft.Network/networkInterfaces/nic1"),
+			Name: ptrString("nic1"),
+			Tags: map[string]*string{"app": ptrString("web")},
+			Properties: &armnetwork.InterfacePropertiesFormat{
+				IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+					{
+						Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+							PrivateIPAddress: ptrString(privateIP),
+							PublicIPAddress:  &armnetwork.PublicIPAddress{ID: ptrString(publicIPID)},
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	publicIPs := &mockAzurePublicIPs{items: []*armnetwork.PublicIPAddress{
+		{
+			ID: ptrString(publicIPID),
+			Properties: &armnetwork.PublicIPAddressPropertiesFormat{
+				IPAddress: ptrString(publicIP),
+			},
+		},
+	}}
+
+	client := &AzureClient{interfaces: interfaces, publicIPs: publicIPs, rulePrefix: defaultAzureRulePrefix, priorityBase: defaultPriorityBase}
+	resources, err := client.DiscoverResources(context.Background(), "rg")
+	if err != nil {
+		t.Fatalf("DiscoverResources returned error: %v", err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(resources))
+	}
+	if resources[0].PrivateIP != privateIP {
+		t.Fatalf("unexpected private IP: %s", resources[0].PrivateIP)
+	}
+	if resources[0].PublicIP != publicIP {
+		t.Fatalf("unexpected public IP: %s", resources[0].PublicIP)
 	}
 }

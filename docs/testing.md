@@ -53,9 +53,17 @@ ZTAP includes comprehensive test coverage across all critical components with un
 - **TestDiscoverResourcesError**: Propagates DescribeInstances failures
 - **TestSyncPolicyWithIPBlock**: Syncs multi-port Security Group egress rules
 - **TestSyncPolicyAuthorizeError**: Handles authorization API failures
+- **TestSyncPolicyWithSelectorResolution**: Resolves podSelector targets via EC2 tags and syncs host CIDRs
+- **TestSyncPolicyWithSelectorExpressions**: Resolves matchExpressions selector targets via EC2 tags
 - **TestAuthorizeEgressDuplicate**: Suppresses duplicate rule errors
+- **TestSyncPolicyReplaceEgressReauthorizesExistingDesiredRule**: Takeover mode re-adds desired rules after clearing egress
 - **TestRevokeAllEgress**: Revokes existing egress rules for cleanup
 - **TestRevokeAllEgressNoRules**: No-op when no rules exist
+
+#### Cloud Package (Azure/GCP inventory)
+
+- **TestAzureDiscoverResources**: Discovers NIC inventory and resolves public IPs
+- **TestGCPDiscoverResources**: Discovers GCE instance inventory within a network
 
 ### Integration Tests
 

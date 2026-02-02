@@ -92,7 +92,7 @@ StopWFPEnforcement() error
 
 - Discover EC2 instances via `DescribeInstances`
 - Map labels to AWS tags
-- Convert policies to Security Group rules
+- Convert policies to Security Group rules (managed prefix + delete stale managed rules)
 - Handle stateful firewall differences
 
 **Azure Integration**:
@@ -105,6 +105,9 @@ StopWFPEnforcement() error
 ```go
 DiscoverResources() ([]Resource, error)
 SyncPolicy(policy NetworkPolicy, sgID string) error
+
+// GCP
+SyncPolicy(policy NetworkPolicy, projectID, network string) error
 
 // Azure
 SyncPolicy(policy NetworkPolicy, resourceGroup, nsgName string) error

@@ -267,6 +267,7 @@ ztap [command]
 Commands:
   api         Run REST API server (serve)
   grpc        Run gRPC API server (serve)
+  aws         AWS Security Group synchronization (sg-sync)
   azure       Azure NSG synchronization (nsg-sync)
   gcp         GCP firewall rule synchronization (firewall-sync)
   agent       Run node agent (Kubernetes / in-cluster)

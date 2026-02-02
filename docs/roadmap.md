@@ -50,6 +50,7 @@
 - Improve label-based enforcement outside Kubernetes agent mode (automatic selector resolution and re-resolution over time).
 - Kubernetes NetworkPolicy parity extensions: `namespaceSelector`, `matchExpressions`, `ipBlock.except`, named ports, and port ranges.
 - Ship a complete, production-ready Kubernetes install bundle (RBAC + agent DaemonSet + operator) and add dedicated unit tests for the operator reconcile loop. (DONE: see `deployments/kubernetes/ztap-install.yaml` and `pkg/operator/controllers/ztapnetworkpolicy_controller_test.go`)
+- Add first-class CLI workflows for AWS Security Group sync (and inventory-based label resolution), and expand `ztap status` coverage for Azure/GCP.
 
 ## Planned
 
