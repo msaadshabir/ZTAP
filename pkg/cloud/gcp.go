@@ -171,6 +171,45 @@ func (c *GCPClient) DiscoverResources(ctx context.Context, projectID, network st
 	return c.discoverResources(ctx, projectID, networkURL)
 }
 
+// CountManagedFirewalls counts the total firewalls and managed firewalls in a network.
+// Returns (totalCount, managedCount, nil) on success.
+func (c *GCPClient) CountManagedFirewalls(ctx context.Context, projectID, network string) (int, int, error) {
+	networkURL := networkSelfLink(projectID, network)
+	rules, err := c.firewalls.List(ctx, projectID, networkURL)
+	if err != nil {
+		return 0, 0, fmt.Errorf("listing firewall rules: %w", err)
+	}
+
+	total := len(rules)
+	managed := 0
+	for _, rule := range rules {
+		if rule.Name != nil && strings.HasPrefix(*rule.Name, c.rulePrefix) {
+			managed++
+		}
+	}
+
+	return total, managed, nil
+}
+
+// ListManagedFirewalls returns the names of all managed firewall rules in a network.
+func (c *GCPClient) ListManagedFirewalls(ctx context.Context, projectID, network string) ([]string, error) {
+	networkURL := networkSelfLink(projectID, network)
+	rules, err := c.firewalls.List(ctx, projectID, networkURL)
+	if err != nil {
+		return nil, fmt.Errorf("listing firewall rules: %w", err)
+	}
+
+	var managed []string
+	for _, rule := range rules {
+		if rule.Name != nil && strings.HasPrefix(*rule.Name, c.rulePrefix) {
+			managed = append(managed, *rule.Name)
+		}
+	}
+
+	sort.Strings(managed)
+	return managed, nil
+}
+
 // SyncPolicyWithOptions reconciles firewall rules with optional dry-run behavior.
 func (c *GCPClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkPolicy, projectID, network string, opts GCPPolicySyncOptions) error {
 	safeName := sanitizePolicyName(p.Metadata.Name)

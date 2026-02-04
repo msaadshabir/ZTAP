@@ -46,6 +46,7 @@ Policies that use `podSelector` targets can be enforced by resolving selectors i
 `ztap enforce` refreshes selector resolution while it is running; tune with `--resolve-labels-interval` (default: `5s`; set to `0` to resolve once).
 If a selector currently resolves to zero targets, enforcement still starts; the rule becomes active when targets appear and resolution refreshes.
 Cloud sync backends may still translate selectors (for example, `ztap gcp firewall-sync` resolves `podSelector` via GCE instance labels).
+For AWS Security Group sync, you can also resolve `podSelector` targets via EC2 tags (live) or via a pre-exported offline inventory (`ztap aws inventory export` + `ztap aws sg-sync --inventory-file`).
 
 Kubernetes multi-namespace agent mode:
 

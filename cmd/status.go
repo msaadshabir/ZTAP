@@ -17,12 +17,13 @@ import (
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show status of on-premises and cloud resources",
-	Long:  `Display discovered resources from local system and cloud providers (AWS, Azure, etc.)`,
+	Long:  `Display discovered resources from local system and cloud providers (AWS, Azure, GCP)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		region, _ := cmd.Flags().GetString("region")
 		showAWS, _ := cmd.Flags().GetBool("aws")
 		showAzure, _ := cmd.Flags().GetBool("azure")
 		showGCP, _ := cmd.Flags().GetBool("gcp")
+		verbose, _ := cmd.Flags().GetBool("verbose")
 
 		fmt.Println("ZTAP Status Report")
 		fmt.Println("==================")
@@ -51,13 +52,16 @@ var statusCmd = &cobra.Command{
 				region = "us-east-1"
 			}
 
-			fmt.Printf("AWS Resources (Region: %s):\n", region)
+			flagProfile, _ := cmd.Flags().GetString("profile")
+			profile := firstNonEmpty(strings.TrimSpace(flagProfile), cfg.Profile)
+
+			fmt.Printf("AWS Resources (Region: %s", region)
+			if profile != "" {
+				fmt.Printf(", Profile: %s", profile)
+			}
+			fmt.Println("):")
 
 			ctx := context.Background()
-			profile := ""
-			if cfg.Profile != "" {
-				profile = cfg.Profile
-			}
 			client, err := cloud.NewAWSClientWithOptions(ctx, cloud.AWSOptions{Region: region, Profile: profile})
 			if err != nil {
 				logging.Warnf("Failed to initialize AWS client: %v", err)
@@ -67,24 +71,45 @@ var statusCmd = &cobra.Command{
 				if err != nil {
 					logging.Warnf("Failed to discover AWS resources: %v", err)
 				} else {
-					printCloudResources(resources)
+					fmt.Printf("  Discovered: %d EC2 instance(s)\n", len(resources))
+
+					if verbose && len(resources) > 0 {
+						fmt.Println("\n  Sample Instances:")
+						printCloudResources(resources)
+					}
 				}
 			}
 		}
 
 		if showAzure {
 			fmt.Println()
-			fmt.Println("Azure Resources:")
 			cfg, err := loadAzureConfig()
 			if err != nil {
 				logging.Warnf("Failed to load Azure config: %v", err)
-			} else if cfg.SubscriptionID == "" {
+			}
+
+			flagSubID, _ := cmd.Flags().GetString("azure-subscription-id")
+			subscriptionID := firstNonEmpty(strings.TrimSpace(flagSubID), cfg.SubscriptionID)
+
+			flagRG, _ := cmd.Flags().GetString("azure-resource-group")
+			resourceGroup := firstNonEmpty(strings.TrimSpace(flagRG), cfg.ResourceGroup)
+
+			flagNSG, _ := cmd.Flags().GetString("azure-nsg")
+			nsgName := firstNonEmpty(strings.TrimSpace(flagNSG), cfg.NSG)
+
+			fmt.Printf("Azure Resources:\n")
+			if subscriptionID != "" {
+				fmt.Printf("  Subscription: %s\n", subscriptionID)
+			}
+			if resourceGroup != "" {
+				fmt.Printf("  Resource Group: %s\n", resourceGroup)
+			}
+
+			if subscriptionID == "" {
 				logging.Warnf("Azure subscription_id is required to discover resources")
 			} else {
-				flagRG, _ := cmd.Flags().GetString("azure-resource-group")
-				resourceGroup := firstNonEmpty(strings.TrimSpace(flagRG), cfg.ResourceGroup)
 				ctx := context.Background()
-				client, err := cloud.NewAzureClient(ctx, cfg.SubscriptionID)
+				client, err := cloud.NewAzureClient(ctx, subscriptionID)
 				if err != nil {
 					logging.Warnf("Failed to initialize Azure client: %v", err)
 				} else {
@@ -92,7 +117,32 @@ var statusCmd = &cobra.Command{
 					if err != nil {
 						logging.Warnf("Failed to discover Azure resources: %v", err)
 					} else {
-						printCloudResources(resources)
+						fmt.Printf("  Discovered: %d NIC(s)\n", len(resources))
+						if len(resources) > 0 {
+							printCloudResources(resources)
+						}
+
+						// Show NSG rule counts if NSG is specified
+						if nsgName != "" && resourceGroup != "" {
+							total, managed, err := client.CountManagedRules(ctx, resourceGroup, nsgName)
+							if err != nil {
+								logging.Warnf("Failed to count managed rules: %v", err)
+							} else {
+								fmt.Printf("\n  NSG: %s\n", nsgName)
+								fmt.Printf("    Total Rules: %d\n", total)
+								fmt.Printf("    Managed Rules: %d (ztap-*)\n", managed)
+
+								if verbose && managed > 0 {
+									rules, err := client.ListManagedRules(ctx, resourceGroup, nsgName)
+									if err == nil && len(rules) > 0 {
+										fmt.Println("\n    Managed Rule Names:")
+										for _, rule := range rules {
+											fmt.Printf("      - %s\n", rule)
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -100,28 +150,66 @@ var statusCmd = &cobra.Command{
 
 		if showGCP {
 			fmt.Println()
-			fmt.Println("GCP Resources:")
 			cfg, err := loadGCPConfig()
 			if err != nil {
 				logging.Warnf("Failed to load GCP config: %v", err)
+			}
+
+			flagProject, _ := cmd.Flags().GetString("project-id")
+			flagNetwork, _ := cmd.Flags().GetString("network")
+
+			// Also check legacy flag names
+			if flagProject == "" {
+				flagProject, _ = cmd.Flags().GetString("gcp-project-id")
+			}
+			if flagNetwork == "" {
+				flagNetwork, _ = cmd.Flags().GetString("gcp-network")
+			}
+
+			projectID := firstNonEmpty(strings.TrimSpace(flagProject), cfg.ProjectID)
+			network := firstNonEmpty(strings.TrimSpace(flagNetwork), cfg.Network)
+
+			fmt.Printf("GCP Resources:\n")
+			if projectID != "" {
+				fmt.Printf("  Project: %s\n", projectID)
+			}
+			if network != "" {
+				fmt.Printf("  Network: %s\n", network)
+			}
+
+			if projectID == "" || network == "" {
+				logging.Warnf("GCP project_id and network are required to discover resources")
 			} else {
-				flagProject, _ := cmd.Flags().GetString("gcp-project-id")
-				flagNetwork, _ := cmd.Flags().GetString("gcp-network")
-				projectID := firstNonEmpty(strings.TrimSpace(flagProject), cfg.ProjectID)
-				network := firstNonEmpty(strings.TrimSpace(flagNetwork), cfg.Network)
-				if projectID == "" || network == "" {
-					logging.Warnf("GCP project_id and network are required to discover resources")
+				ctx := context.Background()
+				client, err := cloud.NewGCPClient(ctx, cloud.GCPOptions{})
+				if err != nil {
+					logging.Warnf("Failed to initialize GCP client: %v", err)
 				} else {
-					ctx := context.Background()
-					client, err := cloud.NewGCPClient(ctx, cloud.GCPOptions{})
+					resources, err := client.DiscoverResources(ctx, projectID, network)
 					if err != nil {
-						logging.Warnf("Failed to initialize GCP client: %v", err)
+						logging.Warnf("Failed to discover GCP resources: %v", err)
 					} else {
-						resources, err := client.DiscoverResources(ctx, projectID, network)
-						if err != nil {
-							logging.Warnf("Failed to discover GCP resources: %v", err)
-						} else {
+						fmt.Printf("  Discovered: %d GCE instance(s)\n", len(resources))
+						if len(resources) > 0 {
 							printCloudResources(resources)
+						}
+
+						// Show firewall rule counts
+						total, managed, err := client.CountManagedFirewalls(ctx, projectID, network)
+						if err != nil {
+							logging.Warnf("Failed to count managed firewalls: %v", err)
+						} else {
+							fmt.Printf("\n  Managed Firewall Rules: %d/%d (ztap-*)\n", managed, total)
+
+							if verbose && managed > 0 {
+								rules, err := client.ListManagedFirewalls(ctx, projectID, network)
+								if err == nil && len(rules) > 0 {
+									fmt.Println("\n    Managed Rule Names:")
+									for _, rule := range rules {
+										fmt.Printf("      - %s\n", rule)
+									}
+								}
+							}
 						}
 					}
 				}
@@ -137,11 +225,17 @@ var statusCmd = &cobra.Command{
 func init() {
 	statusCmd.Flags().BoolP("aws", "a", false, "Discover AWS resources")
 	statusCmd.Flags().StringP("region", "r", "us-east-1", "AWS region")
+	statusCmd.Flags().String("profile", "", "AWS CLI profile")
 	statusCmd.Flags().Bool("azure", false, "Discover Azure resources")
 	statusCmd.Flags().Bool("gcp", false, "Discover GCP resources")
 	statusCmd.Flags().String("azure-resource-group", "", "Azure resource group for discovery (optional)")
+	statusCmd.Flags().String("azure-subscription-id", "", "Azure subscription ID (overrides config)")
+	statusCmd.Flags().String("azure-nsg", "", "Azure NSG name for rule summary (optional)")
 	statusCmd.Flags().String("gcp-project-id", "", "GCP project ID for discovery (optional)")
 	statusCmd.Flags().String("gcp-network", "", "GCP network name for discovery (optional)")
+	statusCmd.Flags().String("project-id", "", "GCP project ID (alias for --gcp-project-id)")
+	statusCmd.Flags().String("network", "", "GCP network name (alias for --gcp-network)")
+	statusCmd.Flags().BoolP("verbose", "v", false, "Show detailed output including managed rule names")
 	rootCmd.AddCommand(statusCmd)
 }
 

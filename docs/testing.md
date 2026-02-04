@@ -63,7 +63,9 @@ ZTAP includes comprehensive test coverage across all critical components with un
 #### Cloud Package (Azure/GCP inventory)
 
 - **TestAzureDiscoverResources**: Discovers NIC inventory and resolves public IPs
+- **TestAzureClientCountManagedRules**: Counts managed NSG rules by prefix
 - **TestGCPDiscoverResources**: Discovers GCE instance inventory within a network
+- **TestGCPClientCountManagedFirewalls**: Counts managed firewall rules by prefix
 
 ### Integration Tests
 

@@ -311,6 +311,9 @@ export AWS_REGION="us-east-1"
 
 # Test AWS connectivity
 ztap status --aws --region us-east-1
+
+# If you use an AWS profile
+ztap status --aws --region us-east-1 --profile prod
 ```
 
 AWS Security Group sync:
@@ -330,6 +333,33 @@ ztap aws sg-sync examples/web-to-db.yaml --dry-run \
 ztap aws sg-sync examples/web-to-db.yaml --replace-egress --yes \
   --region us-east-1 \
   --security-group-id sg-1234567890
+
+# Use pre-exported inventory to skip live API calls
+ztap aws sg-sync examples/web-to-db.yaml \
+  --region us-east-1 \
+  --security-group-id sg-1234567890 \
+  --inventory-file inventory.json
+
+# Output structured JSON with plan details
+ztap aws sg-sync examples/web-to-db.yaml --dry-run --output json \
+  --region us-east-1 \
+  --security-group-id sg-1234567890
+```
+
+AWS Inventory Management:
+
+```bash
+# Export EC2 inventory for offline analysis
+ztap aws inventory export --region us-east-1 --profile prod --out inventory.json
+
+# Resolve IPs for label selectors using live AWS
+ztap aws inventory resolve --labels app=web,tier=frontend --ip-mode private
+
+# Resolve IPs using a pre-exported inventory file
+ztap aws inventory resolve --inventory-file inventory.json --labels app=web
+
+# Use k8s-style selector syntax for complex queries
+ztap aws inventory resolve --selector "app in (web,api),env!=dev"
 ```
 
 ### 6. Azure NSG Synchronization (Optional)
@@ -503,16 +533,25 @@ ztap status
 # Include AWS resources
 ztap status --aws --region us-east-1
 
+# If you use an AWS profile
+ztap status --aws --region us-east-1 --profile prod
+
 # Include Azure resources (requires azure.subscription_id in config.yaml or ZTAP_AZURE_SUBSCRIPTION_ID)
 ztap status --azure
 
 # Scope Azure discovery (optional)
 ztap status --azure --azure-resource-group <rg>
 
+# Report managed NSG rules (requires Azure NSG + resource group)
+ztap status --azure --azure-subscription-id <sub-id> --azure-resource-group <rg> --azure-nsg <nsg-name> --verbose
+
 # Include GCP resources (requires gcp.project_id and gcp.network in config.yaml)
 ztap status --gcp
 
 # Override GCP discovery scope (optional)
+ztap status --gcp --project-id <project> --network <vpc-network>
+
+# Legacy flag names (still supported)
 ztap status --gcp --gcp-project-id <project> --gcp-network <vpc-network>
 ```
 
@@ -714,6 +753,9 @@ aws sts get-caller-identity
 
 # Try different region
 ztap status --aws --region us-west-2
+
+# If you use an AWS profile
+ztap status --aws --region us-west-2 --profile prod
 ```
 
 ### Issue: "Failed to load policy"

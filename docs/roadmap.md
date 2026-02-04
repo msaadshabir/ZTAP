@@ -34,6 +34,9 @@
 - TLS/HTTPS support for API and gRPC servers
 - Alerting with webhook integrations (Slack, PagerDuty)
 - GCP VPC Firewall Rules synchronization
+- AWS EC2 inventory export + selector/IP resolution CLI (`ztap aws inventory`)
+- AWS SG sync enhancements: inventory injection + json output (`ztap aws sg-sync --inventory-file --output json`)
+- Expanded `ztap status` cloud coverage: managed Azure NSG / GCP firewall rule summaries (+ override flags)
 - Kubernetes Operator with NetworkPolicy CRD
 - Windows enforcement via Windows Filtering Platform (WFP) (experimental)
 - Windows flow monitoring via WFP NetEvents (ztap-only; requires Administrator)
@@ -52,12 +55,9 @@
 - Ship a complete, production-ready Kubernetes install bundle (RBAC + agent DaemonSet + operator) and add dedicated unit tests for the operator reconcile loop. (see `deployments/kubernetes/ztap-install.yaml` and `pkg/operator/controllers/ztapnetworkpolicy_controller_test.go`)
 - Expand REST/gRPC APIs beyond the current minimal surface (policy CRUD/history, user/role management, cluster operations).
 - Add an etcd-backed PolicySync backend (store current policy + revisions in etcd; real multi-node distribution) and wire the CLI/runtime to use it instead of in-memory-only sync.
+- Add first-class CLI workflows for AWS Security Group sync (and inventory-based label resolution), and expand `ztap status` coverage for Azure/GCP.
 
 ## Planned
-
-### Cloud Integrations
-
-- Add first-class CLI workflows for AWS Security Group sync (and inventory-based label resolution), and expand `ztap status` coverage for Azure/GCP.
 
 ### Backup/Restore & Management Plane
 

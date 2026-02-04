@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"ztap/pkg/cloud"
+	"ztap/pkg/inventory"
 	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 
@@ -98,6 +100,9 @@ var awsSGSyncCmd = &cobra.Command{
 		replaceEgress, _ := cmd.Flags().GetBool("replace-egress")
 		force, _ := cmd.Flags().GetBool("force")
 		yes, _ := cmd.Flags().GetBool("yes")
+		inventoryFile, _ := cmd.Flags().GetString("inventory-file")
+		outputFormat, _ := cmd.Flags().GetString("output")
+		showResolved, _ := cmd.Flags().GetBool("show-resolved")
 
 		region := firstNonEmpty(strings.TrimSpace(flagRegion), cfg.Region)
 		if region == "" {
@@ -122,6 +127,25 @@ var awsSGSyncCmd = &cobra.Command{
 			logging.Fatalf("Failed to initialize AWS client: %v", err)
 		}
 
+		// Load inventory if provided
+		var inventoryResources []cloud.Resource
+		if inventoryFile != "" {
+			inv, err := inventory.LoadFromFile(inventoryFile)
+			if err != nil {
+				logging.Fatalf("Failed to load inventory: %v", err)
+			}
+			for _, r := range inv.Resources {
+				inventoryResources = append(inventoryResources, cloud.Resource{
+					ID:        r.ID,
+					Name:      r.Name,
+					Type:      r.Type,
+					PrivateIP: r.PrivateIP,
+					PublicIP:  r.PublicIP,
+					Labels:    r.Labels,
+				})
+			}
+		}
+
 		runOnce := func() {
 			policies, err := policy.LoadFromFile(args[0])
 			if err != nil {
@@ -142,6 +166,10 @@ var awsSGSyncCmd = &cobra.Command{
 			}
 
 			opts := cloud.AWSPolicySyncOptions{DryRun: dryRun, ReplaceEgress: replaceEgress}
+			if inventoryFile != "" {
+				opts.Inventory = inventoryResources
+			}
+
 			total := cloud.AWSSyncResult{}
 			for idx, p := range normalized {
 				callOpts := opts
@@ -162,9 +190,64 @@ var awsSGSyncCmd = &cobra.Command{
 				}
 			}
 
-			fmt.Printf("Resolved selector targets: %d\n", total.ResolvedTargets)
-			fmt.Printf("Desired rules: %d\n", total.Desired)
-			fmt.Printf("Planned changes: create %d, update %d, delete %d\n", total.ToAuthorize, total.ToUpdate, total.ToRevoke)
+			if strings.ToLower(outputFormat) == "json" {
+				output := map[string]interface{}{
+					"sync_type":        "aws_security_group",
+					"target":           sgID,
+					"policies_synced":  len(normalized),
+					"resolved_targets": total.ResolvedTargets,
+					"dry_run":          dryRun,
+					"rules": map[string]int{
+						"desired":      total.Desired,
+						"to_authorize": total.ToAuthorize,
+						"to_revoke":    total.ToRevoke,
+						"to_update":    total.ToUpdate,
+					},
+				}
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				enc.Encode(output)
+			} else {
+				fmt.Printf("Resolved selector targets: %d\n", total.ResolvedTargets)
+				fmt.Printf("Desired rules: %d\n", total.Desired)
+				fmt.Printf("Planned changes: create %d, update %d, delete %d\n", total.ToAuthorize, total.ToUpdate, total.ToRevoke)
+
+				if showResolved {
+					fmt.Println("\nResolved targets by policy:")
+					for _, p := range normalized {
+						fmt.Printf("\nPolicy: %s\n", p.Metadata.Name)
+						for _, egress := range p.Spec.Egress {
+							// Check if selector is not empty (has matchLabels or matchExpressions)
+							hasSelector := len(egress.To.PodSelector.MatchLabels) > 0 || len(egress.To.PodSelector.MatchExpressions) > 0
+							if hasSelector {
+								var resources []cloud.Resource
+								if inventoryFile != "" {
+									resources = inventoryResources
+								} else {
+									var err error
+									resources, err = client.DiscoverResources(ctx)
+									if err != nil {
+										logging.Warnf("Failed to discover AWS resources for resolved output: %v", err)
+										continue
+									}
+								}
+
+								matched := make([]cloud.Resource, 0)
+								for _, r := range resources {
+									if policy.MatchesSelector(r.Labels, egress.To.PodSelector) {
+										matched = append(matched, r)
+									}
+								}
+
+								fmt.Printf("  Selector %v -> %d match(es)\n", egress.To.PodSelector, len(matched))
+								for _, r := range matched {
+									fmt.Printf("    - %s (%s): %s\n", r.ID, r.Name, r.PrivateIP)
+								}
+							}
+						}
+					}
+				}
+			}
 
 			if dryRun {
 				fmt.Printf("Dry-run complete for %d policy object(s) against Security Group %s\n", len(normalized), sgID)
@@ -210,6 +293,9 @@ func init() {
 	awsSGSyncCmd.Flags().Bool("replace-egress", false, "Clear existing egress rules before applying desired rules")
 	awsSGSyncCmd.Flags().Bool("force", false, "Required when using --replace-egress")
 	awsSGSyncCmd.Flags().Bool("yes", false, "Alias for --force")
+	awsSGSyncCmd.Flags().String("inventory-file", "", "Use pre-exported inventory file instead of live API calls")
+	awsSGSyncCmd.Flags().String("output", "text", "Output format (text or json)")
+	awsSGSyncCmd.Flags().Bool("show-resolved", false, "Print matched instances/IPs for each selector (text mode)")
 
 	awsCmd.AddCommand(awsSGSyncCmd)
 	rootCmd.AddCommand(awsCmd)

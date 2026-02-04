@@ -51,6 +51,7 @@ type AWSOptions struct {
 type AWSPolicySyncOptions struct {
 	DryRun        bool
 	ReplaceEgress bool
+	Inventory     []Resource // Optional: inject pre-discovered resources to skip API calls
 }
 
 // AWSSyncResult summarizes a sync operation.
@@ -166,10 +167,14 @@ func (c *AWSClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkP
 
 	var resources []Resource
 	if hasEgressSelectors(p) {
-		var err error
-		resources, err = c.DiscoverResources(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("discovering AWS resources: %w", err)
+		if opts.Inventory != nil {
+			resources = opts.Inventory
+		} else {
+			var err error
+			resources, err = c.DiscoverResources(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("discovering AWS resources: %w", err)
+			}
 		}
 	}
 

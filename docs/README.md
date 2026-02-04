@@ -106,18 +106,48 @@ ZTAP can reconcile NetworkPolicy objects into Azure NSG security rules:
 - Command: `ztap azure nsg-sync <policy-file> --subscription-id ... --resource-group ... --nsg ...`
 - Config: see `azure.*` in `config.yaml.example`
 
+Status command with NSG rule reporting:
+
+```bash
+ztap status --azure --azure-subscription-id <sub-id> --azure-nsg <nsg-name> --verbose
+```
+
 ## AWS Security Group Sync
 
 ZTAP can reconcile NetworkPolicy egress rules into an AWS Security Group.
 
 - Command: `ztap aws sg-sync <policy-file> --security-group-id ... --region ...`
-- Flags: `--dry-run`, `--watch`, `--watch-interval`, `--replace-egress`, `--force`/`--yes`
+- Flags: `--dry-run`, `--watch`, `--watch-interval`, `--replace-egress`, `--force`/`--yes`, `--inventory-file`, `--output`, `--show-resolved`
 - Config: see `aws.*` in `config.yaml.example`
 
 Selector-based rules:
 
 - `podSelector` targets (matchLabels + matchExpressions) are resolved against EC2 instance tags.
 - Matching instance private IPs are translated into single-host CIDRs (`/32` for IPv4, `/128` for IPv6) for use in egress rules.
+
+### AWS Inventory Management
+
+ZTAP provides inventory management commands for AWS EC2 resources:
+
+```bash
+# Export EC2 inventory to JSON for offline analysis
+ztap aws inventory export [--region us-east-1] [--profile prod] [--out inventory.json]
+
+# Resolve IPs for label selectors using live AWS API
+ztap aws inventory resolve --labels app=web,tier=frontend [--ip-mode private|public|both]
+
+# Resolve IPs using a pre-exported inventory file
+ztap aws inventory resolve --inventory-file inventory.json --labels app=web
+
+# Use k8s-style selector syntax for complex queries
+ztap aws inventory resolve --selector "app in (web,api),tier!=dev"
+```
+
+Inventory can be used with `ztap aws sg-sync` to skip live API calls:
+
+```bash
+ztap aws sg-sync policy.yaml --security-group-id sg-123 --inventory-file inventory.json
+```
 
 ## GCP Firewall Sync
 
@@ -130,3 +160,9 @@ ZTAP can reconcile NetworkPolicy objects into GCP VPC firewall rules (using Appl
 Selector-based rules:
 
 - `podSelector` targets (matchLabels + matchExpressions) are resolved against GCE instance labels within the specified VPC network.
+
+Status command with firewall rule reporting:
+
+```bash
+ztap status --gcp --project-id <project> --network <network> --verbose
+```

@@ -323,6 +323,43 @@ func (c *AzureClient) DiscoverResources(ctx context.Context, resourceGroup strin
 	return resources, nil
 }
 
+// CountManagedRules counts the total rules and managed rules in an NSG.
+// Returns (totalCount, managedCount, nil) on success.
+func (c *AzureClient) CountManagedRules(ctx context.Context, resourceGroup, nsgName string) (int, int, error) {
+	rules, err := c.rules.List(ctx, resourceGroup, nsgName)
+	if err != nil {
+		return 0, 0, fmt.Errorf("listing NSG rules: %w", err)
+	}
+
+	total := len(rules)
+	managed := 0
+	for _, rule := range rules {
+		if rule.Name != nil && strings.HasPrefix(*rule.Name, c.rulePrefix) {
+			managed++
+		}
+	}
+
+	return total, managed, nil
+}
+
+// ListManagedRules returns the names of all managed rules in an NSG.
+func (c *AzureClient) ListManagedRules(ctx context.Context, resourceGroup, nsgName string) ([]string, error) {
+	rules, err := c.rules.List(ctx, resourceGroup, nsgName)
+	if err != nil {
+		return nil, fmt.Errorf("listing NSG rules: %w", err)
+	}
+
+	var managed []string
+	for _, rule := range rules {
+		if rule.Name != nil && strings.HasPrefix(*rule.Name, c.rulePrefix) {
+			managed = append(managed, *rule.Name)
+		}
+	}
+
+	sort.Strings(managed)
+	return managed, nil
+}
+
 func (c *AzureClient) listPublicIPs(ctx context.Context, resourceGroup string) (map[string]string, error) {
 	if c.publicIPs == nil {
 		return map[string]string{}, nil

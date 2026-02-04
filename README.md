@@ -109,7 +109,7 @@ Cluster backend:
 
 ### Cloud Integration
 
-- **AWS Security Groups** – Auto-sync policies
+- **AWS Security Groups** – Auto-sync policies (supports inventory export + offline selector/IP resolution)
 - **Azure NSGs** – Reconcile policies into NSG security rules
 - **GCP Firewall Rules** – Reconcile policies into VPC firewall rules
 - **EC2 Auto-Discovery** – Tag-based labeling
@@ -272,7 +272,7 @@ ztap [command]
 Commands:
   api         Run REST API server (serve)
   grpc        Run gRPC API server (serve)
-  aws         AWS Security Group synchronization (sg-sync)
+  aws         AWS Security Group synchronization (sg-sync, inventory)
   azure       Azure NSG synchronization (nsg-sync)
   gcp         GCP firewall rule synchronization (firewall-sync)
   agent       Run node agent (Kubernetes / in-cluster)
