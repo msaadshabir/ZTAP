@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -1469,7 +1470,7 @@ func (c *clusterService) GetClusterStatus(ctx context.Context, _ *emptypb.Empty)
 		IsLeader:   c.srv.clusterElection.IsLeader(),
 		Nodes:      make([]*apiv1.ClusterNode, 0, len(nodes)),
 		UpdatedAt:  timestamppb.New(time.Now().UTC()),
-		TotalNodes: int32(len(nodes)),
+		TotalNodes: safeNodesCount(nodes),
 	}
 	if leader != nil {
 		resp.Leader = toClusterNode(leader)
@@ -1560,6 +1561,14 @@ func toClusterNode(node *cluster.Node) *apiv1.ClusterNode {
 		Metadata: node.Metadata,
 	}
 	return resp
+}
+
+func safeNodesCount(nodes []*cluster.Node) int32 {
+	count := len(nodes)
+	if count > int(math.MaxInt32) {
+		return math.MaxInt32
+	}
+	return int32(count)
 }
 
 func flowEventToPB(ev flow.FlowEvent) *apiv1.FlowEvent {
