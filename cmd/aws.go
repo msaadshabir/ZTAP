@@ -206,7 +206,9 @@ var awsSGSyncCmd = &cobra.Command{
 				}
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
-				enc.Encode(output)
+				if err := enc.Encode(output); err != nil {
+					logging.Warnf("Failed to encode JSON output: %v", err)
+				}
 			} else {
 				fmt.Printf("Resolved selector targets: %d\n", total.ResolvedTargets)
 				fmt.Printf("Desired rules: %d\n", total.Desired)
