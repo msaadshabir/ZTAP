@@ -423,3 +423,66 @@ spec:
 		t.Errorf("expected enforced version 1 in dry-run, got %d", version)
 	}
 }
+
+func TestPolicyEnforcerDeleteUpdate(t *testing.T) {
+	mockSync := newMockPolicySync()
+
+	enforcer := NewPolicyEnforcer(PolicyEnforcerConfig{
+		PolicySync: mockSync,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := enforcer.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = enforcer.Stop() }()
+
+	policyYAML := []byte(`apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: delete-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: delete
+  egress:
+  - to:
+      ipBlock:
+        cidr: 10.0.0.0/8
+    ports:
+    - protocol: TCP
+      port: 80`)
+
+	mockSync.sendUpdate(cluster.PolicyUpdate{
+		PolicyName: "delete-policy",
+		YAML:       policyYAML,
+		Version:    1,
+		Source:     "node-1",
+		Timestamp:  time.Now(),
+	})
+	deadline := time.Now().Add(1 * time.Second)
+	for enforcer.GetEnforcedVersion("delete-policy") != 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for delete-policy enforcement")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	mockSync.sendUpdate(cluster.PolicyUpdate{
+		PolicyName: "delete-policy",
+		Version:    2,
+		Source:     "node-1",
+		Timestamp:  time.Now(),
+		Deleted:    true,
+	})
+
+	deleteDeadline := time.Now().Add(1 * time.Second)
+	for enforcer.GetEnforcedVersion("delete-policy") != 0 {
+		if time.Now().After(deleteDeadline) {
+			t.Fatalf("timed out waiting for delete-policy removal")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}

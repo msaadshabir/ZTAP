@@ -35,6 +35,9 @@ ztap policy rollback web-to-db --to 1 --reason "back to known-good"
 
 See [Cluster Documentation](../docs/cluster.md) for details.
 
+If you run multiple ZTAP processes against the same etcd cluster, set a unique
+`cluster.node_id` (or `ZTAP_NODE_ID`) per process.
+
 ## Policy Examples
 
 Note: on Linux, ZTAP enforces via eBPF when available (otherwise falls back to iptables).

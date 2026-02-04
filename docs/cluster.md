@@ -77,9 +77,14 @@ election, err := cluster.NewEtcdElection(config, etcdConfig)
 
 See [etcd Setup](etcd.md) for detailed configuration.
 
+Note: when using etcd and running multiple ZTAP servers on the same host, set a unique `cluster.node_id` (or `ZTAP_NODE_ID`) per process.
+
 ## Policy Synchronization
 
 ZTAP synchronizes policies across all cluster nodes automatically.
+
+Deletes are implemented as tombstone revisions (`deleted: true`) so enforcers can
+remove the policy from active enforcement while still preserving revision history.
 
 ### Sync a Policy
 

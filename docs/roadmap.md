@@ -49,8 +49,9 @@
 - **Compliance report generation** - PCI-DSS, SOC2, HIPAA policy mapping exports
 - Improve label-based enforcement outside Kubernetes agent mode (automatic selector resolution and re-resolution over time).
 - Kubernetes NetworkPolicy parity extensions: `namespaceSelector`, `matchExpressions`, `ipBlock.except`, named ports, and port ranges.
-- Ship a complete, production-ready Kubernetes install bundle (RBAC + agent DaemonSet + operator) and add dedicated unit tests for the operator reconcile loop. (DONE: see `deployments/kubernetes/ztap-install.yaml` and `pkg/operator/controllers/ztapnetworkpolicy_controller_test.go`)
-- Add first-class CLI workflows for AWS Security Group sync (and inventory-based label resolution), and expand `ztap status` coverage for Azure/GCP.
+- Ship a complete, production-ready Kubernetes install bundle (RBAC + agent DaemonSet + operator) and add dedicated unit tests for the operator reconcile loop. (see `deployments/kubernetes/ztap-install.yaml` and `pkg/operator/controllers/ztapnetworkpolicy_controller_test.go`)
+- Expand REST/gRPC APIs beyond the current minimal surface (policy CRUD/history, user/role management, cluster operations).
+- Add an etcd-backed PolicySync backend (store current policy + revisions in etcd; real multi-node distribution) and wire the CLI/runtime to use it instead of in-memory-only sync.
 
 ## Planned
 
@@ -61,11 +62,6 @@
 ### Backup/Restore & Management Plane
 
 - Implement full backup/restore coverage (policies: current + revisions, discovery snapshot, effective config) instead of best-effort partial restores.
-- Expand REST/gRPC APIs beyond the current minimal surface (policy CRUD/history, user/role management, cluster operations).
-
-### Cluster (Production)
-
-- Add an etcd-backed PolicySync backend (store current policy + revisions in etcd; real multi-node distribution) and wire the CLI/runtime to use it instead of in-memory-only sync.
 
 ### Runtime / Daemonization
 

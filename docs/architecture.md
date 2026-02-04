@@ -8,7 +8,7 @@ ZTAP (Zero Trust Access Platform) implements microsegmentation across hybrid env
 
 ### 0. API Server (`pkg/apihttp`)
 
-**Responsibility**: Expose a minimal REST API around core ZTAP capabilities
+**Responsibility**: Expose a REST API around core ZTAP capabilities
 
 **Features**:
 
@@ -17,6 +17,8 @@ ZTAP (Zero Trust Access Platform) implements microsegmentation across hybrid env
 - Compliance report/export endpoints (policy-to-control mapping + evidence)
 - Flow streaming over SSE
 - Prometheus metrics endpoint (`/metrics`)
+- Policy management endpoints (CRUD, revisions, rollback)
+- User and cluster management endpoints
 
 ### 1. Policy Engine (`pkg/policy`)
 

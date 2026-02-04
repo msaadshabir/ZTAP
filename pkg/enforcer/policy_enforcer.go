@@ -142,6 +142,45 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 			}
 
 			policyKey := update.PolicyKeyString()
+			if update.Deleted {
+				pe.mu.Lock()
+				delete(pe.activePolicies, policyKey)
+				delete(pe.enforcedVersion, policyKey)
+				pe.mu.Unlock()
+
+				if err := pe.reapplyAllPolicies(ctx); err != nil {
+					logging.Warnf("Failed to re-apply policies after delete %s v%d: %v",
+						sanitizeForLog(policyKey), update.Version, err)
+					cluster.RecordPolicyEnforcementError(policyKey, "local-node")
+					continue
+				}
+
+				cluster.RecordPolicyEnforced(policyKey, "local-node")
+				pe.emitAlert(alert.Alert{
+					Source:   "policy-enforcer",
+					Severity: alert.SeverityInfo,
+					Title:    fmt.Sprintf("policy %s deleted", sanitizeForLog(policyKey)),
+					Message:  fmt.Sprintf("version %d from %s", update.Version, sanitizeForLog(update.Source)),
+					DedupKey: fmt.Sprintf("%s:%d:delete:success", policyKey, update.Version),
+					Details: map[string]any{
+						"version": update.Version,
+						"source":  update.Source,
+						"dry_run": pe.dryRun,
+					},
+				})
+				if pe.auditLogger != nil {
+					details := map[string]interface{}{
+						"version": update.Version,
+						"source":  update.Source,
+						"dry_run": pe.dryRun,
+					}
+					_ = pe.auditLogger.Log(audit.EventPolicyDeleted, "system",
+						policyKey, "delete", details)
+				}
+				logging.Infof("Successfully deleted policy %s v%d from %s",
+					sanitizeForLog(policyKey), update.Version, sanitizeForLog(update.Source))
+				continue
+			}
 
 			// Check if we've already enforced this version
 			pe.mu.RLock()

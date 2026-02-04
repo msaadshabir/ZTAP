@@ -17,6 +17,9 @@ tags:
   - name: flows
   - name: config
   - name: compliance
+  - name: policies
+  - name: users
+  - name: cluster
   - name: metrics
 
 paths:
@@ -372,6 +375,639 @@ paths:
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
 
+  /v1/policies:
+    get:
+      tags: [policies]
+      summary: List policies
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant
+          in: query
+          schema:
+            type: string
+          description: Optional tenant filter
+      responses:
+        "200":
+          description: Policy list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoliciesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/policies/{tenant}/{name}:
+    get:
+      tags: [policies]
+      summary: Get a policy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Policy not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+    put:
+      tags: [policies]
+      summary: Create or update a policy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyUpsertRequest"
+      responses:
+        "200":
+          description: Policy updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyUpsertResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+    delete:
+      tags: [policies]
+      summary: Delete a policy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyDeleteRequest"
+      responses:
+        "200":
+          description: Policy deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyDeleteResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Policy not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/policies/{tenant}/{name}/revisions:
+    get:
+      tags: [policies]
+      summary: List policy revisions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+          description: Limit number of revisions (0 for all)
+        - name: include_yaml
+          in: query
+          schema:
+            type: boolean
+          description: Include policy YAML in revisions
+      responses:
+        "200":
+          description: Policy revisions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyRevisionsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/policies/{tenant}/{name}/revisions/{version}:
+    get:
+      tags: [policies]
+      summary: Get a policy revision
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Policy revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyRevisionInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Revision not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/policies/{tenant}/{name}/rollback:
+    post:
+      tags: [policies]
+      summary: Roll back a policy to a prior version
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyRollbackRequest"
+      responses:
+        "200":
+          description: Rollback result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyRollbackResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/users:
+    get:
+      tags: [users]
+      summary: List users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Users list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+    post:
+      tags: [users]
+      summary: Create a user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreateRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/users/{username}:
+    get:
+      tags: [users]
+      summary: Get a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+    patch:
+      tags: [users]
+      summary: Update a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdateRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+    delete:
+      tags: [users]
+      summary: Delete a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDeleteResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/users/{username}/password:
+    post:
+      tags: [users]
+      summary: Set or change a user's password
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserPasswordRequest"
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPasswordResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/cluster/status:
+    get:
+      tags: [cluster]
+      summary: Cluster status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Cluster status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "501":
+          description: Cluster not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/cluster/nodes:
+    get:
+      tags: [cluster]
+      summary: List cluster nodes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Nodes list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterNodesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "501":
+          description: Cluster not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+    post:
+      tags: [cluster]
+      summary: Register a cluster node
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClusterNodeRequest"
+      responses:
+        "201":
+          description: Node registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterNode"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "501":
+          description: Cluster not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /v1/cluster/nodes/{node_id}:
+    delete:
+      tags: [cluster]
+      summary: Deregister a cluster node
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Node removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterNodeDeleteResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "501":
+          description: Cluster not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
   /metrics:
     get:
       tags: [metrics]
@@ -556,6 +1192,275 @@ components:
           properties:
             format:
               type: string
+
+    PolicyInfo:
+      type: object
+      properties:
+        tenant:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          format: int64
+        source:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        policy_yaml:
+          type: string
+      required: [tenant, name, version, source, updated_at]
+
+    PoliciesResponse:
+      type: object
+      properties:
+        policies:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyInfo"
+      required: [policies]
+
+    PolicyUpsertRequest:
+      type: object
+      properties:
+        policy_yaml:
+          type: string
+        reason:
+          type: string
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 0
+      required: [policy_yaml]
+
+    PolicyUpsertResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int64
+      required: [version]
+
+    PolicyDeleteRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+
+    PolicyDeleteResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int64
+        deleted:
+          type: boolean
+      required: [version, deleted]
+
+    PolicyRevisionInfo:
+      type: object
+      properties:
+        tenant:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          format: int64
+        source:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+        deleted:
+          type: boolean
+        rollback_from_version:
+          type: integer
+          format: int64
+        policy_yaml:
+          type: string
+      required: [tenant, name, version, source, created_at, deleted]
+
+    PolicyRevisionsResponse:
+      type: object
+      properties:
+        revisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyRevisionInfo"
+      required: [revisions]
+
+    PolicyRollbackRequest:
+      type: object
+      properties:
+        to_version:
+          type: integer
+          format: int64
+          minimum: 1
+        reason:
+          type: string
+      required: [to_version]
+
+    PolicyRollbackResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int64
+      required: [version]
+
+    UserInfo:
+      type: object
+      properties:
+        username:
+          type: string
+        role:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+      required: [username, role, enabled, created_at]
+
+    UsersResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserInfo"
+      required: [users]
+
+    UserCreateRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+      required: [username, password]
+
+    UserUpdateRequest:
+      type: object
+      properties:
+        role:
+          type: string
+        enabled:
+          type: boolean
+      minProperties: 1
+
+    UserPasswordRequest:
+      type: object
+      properties:
+        old_password:
+          type: string
+        new_password:
+          type: string
+      required: [new_password]
+
+    UserPasswordResponse:
+      type: object
+      properties:
+        updated:
+          type: boolean
+      required: [updated]
+
+    UserDeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+      required: [deleted]
+
+    ClusterNode:
+      type: object
+      properties:
+        id:
+          type: string
+        address:
+          type: string
+        role:
+          type: string
+        state:
+          type: string
+        joined_at:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+      required: [id, address, state, joined_at, last_seen]
+
+    ClusterNodeRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        address:
+          type: string
+        role:
+          type: string
+        state:
+          type: string
+        joined_at:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+      required: [id, address]
+
+    ClusterStatusResponse:
+      type: object
+      properties:
+        leader:
+          $ref: "#/components/schemas/ClusterNode"
+        is_leader:
+          type: boolean
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClusterNode"
+        updated_at:
+          type: string
+          format: date-time
+        total_nodes:
+          type: integer
+          format: int32
+      required: [is_leader, nodes, updated_at, total_nodes]
+
+    ClusterNodesResponse:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClusterNode"
+      required: [nodes]
+
+    ClusterNodeDeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+      required: [deleted]
 
   responses:
     BadRequest:

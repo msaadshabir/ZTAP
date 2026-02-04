@@ -98,12 +98,18 @@ var grpcServeCmd = &cobra.Command{
 		}
 		defer func() { _ = am.Close() }()
 
+		clusterElection, policyManager, cleanup, err := initPolicyRuntime(context.Background(), cfg.Listen)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
 		disc, err := getDiscoveryBackend()
 		if err != nil {
 			logging.Warnf("Failed to load discovery backend (podSelector targets via gRPC will not be resolvable): %v", err)
 			disc = nil
 		}
-		srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, Discovery: disc, ResolveLabelsInterval: 5 * time.Second})
+		srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, Discovery: disc, ResolveLabelsInterval: 5 * time.Second, PolicyManager: policyManager, ClusterElection: clusterElection})
 		if err != nil {
 			return err
 		}

@@ -45,6 +45,8 @@ The audit system tracks the following event types:
 - `policy.deleted` - Policy removed
 - `policy.enforced` - Policy applied to system
 
+Note: policy rollback is recorded as a `policy.updated` event with action `rollback`.
+
 #### User Events
 
 - `user.created` - New user account created

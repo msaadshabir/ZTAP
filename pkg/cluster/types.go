@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -117,6 +118,7 @@ type PolicyUpdate struct {
 	Version    int64     // Version number for ordering
 	Source     string    // Node ID that initiated the update
 	Timestamp  time.Time // When the update occurred
+	Deleted    bool      // True if this update represents a deletion
 }
 
 func (u PolicyUpdate) Key() PolicyKey {
@@ -136,6 +138,7 @@ type PolicyRevision struct {
 	Source              string    // Node that authored this version
 	Timestamp           time.Time // Creation timestamp
 	Reason              string    // Optional human note for the change
+	Deleted             bool      // True if this revision represents a deletion
 	RollbackFromVersion *int64    // Set when this revision was created by a rollback
 }
 
@@ -152,4 +155,16 @@ type PolicyRevisionStore interface {
 	ListPolicyRevisions(policyName string, limit int) ([]PolicyRevision, error)
 	GetPolicyRevision(policyName string, version int64) (*PolicyRevision, error)
 	RollbackPolicy(ctx context.Context, policyName string, targetVersion int64, reason string) (*PolicyRevision, error)
+}
+
+var ErrPolicyNotFound = errors.New("policy not found")
+
+// PolicyManager combines policy sync with CRUD and revision access.
+type PolicyManager interface {
+	PolicySync
+	PolicyRevisionStore
+	ListPolicies() []*PolicyState
+	GetPolicy(policyName string) (*PolicyState, error)
+	UpsertPolicy(ctx context.Context, policyName string, policyYAML []byte, reason string) (*PolicyRevision, error)
+	DeletePolicy(ctx context.Context, policyName string, reason string) (*PolicyRevision, error)
 }

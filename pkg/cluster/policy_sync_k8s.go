@@ -250,6 +250,7 @@ func (s *K8sPolicySync) handleUpdate(cm *corev1.ConfigMap) {
 		Version:    version,
 		Source:     "kubernetes-operator",
 		Timestamp:  time.Now(),
+		Deleted:    false,
 	}
 
 	s.mu.RLock()

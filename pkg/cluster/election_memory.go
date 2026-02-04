@@ -331,6 +331,10 @@ func (e *InMemoryElection) checkAndElect() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if time.Since(e.lastElection) < e.config.InitialLeadership {
+		return
+	}
+
 	// If no leader or leader is unhealthy, trigger election
 	if e.leader == nil || e.leader.State != StateHealthy {
 		e.triggerElection()

@@ -95,6 +95,7 @@ func TestInMemoryElectionLeaderElection(t *testing.T) {
 		NodeID:            "node-1",
 		NodeAddress:       "127.0.0.1:9090",
 		HeartbeatInterval: 100 * time.Millisecond,
+		InitialLeadership: 10 * time.Millisecond,
 	}
 	election := NewInMemoryElection(config)
 
@@ -133,6 +134,7 @@ func TestInMemoryElectionMultipleNodes(t *testing.T) {
 		NodeID:            "node-1",
 		NodeAddress:       "127.0.0.1:9090",
 		HeartbeatInterval: 100 * time.Millisecond,
+		InitialLeadership: 10 * time.Millisecond,
 	}
 	election := NewInMemoryElection(config)
 

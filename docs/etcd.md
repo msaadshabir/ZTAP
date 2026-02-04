@@ -173,7 +173,44 @@ Etcd cluster has 1 member(s)
 
 ### 2. Configure ZTAP to Use etcd
 
-Currently, ZTAP uses in-memory backend by default. To use etcd in your application:
+ZTAP automatically selects the etcd backend when etcd endpoints are configured.
+You can configure it via `config.yaml` or environment variables.
+
+When running multiple ZTAP processes on the same host against the same etcd cluster
+(for example `ztap api serve` and `ztap grpc serve`), set a unique `cluster.node_id`
+or `ZTAP_NODE_ID` per process.
+
+**Config file (recommended):**
+
+```yaml
+cluster:
+  backend: etcd
+  node_id: "node-1"
+  node_address: "10.0.1.1:9090"
+  election:
+    heartbeat_interval: 5s
+    election_timeout: 15s
+  etcd:
+    endpoints:
+      - "localhost:2379"
+    key_prefix: "/ztap"
+    session_ttl: 60s
+```
+
+**Environment variables:**
+
+```bash
+export ZTAP_CLUSTER_BACKEND=etcd
+export ZTAP_ETCD_ENDPOINTS=etcd1:2379,etcd2:2379,etcd3:2379
+export ZTAP_ETCD_USERNAME=ztap
+export ZTAP_ETCD_PASSWORD=secure-password
+export ZTAP_ETCD_KEY_PREFIX=/ztap
+export ZTAP_ETCD_SESSION_TTL=60s
+export ZTAP_NODE_ID=$(hostname)
+export ZTAP_NODE_ADDRESS=$(hostname -i):9090
+```
+
+To use etcd in your application:
 
 ```go
 package main
@@ -433,9 +470,12 @@ type LeaderElectionConfig struct {
 For containerized deployments:
 
 ```bash
+export ZTAP_CLUSTER_BACKEND=etcd
 export ZTAP_ETCD_ENDPOINTS=etcd1:2379,etcd2:2379,etcd3:2379
 export ZTAP_ETCD_USERNAME=ztap
 export ZTAP_ETCD_PASSWORD=secure-password
+export ZTAP_ETCD_KEY_PREFIX=/ztap
+export ZTAP_ETCD_SESSION_TTL=60s
 export ZTAP_NODE_ID=$(hostname)
 export ZTAP_NODE_ADDRESS=$(hostname -i):9090
 ```

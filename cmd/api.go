@@ -106,6 +106,12 @@ var apiServeCmd = &cobra.Command{
 		}
 		defer func() { _ = am.Close() }()
 
+		clusterElection, policyManager, cleanup, err := initPolicyRuntime(context.Background(), cfg.Listen)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
 		sessionsPath, err := resolvedSessionsSQLitePath()
 		if err != nil {
 			return err
@@ -115,7 +121,7 @@ var apiServeCmd = &cobra.Command{
 			logging.Warnf("Failed to load discovery backend (podSelector targets via API will not be resolvable): %v", err)
 			disc = nil
 		}
-		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, SessionsSQLitePath: sessionsPath, Discovery: disc, ResolveLabelsInterval: 5 * time.Second})
+		srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, SessionsSQLitePath: sessionsPath, Discovery: disc, ResolveLabelsInterval: 5 * time.Second, PolicyManager: policyManager, ClusterElection: clusterElection})
 		if err != nil {
 			return err
 		}

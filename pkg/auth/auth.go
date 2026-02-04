@@ -37,6 +37,8 @@ const (
 	PermViewLogs       Permission = "view_logs"
 	PermViewStatus     Permission = "view_status"
 	PermManageUsers    Permission = "manage_users"
+	PermManagePolicies Permission = "manage_policies"
+	PermManageCluster  Permission = "manage_cluster"
 	PermViewMetrics    Permission = "view_metrics"
 	PermBackupRestore  Permission = "backup_restore"
 )
@@ -92,6 +94,8 @@ var rolePermissions = map[Role]map[Permission]bool{
 		PermViewLogs:       true,
 		PermViewStatus:     true,
 		PermManageUsers:    true,
+		PermManagePolicies: true,
+		PermManageCluster:  true,
 		PermViewMetrics:    true,
 		PermBackupRestore:  true,
 	},
@@ -101,6 +105,7 @@ var rolePermissions = map[Role]map[Permission]bool{
 		PermViewCompliance: true,
 		PermViewLogs:       true,
 		PermViewStatus:     true,
+		PermManagePolicies: true,
 		PermViewMetrics:    true,
 	},
 	RoleViewer: {
@@ -119,6 +124,7 @@ var (
 	ErrSessionNotFound    = errors.New("session not found")
 	ErrPermissionDenied   = errors.New("permission denied")
 	ErrUserExists         = errors.New("user already exists")
+	ErrLastAdmin          = errors.New("cannot remove last admin user")
 )
 
 // NewAuthManager creates a new authentication manager
@@ -244,6 +250,16 @@ func (am *AuthManager) CreateUser(username, password string, role Role) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return fmt.Errorf("username cannot be empty")
+	}
+
+	role = Role(strings.TrimSpace(string(role)))
+	if !isValidRole(role) {
+		return fmt.Errorf("invalid role: %s", role)
+	}
+
 	if _, exists := am.users[username]; exists {
 		return ErrUserExists
 	}
@@ -263,6 +279,25 @@ func (am *AuthManager) CreateUser(username, password string, role Role) error {
 
 	am.users[username] = user
 	return am.saveUsers()
+}
+
+// GetUser returns a copy of a user without the password hash.
+func (am *AuthManager) GetUser(username string) (*User, error) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, ErrUserNotFound
+	}
+
+	user, exists := am.users[username]
+	if !exists {
+		return nil, ErrUserNotFound
+	}
+	userCopy := *user
+	userCopy.PasswordHash = ""
+	return &userCopy, nil
 }
 
 // Authenticate validates credentials and creates a session
@@ -355,6 +390,11 @@ func (am *AuthManager) ChangePassword(username, oldPassword, newPassword string)
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ErrUserNotFound
+	}
+
 	user, exists := am.users[username]
 	if !exists {
 		return ErrUserNotFound
@@ -372,14 +412,45 @@ func (am *AuthManager) ChangePassword(username, oldPassword, newPassword string)
 	return am.saveUsers()
 }
 
+// SetPassword resets a user's password without verifying the old password.
+func (am *AuthManager) SetPassword(username, newPassword string) error {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ErrUserNotFound
+	}
+
+	user, exists := am.users[username]
+	if !exists {
+		return ErrUserNotFound
+	}
+
+	newHash, err := HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hashing new password: %w", err)
+	}
+	user.PasswordHash = newHash
+	return am.saveUsers()
+}
+
 // DisableUser disables a user account
 func (am *AuthManager) DisableUser(username string) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ErrUserNotFound
+	}
+
 	user, exists := am.users[username]
 	if !exists {
 		return ErrUserNotFound
+	}
+	if user.Role == RoleAdmin && am.countAdminsLocked() <= 1 {
+		return ErrLastAdmin
 	}
 
 	prev := user.Enabled
@@ -400,12 +471,69 @@ func (am *AuthManager) EnableUser(username string) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ErrUserNotFound
+	}
+
 	user, exists := am.users[username]
 	if !exists {
 		return ErrUserNotFound
 	}
 
 	user.Enabled = true
+	return am.saveUsers()
+}
+
+// SetUserRole updates the role for an existing user.
+func (am *AuthManager) SetUserRole(username string, role Role) error {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ErrUserNotFound
+	}
+
+	role = Role(strings.TrimSpace(string(role)))
+	if !isValidRole(role) {
+		return fmt.Errorf("invalid role: %s", role)
+	}
+
+	user, exists := am.users[username]
+	if !exists {
+		return ErrUserNotFound
+	}
+	if user.Role == RoleAdmin && role != RoleAdmin && am.countAdminsLocked() <= 1 {
+		return ErrLastAdmin
+	}
+	user.Role = role
+	return am.saveUsers()
+}
+
+// DeleteUser removes a user and revokes their sessions when possible.
+func (am *AuthManager) DeleteUser(username string) error {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ErrUserNotFound
+	}
+
+	user, exists := am.users[username]
+	if !exists {
+		return ErrUserNotFound
+	}
+	if user.Role == RoleAdmin && am.countAdminsLocked() <= 1 {
+		return ErrLastAdmin
+	}
+	delete(am.users, username)
+
+	if revoker, ok := am.store.(SessionStoreUserRevoker); ok {
+		_, _ = revoker.DeleteByUsername(context.Background(), username)
+	}
+
 	return am.saveUsers()
 }
 
@@ -442,6 +570,25 @@ func (am *AuthManager) ListUsers() []*User {
 		users = append(users, &userCopy)
 	}
 	return users
+}
+
+func (am *AuthManager) countAdminsLocked() int {
+	count := 0
+	for _, user := range am.users {
+		if user.Role == RoleAdmin {
+			count++
+		}
+	}
+	return count
+}
+
+func isValidRole(role Role) bool {
+	switch role {
+	case RoleAdmin, RoleOperator, RoleViewer:
+		return true
+	default:
+		return false
+	}
 }
 
 // generateToken generates a random session token

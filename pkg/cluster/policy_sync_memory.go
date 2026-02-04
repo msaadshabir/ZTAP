@@ -32,6 +32,7 @@ type PolicyState struct {
 	Version   int64     // Monotonically increasing version number
 	Source    string    // Node ID that last updated this policy
 	Timestamp time.Time // Last update timestamp
+	Deleted   bool      // True if the policy has been deleted
 }
 
 // NewInMemoryPolicySync creates a new in-memory policy synchronization backend.
@@ -92,11 +93,38 @@ func (ps *InMemoryPolicySync) Stop() error {
 // SyncPolicy broadcasts a policy update to all nodes in the cluster.
 // Only the leader can initiate policy updates; followers will return an error.
 func (ps *InMemoryPolicySync) SyncPolicy(ctx context.Context, policyName string, policyYAML []byte) error {
-	_, err := ps.applyPolicy(ctx, policyName, policyYAML, nil, "")
+	_, err := ps.applyPolicy(ctx, policyName, policyYAML, nil, "", false)
 	return err
 }
 
-func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string, policyYAML []byte, rollbackFrom *int64, reason string) (*PolicyRevision, error) {
+// UpsertPolicy creates a new policy revision with an optional reason.
+func (ps *InMemoryPolicySync) UpsertPolicy(ctx context.Context, policyName string, policyYAML []byte, reason string) (*PolicyRevision, error) {
+	return ps.applyPolicy(ctx, policyName, policyYAML, nil, reason, false)
+}
+
+// DeletePolicy creates a tombstone revision and removes the current policy state.
+// Only the leader can delete policies; followers will return an error.
+func (ps *InMemoryPolicySync) DeletePolicy(ctx context.Context, policyName string, reason string) (*PolicyRevision, error) {
+	if strings.TrimSpace(policyName) == "" {
+		return nil, fmt.Errorf("policy name cannot be empty")
+	}
+	key, err := ParsePolicyKey(policyName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid policy name %q: %w", policyName, err)
+	}
+	key = key.Normalized()
+
+	ps.mu.RLock()
+	_, exists := ps.policies[key]
+	ps.mu.RUnlock()
+	if !exists {
+		return nil, ErrPolicyNotFound
+	}
+
+	return ps.applyPolicy(ctx, key.String(), nil, nil, reason, true)
+}
+
+func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string, policyYAML []byte, rollbackFrom *int64, reason string, deleted bool) (*PolicyRevision, error) {
 	startTime := time.Now()
 	if strings.TrimSpace(policyName) == "" {
 		recordPolicySyncError("empty_name", "")
@@ -112,14 +140,16 @@ func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string
 	policyKeyLabel := key.String()
 
 	policyName = key.Name
-	if len(policyYAML) == 0 {
-		recordPolicySyncError("empty_yaml", policyKeyLabel)
-		return nil, fmt.Errorf("policy YAML cannot be empty")
-	}
+	if !deleted {
+		if len(policyYAML) == 0 {
+			recordPolicySyncError("empty_yaml", policyKeyLabel)
+			return nil, fmt.Errorf("policy YAML cannot be empty")
+		}
 
-	if _, err := ps.parseAndValidate(key, policyYAML); err != nil {
-		recordPolicySyncError("invalid_policy", policyKeyLabel)
-		return nil, err
+		if _, err := ps.parseAndValidate(key, policyYAML); err != nil {
+			recordPolicySyncError("invalid_policy", policyKeyLabel)
+			return nil, err
+		}
 	}
 
 	if !ps.election.IsLeader() {
@@ -138,18 +168,36 @@ func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string
 	newVersion := int64(1)
 	if existingPolicy, exists := ps.policies[key]; exists {
 		newVersion = existingPolicy.Version + 1
+	} else if deleted {
+		recordPolicySyncError("not_found", policyKeyLabel)
+		return nil, ErrPolicyNotFound
 	}
 
 	timestamp := time.Now()
-	policyState := &PolicyState{
-		Tenant:    key.Tenant,
-		Name:      policyName,
-		YAML:      policyYAML,
-		Version:   newVersion,
-		Source:    ps.nodeID,
-		Timestamp: timestamp,
+	var policyState *PolicyState
+	if !deleted {
+		policyState = &PolicyState{
+			Tenant:    key.Tenant,
+			Name:      policyName,
+			YAML:      policyYAML,
+			Version:   newVersion,
+			Source:    ps.nodeID,
+			Timestamp: timestamp,
+			Deleted:   false,
+		}
+		ps.policies[key] = policyState
+	} else {
+		policyState = &PolicyState{
+			Tenant:    key.Tenant,
+			Name:      policyName,
+			YAML:      nil,
+			Version:   newVersion,
+			Source:    ps.nodeID,
+			Timestamp: timestamp,
+			Deleted:   true,
+		}
+		delete(ps.policies, key)
 	}
-	ps.policies[key] = policyState
 
 	rollbackPtr := copyRollbackVersion(rollbackFrom)
 	revision := PolicyRevision{
@@ -160,6 +208,7 @@ func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string
 		Source:              ps.nodeID,
 		Timestamp:           timestamp,
 		Reason:              reason,
+		Deleted:             deleted,
 		RollbackFromVersion: rollbackPtr,
 	}
 	ps.revisions[key] = append(ps.revisions[key], revision)
@@ -171,6 +220,7 @@ func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string
 		Version:    newVersion,
 		Source:     ps.nodeID,
 		Timestamp:  policyState.Timestamp,
+		Deleted:    deleted,
 	}
 
 	ps.broadcastUpdate(update)
@@ -183,7 +233,11 @@ func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string
 	safePolicyName = strings.ReplaceAll(safePolicyName, "\r", "")
 	safeNodeID := strings.ReplaceAll(ps.nodeID, "\n", "")
 	safeNodeID = strings.ReplaceAll(safeNodeID, "\r", "")
-	logging.Infof("Policy %s synced to cluster (version %d) by leader %s", safePolicyName, newVersion, safeNodeID)
+	if deleted {
+		logging.Infof("Policy %s deleted from cluster (version %d) by leader %s", safePolicyName, newVersion, safeNodeID)
+	} else {
+		logging.Infof("Policy %s synced to cluster (version %d) by leader %s", safePolicyName, newVersion, safeNodeID)
+	}
 
 	return &revision, nil
 }
@@ -234,6 +288,7 @@ func (ps *InMemoryPolicySync) GetPolicy(policyName string) (*PolicyState, error)
 			Version:   policyState.Version,
 			Source:    policyState.Source,
 			Timestamp: policyState.Timestamp,
+			Deleted:   policyState.Deleted,
 		}, nil
 	}
 
@@ -255,6 +310,7 @@ func (ps *InMemoryPolicySync) ListPolicies() []*PolicyState {
 			Version:   policyState.Version,
 			Source:    policyState.Source,
 			Timestamp: policyState.Timestamp,
+			Deleted:   policyState.Deleted,
 		})
 	}
 
@@ -344,7 +400,7 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 	if update.PolicyName == "" {
 		return fmt.Errorf("policy name cannot be empty")
 	}
-	if len(update.YAML) == 0 {
+	if !update.Deleted && len(update.YAML) == 0 {
 		return fmt.Errorf("policy YAML cannot be empty")
 	}
 
@@ -355,8 +411,10 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 		}
 	}
 
-	if _, err := ps.parseAndValidate(key, update.YAML); err != nil {
-		return err
+	if !update.Deleted {
+		if _, err := ps.parseAndValidate(key, update.YAML); err != nil {
+			return err
+		}
 	}
 	policyKeyLabel := key.String()
 
@@ -376,15 +434,20 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 	}
 
 	// Store the updated policy state
-	policyState := &PolicyState{
-		Tenant:    key.Tenant,
-		Name:      key.Name,
-		YAML:      update.YAML,
-		Version:   update.Version,
-		Source:    update.Source,
-		Timestamp: update.Timestamp,
+	if !update.Deleted {
+		policyState := &PolicyState{
+			Tenant:    key.Tenant,
+			Name:      key.Name,
+			YAML:      update.YAML,
+			Version:   update.Version,
+			Source:    update.Source,
+			Timestamp: update.Timestamp,
+			Deleted:   false,
+		}
+		ps.policies[key] = policyState
+	} else {
+		delete(ps.policies, key)
 	}
-	ps.policies[key] = policyState
 	revision := PolicyRevision{
 		Tenant:     key.Tenant,
 		PolicyName: key.Name,
@@ -392,6 +455,7 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 		YAML:       append([]byte(nil), update.YAML...),
 		Source:     update.Source,
 		Timestamp:  update.Timestamp,
+		Deleted:    update.Deleted,
 	}
 	ps.revisions[key] = append(ps.revisions[key], revision)
 
@@ -400,8 +464,13 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 
 	safeSource := strings.ReplaceAll(update.Source, "\n", "")
 	safeSource = strings.ReplaceAll(safeSource, "\r", "")
-	logging.Infof("Applied remote policy update for %s (version %d) from %s",
-		strings.ReplaceAll(strings.ReplaceAll(policyKeyLabel, "\n", ""), "\r", ""), update.Version, safeSource)
+	if update.Deleted {
+		logging.Infof("Applied remote policy delete for %s (version %d) from %s",
+			strings.ReplaceAll(strings.ReplaceAll(policyKeyLabel, "\n", ""), "\r", ""), update.Version, safeSource)
+	} else {
+		logging.Infof("Applied remote policy update for %s (version %d) from %s",
+			strings.ReplaceAll(strings.ReplaceAll(policyKeyLabel, "\n", ""), "\r", ""), update.Version, safeSource)
+	}
 
 	return nil
 }
@@ -489,7 +558,7 @@ func (ps *InMemoryPolicySync) RollbackPolicy(ctx context.Context, policyName str
 
 	rollbackFrom := revision.Version
 
-	return ps.applyPolicy(ctx, key.String(), revision.YAML, &rollbackFrom, reason)
+	return ps.applyPolicy(ctx, key.String(), revision.YAML, &rollbackFrom, reason, false)
 }
 
 func (ps *InMemoryPolicySync) parseAndValidate(key PolicyKey, policyYAML []byte) ([]policy.NetworkPolicy, error) {

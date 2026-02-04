@@ -72,6 +72,11 @@ ztap agent --dry-run
 ztap status
 ```
 
+Cluster backend:
+
+- Default: in-memory (single-process)
+- Production: configure etcd via `cluster.*` in `config.yaml` (see `config.yaml.example`) or env vars like `ZTAP_ETCD_ENDPOINTS`
+
 **[Full Setup Guide](docs/setup.md)** | **[Architecture](docs/architecture.md)** | **[eBPF Setup](docs/ebpf.md)**
 
 ---
@@ -295,6 +300,10 @@ ztap api serve
 # Start gRPC API server (default 127.0.0.1:9092)
 ztap grpc serve
 
+# If you run both REST and gRPC servers on one host in etcd mode, set a unique
+# node id per process (or use `cluster.node_id` in config.yaml)
+# export ZTAP_NODE_ID=ztap-grpc-1
+
 # Liveness
 curl -s http://127.0.0.1:8080/healthz
 
@@ -331,6 +340,10 @@ Rate limiting:
 - `GET /v1/enforcement/status`, `POST /v1/enforcement/start`, `POST /v1/enforcement/stop` (Linux only)
 - `GET /v1/flows/stream` (SSE)
 - `GET /metrics`
+- `GET /v1/policies`, `GET/PUT/DELETE /v1/policies/{tenant}/{name}`
+- `GET /v1/policies/{tenant}/{name}/revisions`, `GET /v1/policies/{tenant}/{name}/revisions/{version}`, `POST /v1/policies/{tenant}/{name}/rollback`
+- `GET/POST /v1/users`, `GET/PATCH/DELETE /v1/users/{username}`, `POST /v1/users/{username}/password`
+- `GET /v1/cluster/status`, `GET/POST/DELETE /v1/cluster/nodes...`
 
 Config backup/restore notes:
 
@@ -346,6 +359,9 @@ gRPC services (v1):
 - `ztap.api.v1.StatusService` (`GetStatus`)
 - `ztap.api.v1.EnforcementService` (`GetStatus`, `Start`, `Stop`)
 - `ztap.api.v1.FlowsService` (`Stream` server-streaming)
+- `ztap.api.v1.PolicyService` (`ListPolicies`, `GetPolicy`, `PutPolicy`, `DeletePolicy`, `ListPolicyRevisions`, `GetPolicyRevision`, `RollbackPolicy`)
+- `ztap.api.v1.UsersService` (`ListUsers`, `GetUser`, `CreateUser`, `UpdateUser`, `SetUserPassword`, `DeleteUser`)
+- `ztap.api.v1.ClusterService` (`GetClusterStatus`, `ListNodes`, `RegisterNode`, `DeregisterNode`)
 
 Auth: send `authorization: Bearer <token>` as gRPC metadata.
 

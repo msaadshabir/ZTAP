@@ -54,9 +54,9 @@ The Docker Compose stack includes:
 - **Self-Contained**: The container image embeds the pre-compiled eBPF bytecode. No C source code or compiler toolchain is required at runtime.
 - **Command**: Runs metrics server by default
 
-ZTAP can also run a minimal REST API server (see `ztap api serve`). If you run it in a container, publish the configured listen port (default `127.0.0.1:8080` in `config.yaml.example`). Secure it using TLS by mounting certificates into the container and configuring `config.yaml`.
+ZTAP can also run a REST API server (see `ztap api serve`). If you run it in a container, publish the configured listen port (default `127.0.0.1:8080` in `config.yaml.example`). Secure it using TLS by mounting certificates into the container and configuring `config.yaml`.
 
-ZTAP can also run a minimal gRPC API server (see `ztap grpc serve`). If you run it in a container, publish the configured listen port (default `127.0.0.1:9092`). Secure it using TLS by mounting certificates into the container and configuring `config.yaml`.
+ZTAP can also run a gRPC API server (see `ztap grpc serve`). If you run it in a container, publish the configured listen port (default `127.0.0.1:9092`). Secure it using TLS by mounting certificates into the container and configuring `config.yaml`.
 
 ### Prometheus (`prometheus`)
 
@@ -110,6 +110,13 @@ environment:
   - ZTAP_LOG_FILE=/var/log/ztap/ztap.log
   - ZTAP_METRICS_PORT=9090
   - ZTAP_AUTH_DB=/var/lib/ztap/auth.db
+  # Cluster backend (optional)
+  # - ZTAP_CLUSTER_BACKEND=etcd
+  # - ZTAP_ETCD_ENDPOINTS=etcd1:2379,etcd2:2379
+  # - ZTAP_ETCD_KEY_PREFIX=/ztap
+  # - ZTAP_ETCD_SESSION_TTL=60s
+  # - ZTAP_NODE_ID=ztap-node-1
+  # - ZTAP_NODE_ADDRESS=10.0.1.1:9090
 ```
 
 ### Volumes

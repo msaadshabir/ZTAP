@@ -32,7 +32,7 @@ Technical documentation for ZTAP.
 
 ## API Server
 
-ZTAP includes a minimal REST API server and a minimal gRPC API server.
+ZTAP includes a REST API server and a gRPC API server.
 
 - Start: `ztap api serve`
 - Start (gRPC): `ztap grpc serve`
@@ -63,6 +63,10 @@ Core endpoints:
 - `POST /v1/compliance/report` (requires `view_compliance`)
 - `POST /v1/compliance/export` (requires `view_compliance`)
 - `GET /metrics`
+- `GET /v1/policies`, `GET/PUT/DELETE /v1/policies/{tenant}/{name}`
+- `GET /v1/policies/{tenant}/{name}/revisions`, `GET /v1/policies/{tenant}/{name}/revisions/{version}`, `POST /v1/policies/{tenant}/{name}/rollback`
+- `GET/POST /v1/users`, `GET/PATCH/DELETE /v1/users/{username}`, `POST /v1/users/{username}/password`
+- `GET /v1/cluster/status`, `GET/POST/DELETE /v1/cluster/nodes...`
 
 Config backup/restore notes:
 
@@ -83,6 +87,9 @@ gRPC services (v1):
 - `ztap.api.v1.StatusService` (`GetStatus`)
 - `ztap.api.v1.EnforcementService` (`GetStatus`, `Start`, `Stop`)
 - `ztap.api.v1.FlowsService` (`Stream` server-streaming)
+- `ztap.api.v1.PolicyService` (`ListPolicies`, `GetPolicy`, `PutPolicy`, `DeletePolicy`, `ListPolicyRevisions`, `GetPolicyRevision`, `RollbackPolicy`)
+- `ztap.api.v1.UsersService` (`ListUsers`, `GetUser`, `CreateUser`, `UpdateUser`, `SetUserPassword`, `DeleteUser`)
+- `ztap.api.v1.ClusterService` (`GetClusterStatus`, `ListNodes`, `RegisterNode`, `DeregisterNode`)
 
 gRPC health:
 

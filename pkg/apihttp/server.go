@@ -19,6 +19,7 @@ import (
 	"ztap/pkg/alert"
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
+	"ztap/pkg/cluster"
 	"ztap/pkg/enforcer"
 	"ztap/pkg/flow"
 	"ztap/pkg/health"
@@ -76,6 +77,8 @@ type Server struct {
 	alerts             *alert.Manager
 	sessionsSQLitePath string
 	policyCurrentYAML  func(context.Context) ([]byte, error)
+	policyManager      cluster.PolicyManager
+	clusterElection    cluster.LeaderElection
 
 	rateLimiter *ratelimit.Store
 	rlAllowed   *prometheus.CounterVec
@@ -104,6 +107,9 @@ type ServerOptions struct {
 	// PolicyCurrentYAMLFunc returns a YAML snapshot of the current effective
 	// policy. It is used only when a backup request includes policy current.
 	PolicyCurrentYAMLFunc func(context.Context) ([]byte, error)
+
+	PolicyManager   cluster.PolicyManager
+	ClusterElection cluster.LeaderElection
 
 	FlowReaderFactory func() flow.FlowReader
 
@@ -153,6 +159,8 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		alerts:                opts.Alerts,
 		sessionsSQLitePath:    opts.SessionsSQLitePath,
 		policyCurrentYAML:     opts.PolicyCurrentYAMLFunc,
+		policyManager:         opts.PolicyManager,
+		clusterElection:       opts.ClusterElection,
 		discovery:             opts.Discovery,
 		resolveLabelsInterval: opts.ResolveLabelsInterval,
 		runCtx:                context.Background(),
@@ -312,6 +320,16 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("/v1/compliance/report", s.requireAuth(auth.PermViewCompliance, s.handleComplianceReport))
 	s.mux.HandleFunc("/v1/compliance/export", s.requireAuth(auth.PermViewCompliance, s.handleComplianceExport))
+
+	s.mux.HandleFunc("/v1/policies", s.handlePoliciesRoot)
+	s.mux.HandleFunc("/v1/policies/", s.handlePoliciesRoutes)
+
+	s.mux.HandleFunc("/v1/users", s.requireAuth(auth.PermManageUsers, s.handleUsersRoot))
+	s.mux.HandleFunc("/v1/users/", s.requireAuth(auth.PermManageUsers, s.handleUsersRoutes))
+
+	s.mux.HandleFunc("/v1/cluster/status", s.requireAuth(auth.PermManageCluster, s.handleClusterStatus))
+	s.mux.HandleFunc("/v1/cluster/nodes", s.requireAuth(auth.PermManageCluster, s.handleClusterNodesRoot))
+	s.mux.HandleFunc("/v1/cluster/nodes/", s.requireAuth(auth.PermManageCluster, s.handleClusterNodesRoutes))
 
 	metricsHandler := promhttp.Handler()
 	s.mux.HandleFunc("/metrics", s.requireAuth(auth.PermViewMetrics, metricsHandler.ServeHTTP))
@@ -543,6 +561,31 @@ func (s *Server) requireAuth(perm auth.Permission, next http.HandlerFunc) http.H
 		ctx := context.WithValue(r.Context(), sessionKey, sess)
 		next(w, r.WithContext(ctx))
 	}
+}
+
+func (s *Server) authorize(w http.ResponseWriter, r *http.Request, perm auth.Permission) (*auth.Session, bool) {
+	if !s.cfg.AuthEnabled {
+		return nil, true
+	}
+
+	token, err := bearerToken(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return nil, false
+	}
+
+	if err := s.auth.HasPermission(token, perm); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return nil, false
+	}
+
+	sess, err := s.auth.ValidateSession(token)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return nil, false
+	}
+
+	return sess, true
 }
 
 func bearerToken(r *http.Request) (string, error) {

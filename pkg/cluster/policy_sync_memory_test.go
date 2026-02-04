@@ -478,6 +478,46 @@ func TestApplyRemoteUpdate(t *testing.T) {
 	}
 }
 
+func TestApplyRemoteDeleteRemovesPolicy(t *testing.T) {
+	election := newMockElection("node-2", false)
+	ps := NewInMemoryPolicySync(election, "node-2")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := ps.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = ps.Stop() }()
+
+	update := PolicyUpdate{
+		PolicyName: "remote-delete",
+		YAML:       makePolicyYAML("remote-delete", "10.0.6.0/24", 80),
+		Version:    1,
+		Source:     "node-1",
+		Timestamp:  time.Now(),
+	}
+	if err := ps.ApplyRemoteUpdate(ctx, update); err != nil {
+		t.Fatalf("ApplyRemoteUpdate() failed: %v", err)
+	}
+
+	deleteUpdate := PolicyUpdate{
+		PolicyName: "remote-delete",
+		Version:    2,
+		Source:     "node-1",
+		Timestamp:  time.Now(),
+		Deleted:    true,
+	}
+	if err := ps.ApplyRemoteUpdate(ctx, deleteUpdate); err != nil {
+		t.Fatalf("ApplyRemoteUpdate delete failed: %v", err)
+	}
+
+	policyState, _ := ps.GetPolicy("remote-delete")
+	if policyState != nil {
+		t.Fatalf("expected policy to be removed after delete, got: %+v", policyState)
+	}
+}
+
 func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 	election := newMockElection("node-2", false)
 	ps := NewInMemoryPolicySync(election, "node-2")
@@ -522,6 +562,54 @@ func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 	}
 }
 
+func TestDeletePolicyRequiresExisting(t *testing.T) {
+	election := newMockElection("node-1", true)
+	ps := NewInMemoryPolicySync(election, "node-1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := ps.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = ps.Stop() }()
+
+	if _, err := ps.DeletePolicy(ctx, "missing", "cleanup"); err != ErrPolicyNotFound {
+		t.Fatalf("expected ErrPolicyNotFound, got %v", err)
+	}
+}
+
+func TestDeletePolicyCreatesRevisionAndRemovesState(t *testing.T) {
+	election := newMockElection("node-1", true)
+	ps := NewInMemoryPolicySync(election, "node-1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := ps.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer func() { _ = ps.Stop() }()
+
+	policyName := "delete-me"
+	if err := ps.SyncPolicy(ctx, policyName, makePolicyYAML(policyName, "10.0.8.0/24", 80)); err != nil {
+		t.Fatalf("SyncPolicy() failed: %v", err)
+	}
+
+	rev, err := ps.DeletePolicy(ctx, policyName, "cleanup")
+	if err != nil {
+		t.Fatalf("DeletePolicy() failed: %v", err)
+	}
+	if rev == nil || !rev.Deleted {
+		t.Fatalf("expected delete revision, got %+v", rev)
+	}
+
+	current, _ := ps.GetPolicy(policyName)
+	if current != nil {
+		t.Fatalf("expected policy state removed, got %+v", current)
+	}
+}
+
 func TestApplyRemoteUpdateValidation(t *testing.T) {
 	election := newMockElection("node-2", false)
 	ps := NewInMemoryPolicySync(election, "node-2")
@@ -547,6 +635,17 @@ func TestApplyRemoteUpdateValidation(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "policy YAML cannot be empty") {
 		t.Errorf("expected empty YAML error, got: %v", err)
+	}
+
+	// Empty YAML is allowed for deletes
+	err = ps.ApplyRemoteUpdate(ctx, PolicyUpdate{
+		PolicyName: "test",
+		YAML:       []byte{},
+		Version:    2,
+		Deleted:    true,
+	})
+	if err != nil {
+		t.Errorf("expected delete without YAML to succeed, got: %v", err)
 	}
 }
 

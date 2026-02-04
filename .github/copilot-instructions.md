@@ -15,7 +15,7 @@ CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer 
 ```
 
 - **Policy Engine**: Parses Kubernetes-style YAML (`apiVersion: ztap/v1`), validates CIDR/ports/protocols (offline via `ztap policy validate`), resolves labels via `ServiceDiscovery` interface
-- **API Server**: Minimal REST server (`ztap api serve`) and minimal gRPC server (`ztap grpc serve`) exposing auth/status/enforcement/flows (metrics remains HTTP)
+- **API Server**: REST server (`ztap api serve`) and gRPC server (`ztap grpc serve`) exposing auth/status/enforcement/flows plus management plane APIs (policies, users, cluster)
 - **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) with iptables fallback (`iptables_linux.go`), macOS pf (`enforcer.go`), and Windows WFP (`wfp_windows.go`)
 - **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map); on Windows it streams WFP NetEvents (Admin; ztap-only by default)
 - **Alerting**: `pkg/alert/` provides webhook sinks (Slack, PagerDuty) and async dispatch with optional TTL dedupe (configured via `alerting.*`)

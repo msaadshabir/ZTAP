@@ -537,7 +537,7 @@ export ZTAP_METRICS_LISTEN="0.0.0.0:9090"
 
 ### 5. Start API Server
 
-ZTAP includes a minimal REST API server.
+ZTAP includes a REST API server.
 
 ```bash
 # Starts HTTP server (defaults come from config.yaml.example)
@@ -559,16 +559,28 @@ Compliance endpoints:
 
 Configuration:
 
-````yaml
+```yaml
 # config.yaml (or file set via ZTAP_CONFIG)
 api:
   listen: 127.0.0.1:8080
   auth:
     enabled: true
+```
+
+Cluster backend (in-memory or etcd):
+
+```yaml
+cluster:
+  backend: memory
+  # For etcd: set backend=etcd and endpoints
+  etcd:
+    endpoints:
+      - "localhost:2379"
+```
 
 ### 6. Start gRPC API Server
 
-ZTAP also includes a minimal gRPC API server.
+ZTAP also includes a gRPC API server.
 
 Health checks:
 
@@ -589,6 +601,20 @@ grpc:
   auth:
     enabled: true
 ```
+
+Cluster backend (shared with REST):
+
+```yaml
+cluster:
+  backend: etcd
+  etcd:
+    endpoints:
+      - "etcd1:2379"
+      - "etcd2:2379"
+```
+
+If you run both `ztap api serve` and `ztap grpc serve` on the same host against the
+same etcd cluster, set a unique `cluster.node_id` (or `ZTAP_NODE_ID`) per process.
 
 ## Alerting (Slack, PagerDuty)
 

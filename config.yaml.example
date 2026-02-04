@@ -93,6 +93,28 @@ grpc:
       - /grpc.health.v1.Health/*
       - /ztap.api.v1.AuthService/Login
 
+# Cluster coordination (policy sync + leader election)
+cluster:
+  # backend: memory (default) or etcd
+  backend: memory
+  # Optional overrides; defaults to hostname and server listen address
+  node_id: ""
+  node_address: ""
+  election:
+    # heartbeat_interval: 200ms
+    # election_timeout: 1s
+    heartbeat_interval: ""
+    election_timeout: ""
+  etcd:
+    # endpoints: ["localhost:2379"]
+    endpoints: []
+    dial_timeout: ""
+    username: ""
+    password: ""
+    key_prefix: ""
+    leader_election_key: ""
+    session_ttl: ""
+
 # Authentication
 auth:
   sessions:
