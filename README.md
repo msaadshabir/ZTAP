@@ -548,6 +548,13 @@ go fmt ./... && go vet ./...
 
 MIT License - See [LICENSE](LICENSE)
 
+## Project Hygiene
+
+- Security policy: `SECURITY.md`
+- Contributing guide: `CONTRIBUTING.md`
+- Code of Conduct: `CODE_OF_CONDUCT.md`
+- Changelog: `CHANGELOG.md`
+
 ---
 
 ## Acknowledgments

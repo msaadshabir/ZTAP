@@ -57,9 +57,6 @@
 - Add an etcd-backed PolicySync backend (store current policy + revisions in etcd; real multi-node distribution) and wire the CLI/runtime to use it instead of in-memory-only sync.
 - Add first-class CLI workflows for AWS Security Group sync (and inventory-based label resolution), and expand `ztap status` coverage for Azure/GCP.
 - strengthen audit log integrity beyond hash chaining (sequence numbers, per-entry HMAC/Ed25519 signing, and checkpoints for truncation detection).
+- Add `SECURITY.md` (vulnerability reporting + supported versions), plus CONTRIBUTING / Code of Conduct / CHANGELOG for maintainability.
 
 ## Planned
-
-### Project Hygiene (Security Tooling)
-
-- Add `SECURITY.md` (vulnerability reporting + supported versions), plus CONTRIBUTING / Code of Conduct / CHANGELOG for maintainability.
