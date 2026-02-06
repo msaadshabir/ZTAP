@@ -59,18 +59,6 @@
 
 ## Planned
 
-### Backup/Restore & Management Plane
-
-- Implement full backup/restore coverage (policies: current + revisions, discovery snapshot, effective config) instead of best-effort partial restores.
-
-### Runtime / Daemonization
-
-- Provide a long-running daemon/service mode (systemd/launchd/Windows service) so enforcement and cluster coordination survive process exits/reboots.
-
-### macOS pf Hardening
-
-- Make pf enforcement production-grade (apply/reload via pfctl, safe anchor management, and clean teardown/uninstall without leaving pf.conf modifications behind).
-
 ### Audit Log Hardening
 
 - Strengthen audit log integrity guarantees beyond hash chaining (detect truncation, add HMAC/signing, and optionally support external anchoring or remote append-only sinks).
