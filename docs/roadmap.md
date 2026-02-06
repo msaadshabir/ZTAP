@@ -60,3 +60,5 @@
 - Add `SECURITY.md` (vulnerability reporting + supported versions), plus CONTRIBUTING / Code of Conduct / CHANGELOG for maintainability.
 
 ## Planned
+
+- The features listed above are the only features that will be added for now. I cannot expand the project with the features I want to because they are beyond my abilities; instead I will shift my priorities to organizing and improving project documentation and fixing bugs to stabilize the project.
