@@ -63,7 +63,7 @@ var auditKeygenCmd = &cobra.Command{
 			return fmt.Errorf("writing private key: %w", err)
 		}
 		pubPath := filepath.Join(outputDir, "audit-signing.pub")
-		if err := os.WriteFile(pubPath, pub, 0644); err != nil {
+		if err := os.WriteFile(pubPath, pub, 0644); err != nil { // #nosec G306 - public key is intentionally world-readable
 			return fmt.Errorf("writing public key: %w", err)
 		}
 
