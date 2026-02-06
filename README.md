@@ -96,7 +96,7 @@ Cluster backend:
 - **Secure Communication** – HTTPS/TLS support for API and gRPC endpoints
 - **RBAC** – Admin, Operator, Viewer roles
 - **Session Management** – Configurable TTL with persistent sessions (SQLite default)
-- **Tamper-Proof Audit Logging** – Cryptographic hash chaining
+- **Tamper-Evident Audit Logging** – Cryptographic hash chaining (optional signing + checkpoints)
 - **NIST SP 800-207** compliant
 
 ### Distributed Architecture
@@ -151,7 +151,7 @@ Cluster backend:
 | [Architecture](docs/architecture.md)       | System design and components              |
 | [eBPF Enforcement](docs/ebpf.md)           | Linux kernel-level enforcement            |
 | [Cluster Coordination](docs/cluster.md)    | Multi-node clustering and leader election |
-| [Audit Logging](docs/audit.md)             | Tamper-proof audit log system             |
+| [Audit Logging](docs/audit.md)             | Tamper-evident audit log system           |
 | [Compliance Reporting](docs/compliance.md) | Compliance mapping exports and reports    |
 | [Testing Guide](docs/testing.md)           | Comprehensive testing documentation       |
 | [Roadmap](docs/roadmap.md)                 | Delivered and planned features            |
@@ -287,7 +287,7 @@ Commands:
   metrics     Start Prometheus metrics server
   user        Manage users (create, login, list, change-password)
   discovery   Service discovery (register, resolve, list)
-  audit       Audit log management (view, verify, stats)
+  audit       Audit log management (view, verify, stats, keygen)
 ```
 
 <details>
@@ -454,7 +454,7 @@ On macOS, flow output remains simulated.
 <summary><b>Audit Logging</b></summary>
 
 ```bash
-# View audit log with tamper-proof cryptographic verification
+# View audit log with tamper-evident cryptographic verification
 ztap audit view                                   # View recent entries
 ztap audit view --actor admin                     # Filter by actor
 ztap audit view --type policy.created             # Filter by event type
@@ -463,6 +463,7 @@ ztap audit view --limit 100                       # Limit results
 
 # Verify cryptographic integrity
 ztap audit verify                                 # Detect tampering
+ztap audit keygen --output-dir ~/.ztap             # Generate Ed25519 keypair
 
 # Display statistics
 ztap audit stats                                  # Show log stats

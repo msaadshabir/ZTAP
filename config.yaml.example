@@ -160,6 +160,31 @@ enforcement:
   dry_run: false # If true, log actions but don't enforce
   default_action: block # block or allow
 
+# Audit logging settings
+audit:
+  # Path to audit log file (default: ~/.ztap/audit.log)
+  log_path: ""
+
+  # Integrity mode: "none", "hmac-sha256", or "ed25519" (default: "none")
+  # "none" = hash chaining only (legacy behavior)
+  # "hmac-sha256" = HMAC-SHA256 per-entry signing
+  # "ed25519" = Ed25519 per-entry signing (recommended)
+  integrity_mode: "none"
+
+  # Key identifier (used in audit entries)
+  key_id: ""
+
+  # For HMAC mode: path to file containing shared secret
+  hmac_key_file: ""
+
+  # For Ed25519 mode: path to private key file
+  ed25519_private_key_file: ""
+
+  # Checkpoint settings
+  checkpoint_path: ""
+  checkpoint_interval: "5m" # Write checkpoint every N duration or 100 entries
+
+
 # Policy validation
 policy:
   strict: true # Fail on validation errors

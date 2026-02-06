@@ -621,6 +621,9 @@ func defaultAuthManager() (*auth.AuthManager, error) {
 }
 
 func defaultAuditLogger() (*audit.AuditLogger, error) {
+	if opts, _, err := loadAuditOptions(); err == nil {
+		return audit.NewAuditLoggerWithOptions(opts)
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)

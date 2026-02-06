@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +35,46 @@ var auditVerifyCmd = &cobra.Command{
 	RunE:  runAuditVerify,
 }
 
+var auditKeygenCmd = &cobra.Command{
+	Use:   "keygen",
+	Short: "Generate Ed25519 keypair for audit log signing",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		outputDir, _ := cmd.Flags().GetString("output-dir")
+		outputDir = strings.TrimSpace(outputDir)
+		if outputDir == "" {
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("failed to get home directory: %w", err)
+			}
+			outputDir = filepath.Join(homeDir, ".ztap")
+		}
+		outputDir = strings.TrimSpace(outputDir)
+		if err := os.MkdirAll(outputDir, 0700); err != nil {
+			return fmt.Errorf("creating output directory: %w", err)
+		}
+
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return fmt.Errorf("generating keypair: %w", err)
+		}
+
+		privPath := filepath.Join(outputDir, "audit-signing.key")
+		if err := os.WriteFile(privPath, priv, 0600); err != nil {
+			return fmt.Errorf("writing private key: %w", err)
+		}
+		pubPath := filepath.Join(outputDir, "audit-signing.pub")
+		if err := os.WriteFile(pubPath, pub, 0644); err != nil {
+			return fmt.Errorf("writing public key: %w", err)
+		}
+
+		fmt.Printf("Generated Ed25519 keypair:\n")
+		fmt.Printf("  Private: %s (keep secure!)\n", privPath)
+		fmt.Printf("  Public:  %s\n", pubPath)
+		fmt.Printf("  Key ID:  %s\n", hex.EncodeToString(pub[:8]))
+		return nil
+	},
+}
+
 var auditStatsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Display audit log statistics",
@@ -59,9 +102,12 @@ func init() {
 	auditViewCmd.Flags().StringVar(&auditEndTime, "end", "", "End time (RFC3339 format)")
 	auditViewCmd.Flags().BoolVar(&auditFollow, "follow", false, "Follow audit log in real-time")
 
+	auditKeygenCmd.Flags().String("output-dir", "", "Directory to write keys (default: ~/.ztap)")
+
 	auditCmd.AddCommand(auditViewCmd)
 	auditCmd.AddCommand(auditVerifyCmd)
 	auditCmd.AddCommand(auditStatsCmd)
+	auditCmd.AddCommand(auditKeygenCmd)
 
 	rootCmd.AddCommand(auditCmd)
 }
@@ -72,28 +118,36 @@ func runAuditView(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	logger, err := audit.NewAuditLogger(logPath)
+	opts, _, err := loadAuditConfig()
+	if err != nil {
+		return err
+	}
+	if opts.LogPath == "" {
+		opts.LogPath = logPath
+	}
+
+	logger, err := audit.NewAuditLoggerWithOptions(opts)
 	if err != nil {
 		return fmt.Errorf("failed to open audit log: %w", err)
 	}
 	defer func() { _ = logger.Close() }()
 
 	// Build query options
-	opts := audit.QueryOptions{
+	queryOpts := audit.QueryOptions{
 		Limit: auditLimit,
 	}
 
 	if auditEventType != "" {
 		eventType := audit.EventType(auditEventType)
-		opts.EventType = &eventType
+		queryOpts.EventType = &eventType
 	}
 
 	if auditActor != "" {
-		opts.Actor = &auditActor
+		queryOpts.Actor = &auditActor
 	}
 
 	if auditResource != "" {
-		opts.Resource = &auditResource
+		queryOpts.Resource = &auditResource
 	}
 
 	if auditStartTime != "" {
@@ -101,7 +155,7 @@ func runAuditView(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid start time format: %w", err)
 		}
-		opts.StartTime = &t
+		queryOpts.StartTime = &t
 	}
 
 	if auditEndTime != "" {
@@ -109,11 +163,11 @@ func runAuditView(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid end time format: %w", err)
 		}
-		opts.EndTime = &t
+		queryOpts.EndTime = &t
 	}
 
 	// Query entries
-	entries, err := logger.Query(opts)
+	entries, err := logger.Query(queryOpts)
 	if err != nil {
 		return fmt.Errorf("failed to query audit log: %w", err)
 	}
@@ -141,7 +195,15 @@ func runAuditVerify(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	logger, err := audit.NewAuditLogger(logPath)
+	cfg, verifier, err := loadAuditConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.LogPath == "" {
+		cfg.LogPath = logPath
+	}
+
+	logger, err := audit.NewAuditLoggerWithOptions(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to open audit log: %w", err)
 	}
@@ -150,21 +212,30 @@ func runAuditVerify(cmd *cobra.Command, args []string) error {
 	fmt.Println("Verifying audit log integrity...")
 	fmt.Printf("Log file: %s\n\n", logPath)
 
-	valid, err := logger.VerifyIntegrity()
-	if err != nil {
-		fmt.Printf("[FAIL] Integrity verification failed: %v\n", err)
-		return err
+	result := logger.VerifyIntegrityDetailed(verifier)
+
+	fmt.Printf("[%-5s] Hash chain\n", statusString(result.HashChainValid))
+	if verifier != nil {
+		fmt.Printf("[%-5s] Signatures (%s)\n", statusString(result.SignatureValid), verifier.Algorithm())
+	}
+	if cfg.CheckpointPath != "" {
+		fmt.Printf("[%-5s] Checkpoint\n", statusString(result.CheckpointValid))
+	}
+	fmt.Printf("\nEntries checked: %d\n", result.EntryCount)
+	fmt.Printf("Last sequence: %d\n", result.LastSeq)
+
+	if !result.Valid {
+		fmt.Println("\n[FAIL] Audit log integrity check failed.")
+		fmt.Println("       TAMPERING DETECTED!")
+		if result.Error != nil {
+			return result.Error
+		}
+		return fmt.Errorf("audit log has been tampered with")
 	}
 
-	if valid {
-		fmt.Println("[PASS] Audit log integrity verified successfully.")
-		fmt.Println("       No tampering detected.")
-		return nil
-	}
-
-	fmt.Println("[FAIL] Audit log integrity check failed.")
-	fmt.Println("       TAMPERING DETECTED!")
-	return fmt.Errorf("audit log has been tampered with")
+	fmt.Println("\n[PASS] Audit log integrity verified successfully.")
+	fmt.Println("       No tampering detected.")
+	return nil
 }
 
 func runAuditStats(cmd *cobra.Command, args []string) error {
@@ -173,7 +244,15 @@ func runAuditStats(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	logger, err := audit.NewAuditLogger(logPath)
+	opts, _, err := loadAuditConfig()
+	if err != nil {
+		return err
+	}
+	if opts.LogPath == "" {
+		opts.LogPath = logPath
+	}
+
+	logger, err := audit.NewAuditLoggerWithOptions(opts)
 	if err != nil {
 		return fmt.Errorf("failed to open audit log: %w", err)
 	}
@@ -224,6 +303,13 @@ func displayAuditEntry(entry audit.AuditEntry, index int) {
 	}
 
 	fmt.Printf("    Hash:      %s\n", entry.Hash[:16]+"...")
+}
+
+func statusString(ok bool) string {
+	if ok {
+		return "PASS"
+	}
+	return "FAIL"
 }
 
 func getAuditLogPath() (string, error) {

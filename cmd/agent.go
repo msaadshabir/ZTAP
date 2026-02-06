@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"ztap/pkg/audit"
 	"ztap/pkg/cluster"
 	"ztap/pkg/discovery"
 	"ztap/pkg/enforcer"
@@ -49,6 +50,20 @@ var agentCmd = &cobra.Command{
 		config, err := rest.InClusterConfig()
 		if err != nil {
 			logging.Fatalf("Failed to get in-cluster config: %v", err)
+		}
+
+		auditOpts, _, err := loadAuditConfig()
+		if err != nil {
+			logging.Fatalf("Failed to load audit config: %v", err)
+		}
+		var auditLogger *audit.AuditLogger
+		if auditOpts.LogPath != "" {
+			al, err := audit.NewAuditLoggerWithOptions(auditOpts)
+			if err != nil {
+				logging.Warnf("failed to initialize audit logger: %v", err)
+			} else {
+				auditLogger = al
+			}
 		}
 
 		clientset, err := kubernetes.NewForConfig(config)
@@ -106,6 +121,7 @@ var agentCmd = &cobra.Command{
 			CgroupPath:      cgroupPath,
 			ResolveLabels:   true, // Enable auto-discovery in agent mode
 			DryRun:          dryRun,
+			AuditLogger:     auditLogger,
 		})
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -136,6 +152,11 @@ var agentCmd = &cobra.Command{
 		}
 		if err := pe.Stop(); err != nil {
 			logging.Warnf("failed to stop policy enforcer: %v", err)
+		}
+		if auditLogger != nil {
+			if err := auditLogger.Close(); err != nil {
+				logging.Warnf("failed to close audit logger: %v", err)
+			}
 		}
 		if err := policySync.Stop(); err != nil {
 			logging.Warnf("failed to stop policy sync: %v", err)

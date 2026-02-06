@@ -42,16 +42,20 @@ type PolicyEnforcerConfig struct {
 	Alerts          *alert.Manager
 	ResolveLabels   bool
 	DryRun          bool
+	AuditLogger     *audit.AuditLogger
 }
 
 // NewPolicyEnforcer creates a new policy enforcer that watches for policy updates.
 func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
-	// Initialize audit logger
-	homeDir, _ := os.UserHomeDir()
-	logPath := filepath.Join(homeDir, ".ztap", "audit.log")
-	auditLogger, err := audit.NewAuditLogger(logPath)
-	if err != nil {
-		logging.Warnf("failed to initialize audit logger: %v", err)
+	auditLogger := config.AuditLogger
+	if auditLogger == nil {
+		homeDir, _ := os.UserHomeDir()
+		logPath := filepath.Join(homeDir, ".ztap", "audit.log")
+		al, err := audit.NewAuditLogger(logPath)
+		if err != nil {
+			logging.Warnf("failed to initialize audit logger: %v", err)
+		}
+		auditLogger = al
 	}
 
 	return &PolicyEnforcer{

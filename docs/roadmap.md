@@ -56,12 +56,9 @@
 - Expand REST/gRPC APIs beyond the current minimal surface (policy CRUD/history, user/role management, cluster operations).
 - Add an etcd-backed PolicySync backend (store current policy + revisions in etcd; real multi-node distribution) and wire the CLI/runtime to use it instead of in-memory-only sync.
 - Add first-class CLI workflows for AWS Security Group sync (and inventory-based label resolution), and expand `ztap status` coverage for Azure/GCP.
+- strengthen audit log integrity beyond hash chaining (sequence numbers, per-entry HMAC/Ed25519 signing, and checkpoints for truncation detection).
 
 ## Planned
-
-### Audit Log Hardening
-
-- Strengthen audit log integrity guarantees beyond hash chaining (detect truncation, add HMAC/signing, and optionally support external anchoring or remote append-only sinks).
 
 ### Project Hygiene (Security Tooling)
 

@@ -3,12 +3,16 @@ package audit
 import (
 	"bufio"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"ztap/pkg/logging"
 )
 
 // EventType represents the type of audit event.
@@ -31,6 +35,12 @@ const (
 	EventLeaderElected  EventType = "cluster.leader_elected"
 )
 
+const (
+	zeroHash                  = "0000000000000000000000000000000000000000000000000000000000000000"
+	checkpointEntryInterval   = int64(100)
+	defaultCheckpointInterval = 5 * time.Minute
+)
+
 // AuditEntry represents a single audit log entry with cryptographic integrity.
 type AuditEntry struct {
 	ID           string                 `json:"id"`
@@ -46,6 +56,10 @@ type AuditEntry struct {
 	ErrorMessage string                 `json:"error_message,omitempty"`
 	IPAddress    string                 `json:"ip_address,omitempty"`
 	NodeID       string                 `json:"node_id,omitempty"` // For distributed deployments
+	Seq          int64                  `json:"seq,omitempty"`
+	IntegrityAlg string                 `json:"integrity_alg,omitempty"`
+	KeyID        string                 `json:"key_id,omitempty"`
+	Sig          string                 `json:"sig,omitempty"`
 }
 
 // AuditLogger provides tamper-proof audit logging with cryptographic hash chaining.
@@ -59,6 +73,22 @@ type AuditLogger struct {
 	indexCache []indexEntry // Cache for faster queries
 	cacheMu    sync.RWMutex
 	cacheValid bool
+
+	signer             Signer
+	checkpointWriter   *CheckpointWriter
+	checkpointPath     string
+	checkpointInterval time.Duration
+	lastCheckpointAt   time.Time
+
+	nextSeq int64
+}
+
+// AuditLoggerOptions configures the audit logger with integrity features.
+type AuditLoggerOptions struct {
+	LogPath            string
+	Signer             Signer
+	CheckpointPath     string
+	CheckpointInterval time.Duration
 }
 
 // indexEntry provides quick access to audit entries
@@ -74,26 +104,50 @@ type indexEntry struct {
 // NewAuditLogger creates a new audit logger instance.
 // The log file is append-only and uses hash chaining to detect tampering.
 func NewAuditLogger(logPath string) (*AuditLogger, error) {
-	if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
+	return NewAuditLoggerWithOptions(AuditLoggerOptions{LogPath: logPath})
+}
+
+// NewAuditLoggerWithOptions creates an audit logger with integrity features.
+func NewAuditLoggerWithOptions(opts AuditLoggerOptions) (*AuditLogger, error) {
+	if opts.LogPath == "" {
+		return nil, fmt.Errorf("audit log path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(opts.LogPath), 0700); err != nil {
 		return nil, fmt.Errorf("failed to create audit log directory: %w", err)
 	}
 
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	file, err := os.OpenFile(opts.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audit log: %w", err)
 	}
 
 	logger := &AuditLogger{
-		logFile:    file,
-		logPath:    logPath,
-		lastHash:   "0000000000000000000000000000000000000000000000000000000000000000",
-		encoder:    json.NewEncoder(file),
-		indexCache: make([]indexEntry, 0, 1000),
-		cacheValid: false,
+		logFile:            file,
+		logPath:            opts.LogPath,
+		lastHash:           zeroHash,
+		encoder:            json.NewEncoder(file),
+		indexCache:         make([]indexEntry, 0, 1000),
+		cacheValid:         false,
+		signer:             opts.Signer,
+		checkpointPath:     opts.CheckpointPath,
+		checkpointInterval: opts.CheckpointInterval,
+		nextSeq:            1,
 	}
 
-	// Load last hash from existing log file and build index
+	if logger.checkpointInterval <= 0 {
+		logger.checkpointInterval = defaultCheckpointInterval
+	}
+
+	if logger.checkpointPath != "" && opts.Signer != nil {
+		if err := os.MkdirAll(filepath.Dir(logger.checkpointPath), 0700); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("failed to create checkpoint directory: %w", err)
+		}
+		logger.checkpointWriter = NewCheckpointWriter(opts.Signer, logger.checkpointPath)
+	}
+
 	if err := logger.loadLastHash(); err != nil {
+		_ = file.Close()
 		return nil, fmt.Errorf("failed to load last hash: %w", err)
 	}
 
@@ -121,10 +175,23 @@ func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, acti
 		PreviousHash: al.lastHash,
 		Outcome:      outcome,
 		ErrorMessage: errorMsg,
+		Seq:          al.nextSeq,
 	}
 
 	// Calculate hash of this entry
 	entry.Hash = al.calculateHash(&entry)
+
+	// Sign entry if signer is configured
+	if al.signer != nil {
+		entry.IntegrityAlg = al.signer.Algorithm()
+		entry.KeyID = al.signer.KeyID()
+		dataToSign := fmt.Sprintf("%s:%d:%s", entry.Hash, entry.Seq, entry.Timestamp.Format(time.RFC3339Nano))
+		sig, err := al.signer.Sign([]byte(dataToSign))
+		if err != nil {
+			return fmt.Errorf("signing audit entry: %w", err)
+		}
+		entry.Sig = hex.EncodeToString(sig)
+	}
 
 	// Write to log file
 	if err := al.encoder.Encode(entry); err != nil {
@@ -139,6 +206,11 @@ func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, acti
 	// Update last hash and counter
 	al.lastHash = entry.Hash
 	al.entryCount++
+	al.nextSeq++
+
+	if al.checkpointWriter != nil && al.shouldWriteCheckpoint() {
+		al.writeCheckpoint()
+	}
 
 	// Update index cache
 	al.cacheMu.Lock()
@@ -198,7 +270,10 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
-			break // EOF or error
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("corrupted entry at position %d: %w", entryNum, err)
 		}
 
 		// Fast path: use cache to skip entries that don't match (if within cache bounds)
@@ -270,12 +345,16 @@ func (al *AuditLogger) VerifyIntegrity() (bool, error) {
 	defer func() { _ = file.Close() }()
 
 	decoder := json.NewDecoder(file)
-	previousHash := "0000000000000000000000000000000000000000000000000000000000000000"
+	previousHash := zeroHash
+	position := 0
 
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
-			break // EOF
+			if err == io.EOF {
+				break
+			}
+			return false, fmt.Errorf("corrupted entry at position %d: %w", position, err)
 		}
 
 		// Verify previous hash matches
@@ -292,9 +371,172 @@ func (al *AuditLogger) VerifyIntegrity() (bool, error) {
 		}
 
 		previousHash = entry.Hash
+		position++
 	}
 
 	return true, nil
+}
+
+// VerifyResult contains detailed verification status.
+type VerifyResult struct {
+	Valid             bool
+	HashChainValid    bool
+	SignatureValid    bool
+	CheckpointValid   bool
+	EntryCount        int64
+	LastSeq           int64
+	LastHash          string
+	FirstInvalidEntry string
+	Error             error
+}
+
+// VerifyIntegrityDetailed checks the audit log with full integrity verification.
+func (al *AuditLogger) VerifyIntegrityDetailed(verifier Verifier) VerifyResult {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+
+	result := VerifyResult{
+		Valid:           true,
+		HashChainValid:  true,
+		SignatureValid:  true,
+		CheckpointValid: true,
+		LastHash:        zeroHash,
+	}
+
+	file, err := os.Open(al.logPath)
+	if err != nil {
+		result.Valid = false
+		result.Error = fmt.Errorf("failed to open audit log: %w", err)
+		return result
+	}
+	defer func() { _ = file.Close() }()
+
+	decoder := json.NewDecoder(file)
+	previousHash := zeroHash
+	position := int64(0)
+	var lastSeq int64
+	var lastHash string
+
+	for {
+		var entry AuditEntry
+		if err := decoder.Decode(&entry); err != nil {
+			if err == io.EOF {
+				break
+			}
+			result.Valid = false
+			result.HashChainValid = false
+			result.Error = fmt.Errorf("corrupted entry at position %d: %w", position, err)
+			return result
+		}
+		position++
+		lastSeq = entry.Seq
+		lastHash = entry.Hash
+
+		if entry.PreviousHash != previousHash {
+			result.Valid = false
+			result.HashChainValid = false
+			result.FirstInvalidEntry = entry.ID
+			result.Error = fmt.Errorf("hash chain broken at entry %s: expected previous hash %s, got %s",
+				entry.ID, previousHash, entry.PreviousHash)
+			return result
+		}
+
+		expectedHash := al.calculateHash(&entry)
+		if entry.Hash != expectedHash {
+			result.Valid = false
+			result.HashChainValid = false
+			result.FirstInvalidEntry = entry.ID
+			result.Error = fmt.Errorf("entry %s has been tampered with: expected hash %s, got %s",
+				entry.ID, expectedHash, entry.Hash)
+			return result
+		}
+
+		if entry.Sig != "" {
+			if verifier == nil {
+				result.Valid = false
+				result.SignatureValid = false
+				result.FirstInvalidEntry = entry.ID
+				result.Error = fmt.Errorf("signature present but no verifier configured")
+				return result
+			}
+			if entry.IntegrityAlg != verifier.Algorithm() {
+				result.Valid = false
+				result.SignatureValid = false
+				result.FirstInvalidEntry = entry.ID
+				result.Error = fmt.Errorf("signature algorithm mismatch at entry %s", entry.ID)
+				return result
+			}
+			if entry.KeyID != "" && verifier.KeyID() != "" && entry.KeyID != verifier.KeyID() {
+				result.Valid = false
+				result.SignatureValid = false
+				result.FirstInvalidEntry = entry.ID
+				result.Error = fmt.Errorf("signature key id mismatch at entry %s", entry.ID)
+				return result
+			}
+			decodedSig, err := hex.DecodeString(entry.Sig)
+			if err != nil {
+				result.Valid = false
+				result.SignatureValid = false
+				result.FirstInvalidEntry = entry.ID
+				result.Error = fmt.Errorf("invalid signature encoding at entry %s: %w", entry.ID, err)
+				return result
+			}
+			dataToVerify := fmt.Sprintf("%s:%d:%s", entry.Hash, entry.Seq, entry.Timestamp.Format(time.RFC3339Nano))
+			ok, err := verifier.Verify([]byte(dataToVerify), decodedSig)
+			if err != nil || !ok {
+				result.Valid = false
+				result.SignatureValid = false
+				result.FirstInvalidEntry = entry.ID
+				if err != nil {
+					result.Error = fmt.Errorf("signature verification error at entry %s: %w", entry.ID, err)
+				} else {
+					result.Error = fmt.Errorf("signature verification failed at entry %s", entry.ID)
+				}
+				return result
+			}
+		}
+		if entry.Sig == "" && (entry.IntegrityAlg != "" || entry.KeyID != "") {
+			result.Valid = false
+			result.SignatureValid = false
+			result.FirstInvalidEntry = entry.ID
+			result.Error = fmt.Errorf("signature metadata present without signature at entry %s", entry.ID)
+			return result
+		}
+
+		previousHash = entry.Hash
+		position++
+	}
+
+	result.EntryCount = position
+	result.LastSeq = lastSeq
+	if lastHash != "" {
+		result.LastHash = lastHash
+	}
+
+	if al.checkpointPath != "" {
+		if verifier == nil {
+			result.Valid = false
+			result.CheckpointValid = false
+			result.Error = fmt.Errorf("checkpoint configured but no verifier provided")
+			return result
+		}
+		checkpointReader := NewCheckpointReader(verifier, al.checkpointPath)
+		checkpoint, err := checkpointReader.Read()
+		if err != nil {
+			result.Valid = false
+			result.CheckpointValid = false
+			result.Error = err
+			return result
+		}
+		if checkpoint.EntryCount != result.EntryCount || checkpoint.LastHash != result.LastHash || checkpoint.LastSeq != result.LastSeq {
+			result.Valid = false
+			result.CheckpointValid = false
+			result.Error = fmt.Errorf("checkpoint mismatch")
+			return result
+		}
+	}
+
+	return result
 }
 
 // Close closes the audit log file.
@@ -322,6 +564,19 @@ func (al *AuditLogger) Close() error {
 	al.mu.Lock()
 	defer al.mu.Unlock()
 
+	if al.checkpointWriter != nil && al.signer != nil {
+		checkpoint := Checkpoint{
+			LastSeq:    al.nextSeq - 1,
+			LastHash:   al.lastHash,
+			EntryCount: al.entryCount,
+			UpdatedAt:  time.Now().UTC(),
+			KeyID:      al.signer.KeyID(),
+			Algorithm:  al.signer.Algorithm(),
+		}
+		if err := al.checkpointWriter.Write(checkpoint); err != nil {
+			logging.Warnf("failed to write final checkpoint: %v", err)
+		}
+	}
 	if al.logFile != nil {
 		return al.logFile.Close()
 	}
@@ -354,6 +609,41 @@ func (al *AuditLogger) calculateHash(entry *AuditEntry) string {
 	return EntryHash(entry)
 }
 
+func (al *AuditLogger) shouldWriteCheckpoint() bool {
+	if al.checkpointWriter == nil {
+		return false
+	}
+	if al.entryCount%checkpointEntryInterval == 0 {
+		return true
+	}
+	if al.lastCheckpointAt.IsZero() {
+		return true
+	}
+	return time.Since(al.lastCheckpointAt) >= al.checkpointInterval
+}
+
+func (al *AuditLogger) writeCheckpoint() {
+	if al.checkpointWriter == nil {
+		return
+	}
+	if al.signer == nil {
+		return
+	}
+	checkpoint := Checkpoint{
+		LastSeq:    al.nextSeq - 1,
+		LastHash:   al.lastHash,
+		EntryCount: al.entryCount,
+		UpdatedAt:  time.Now().UTC(),
+		KeyID:      al.signer.KeyID(),
+		Algorithm:  al.signer.Algorithm(),
+	}
+	if err := al.checkpointWriter.Write(checkpoint); err == nil {
+		al.lastCheckpointAt = time.Now()
+	} else {
+		logging.Warnf("failed to write checkpoint: %v", err)
+	}
+}
+
 // loadLastHash reads the audit log and retrieves the last entry's hash.
 func (al *AuditLogger) loadLastHash() error {
 	file, err := os.Open(al.logPath)
@@ -375,14 +665,21 @@ func (al *AuditLogger) loadLastHash() error {
 	al.cacheMu.Lock()
 	al.indexCache = make([]indexEntry, 0, 1000)
 
+	position := int64(0)
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
-			break // EOF
+			if err == io.EOF {
+				break
+			}
+			al.cacheMu.Unlock()
+			al.cacheValid = false
+			return fmt.Errorf("corrupted entry at position %d: %w", position, err)
 		}
 
 		lastEntry = entry
 		al.entryCount++
+		position++
 
 		// Add to index cache (sequential access, no file seeking needed)
 		al.indexCache = append(al.indexCache, indexEntry{
@@ -398,6 +695,13 @@ func (al *AuditLogger) loadLastHash() error {
 
 	if lastEntry.Hash != "" {
 		al.lastHash = lastEntry.Hash
+	} else {
+		al.lastHash = zeroHash
+	}
+	if lastEntry.Seq > 0 {
+		al.nextSeq = lastEntry.Seq + 1
+	} else if al.entryCount > 0 {
+		al.nextSeq = al.entryCount + 1
 	}
 
 	return nil

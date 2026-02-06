@@ -2,12 +2,13 @@
 
 ## Overview
 
-ZTAP includes a tamper-proof audit logging system that records all policy operations, user actions, and system events with cryptographic integrity guarantees. The audit log uses SHA-256 hash chaining to detect any tampering or unauthorized modifications.
+ZTAP includes a tamper-evident audit logging system that records all policy operations, user actions, and system events with cryptographic integrity guarantees. The audit log uses SHA-256 hash chaining to detect any tampering or unauthorized modifications.
 
 ## Features
 
 - **Cryptographic Hash Chaining**: Each log entry contains the hash of the previous entry, creating an immutable chain
-- **Tamper Detection**: Built-in integrity verification detects any modifications to the log
+- **Optional Per-Entry Signatures**: HMAC-SHA256 or Ed25519 signing for stronger integrity
+- **Checkpoint Support**: Periodic signed snapshots detect truncation
 - **Comprehensive Event Tracking**: Records policy operations, user actions, cluster events, and service changes
 - **Flexible Querying**: Filter logs by time range, event type, actor, resource, and more
 - **CLI Integration**: Full command-line interface for viewing, verifying, and managing audit logs
@@ -22,6 +23,8 @@ Each audit entry contains:
 
 - **Hash**: SHA-256 hash of the current entry's content
 - **Previous Hash**: Hash of the immediately preceding entry
+- **Seq**: Monotonic sequence number
+- **Signature Fields** (optional): `integrity_alg`, `key_id`, `sig`
 
 This creates a blockchain-like structure where any modification to a past entry breaks the chain, making tampering immediately detectable.
 
@@ -71,13 +74,13 @@ Note: policy rollback is recorded as a `policy.updated` event with action `rollb
 Audit logs are stored as newline-delimited JSON (NDJSON) in `~/.ztap/audit.log`:
 
 ```json
-{"id":"1729800000000-12345","timestamp":"2025-10-24T12:00:00Z","event_type":"policy.created","actor":"admin","resource":"default/web-policy","action":"created","details":{"version":1},"previous_hash":"0000...","hash":"a1b2...","outcome":"success"}
-{"id":"1729800060000-12346","timestamp":"2025-10-24T12:01:00Z","event_type":"policy.enforced","actor":"system","resource":"default/web-policy","action":"enforce","details":{"version":1,"duration_ms":45.2,"dry_run":false},"previous_hash":"a1b2...","hash":"c3d4...","outcome":"success"}
+{"id":"1729800000000-12345","timestamp":"2025-10-24T12:00:00Z","event_type":"policy.created","actor":"admin","resource":"default/web-policy","action":"created","details":{"version":1},"previous_hash":"0000...","hash":"a1b2...","outcome":"success","seq":1,"integrity_alg":"ed25519","key_id":"abcd1234","sig":"deadbeef..."}
+{"id":"1729800060000-12346","timestamp":"2025-10-24T12:01:00Z","event_type":"policy.enforced","actor":"system","resource":"default/web-policy","action":"enforce","details":{"version":1,"duration_ms":45.2,"dry_run":false},"previous_hash":"a1b2...","hash":"c3d4...","outcome":"success","seq":2,"integrity_alg":"ed25519","key_id":"abcd1234","sig":"deadbeef..."}
 ```
 
 In Kubernetes deployments, `resource` is typically `namespace/policy`.
 
-Note: `policy.enforced` events include a `dry_run` field in `details` to indicate if the enforcement was simulated.
+Note: `policy.enforced` events include a `dry_run` field in `details` to indicate if the enforcement was simulated. Signature fields are omitted when integrity mode is disabled.
 
 ## CLI Commands
 
@@ -120,6 +123,13 @@ Output:
 ```
 Verifying audit log integrity...
 Log file: /Users/username/.ztap/audit.log
+
+[PASS ] Hash chain
+[PASS ] Signatures (ed25519)
+[PASS ] Checkpoint
+
+Entries checked: 127
+Last sequence: 127
 
 [PASS] Audit log integrity verified successfully.
        No tampering detected.
@@ -193,12 +203,23 @@ The audit logger is automatically integrated into the PolicyEnforcer, logging al
 ```go
 import "ztap/pkg/audit"
 
-// Create audit logger
+// Create audit logger (hash chaining only)
 logger, err := audit.NewAuditLogger("/path/to/audit.log")
 if err != nil {
     log.Fatal(err)
 }
 defer logger.Close()
+
+// Create audit logger with signing + checkpoints
+logger2, err := audit.NewAuditLoggerWithOptions(audit.AuditLoggerOptions{
+    LogPath:        "/path/to/audit.log",
+    Signer:         signer,
+    CheckpointPath: "/path/to/audit.log.checkpoint",
+})
+if err != nil {
+    log.Fatal(err)
+}
+defer logger2.Close()
 ```
 
 ### Logging Events
@@ -248,7 +269,7 @@ entries, err := logger.Query(opts)
 ### Verifying Integrity
 
 ```go
-// Verify entire log
+// Verify entire log (hash chain only)
 valid, err := logger.VerifyIntegrity()
 if err != nil {
     log.Printf("Integrity check failed: %v", err)
@@ -256,6 +277,12 @@ if err != nil {
 
 if !valid {
     log.Println("TAMPERING DETECTED!")
+}
+
+// Detailed verification with signatures/checkpoints
+result := logger.VerifyIntegrityDetailed(verifier)
+if !result.Valid {
+    log.Printf("Integrity check failed: %v", result.Error)
 }
 ```
 
@@ -312,6 +339,11 @@ go test ./pkg/audit -v -cover
 # PASS: TestAuditLogger_HashChaining
 # PASS: TestAuditLogger_VerifyIntegrity
 # PASS: TestAuditLogger_VerifyIntegrityDetectsTampering
+# PASS: TestAuditLogger_Ed25519Signing
+# PASS: TestAuditLogger_TruncationDetection
+# PASS: TestAuditLogger_TamperAndRecompute
+# PASS: TestVerifyIntegrity_DetectsCorruption
+# PASS: TestFullWorkflow
 # PASS: TestAuditLogger_Query
 # PASS: TestAuditLogger_QueryByResource
 # PASS: TestAuditLogger_GetStats
@@ -385,3 +417,35 @@ ztap audit verify
 
 - [Architecture](architecture.md)
 - [Testing Guide](testing.md)
+
+### Generate Signing Keys
+
+```bash
+ztap audit keygen --output-dir ~/.ztap
+```
+
+### Configuration
+
+Audit logging can be configured via `config.yaml` (or a file path set via `ZTAP_CONFIG`) and environment variables.
+
+Example `config.yaml`:
+
+```yaml
+audit:
+  log_path: "~/.ztap/audit.log"
+  integrity_mode: "ed25519" # none | hmac-sha256 | ed25519
+  key_id: ""                # optional
+  ed25519_private_key_file: "~/.ztap/audit-signing.key"
+  checkpoint_path: "~/.ztap/audit.log.checkpoint"
+  checkpoint_interval: "5m"
+```
+
+Environment variables:
+
+- `ZTAP_AUDIT_LOG_PATH`
+- `ZTAP_AUDIT_INTEGRITY_MODE`
+- `ZTAP_AUDIT_KEY_ID`
+- `ZTAP_AUDIT_HMAC_KEY_FILE`
+- `ZTAP_AUDIT_ED25519_PRIVATE_KEY_FILE`
+- `ZTAP_AUDIT_CHECKPOINT_PATH`
+- `ZTAP_AUDIT_CHECKPOINT_INTERVAL`

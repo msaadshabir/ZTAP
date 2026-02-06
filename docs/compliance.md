@@ -87,5 +87,5 @@ Example request body (report):
 
 ## Evidence Rules (v1)
 
-- Audit integrity must verify (hash chain) for enforcement evidence to be trusted.
+- Audit integrity must verify (hash chain; optionally signatures/checkpoints if configured) for enforcement evidence to be trusted.
 - Enforcement evidence is derived from `policy.enforced` audit events whose `resource` matches the policy key.

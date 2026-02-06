@@ -143,12 +143,15 @@ type ValidationError struct {
 
 ## Audit Logging
 
-`pkg/audit/audit.go` uses SHA-256 hash chaining for tamper detection:
+`pkg/audit/audit.go` uses SHA-256 hash chaining (optionally signatures/checkpoints) for tamper detection:
 
 ```go
 // resource is typically "tenant/policy" (k8s namespace == tenant)
 auditLogger.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", details)
-auditLogger.VerifyIntegrity() // Detects tampering
+auditLogger.VerifyIntegrity() // Hash-chain verification
+
+// Detailed verification (signatures/checkpoints when configured)
+auditLogger.VerifyIntegrityDetailed(verifier)
 ```
 
 ## Policy YAML Format

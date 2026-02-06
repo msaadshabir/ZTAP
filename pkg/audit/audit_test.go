@@ -1,6 +1,9 @@
 package audit
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -224,6 +227,205 @@ func TestAuditLogger_VerifyIntegrityDetectsTampering(t *testing.T) {
 	if err == nil {
 		t.Error("expected error from integrity check on tampered log")
 	}
+}
+
+func TestVerifyIntegrity_DetectsCorruption(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	logger, err := NewAuditLogger(logPath)
+	if err != nil {
+		t.Fatalf("failed to create audit logger: %v", err)
+	}
+	if err := logger.Log(EventPolicyCreated, "admin", "policy", "created", nil); err != nil {
+		t.Fatalf("failed to log entry: %v", err)
+	}
+	_ = logger.Close()
+
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatalf("failed to open log for corruption: %v", err)
+	}
+	_, _ = f.WriteString("{invalid json")
+	_ = f.Close()
+
+	logger, err = NewAuditLogger(logPath)
+	if err == nil {
+		_, err = logger.VerifyIntegrity()
+		_ = logger.Close()
+	}
+	if err == nil {
+		t.Fatal("expected corruption error")
+	}
+}
+
+func TestAuditLogger_Ed25519Signing(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate keypair: %v", err)
+	}
+	signer := NewEd25519Signer(priv, "test-key")
+	verifier := NewEd25519Verifier(pub, "test-key")
+
+	tmpDir := t.TempDir()
+	opts := AuditLoggerOptions{
+		LogPath: filepath.Join(tmpDir, "audit.log"),
+		Signer:  signer,
+	}
+
+	logger, err := NewAuditLoggerWithOptions(opts)
+	if err != nil {
+		t.Fatalf("failed to create logger: %v", err)
+	}
+
+	if err := logger.Log(EventPolicyCreated, "admin", "test-policy", "create", nil); err != nil {
+		t.Fatalf("failed to log: %v", err)
+	}
+	_ = logger.Close()
+
+	logger2, err := NewAuditLoggerWithOptions(AuditLoggerOptions{LogPath: opts.LogPath})
+	if err != nil {
+		t.Fatalf("failed to reopen logger: %v", err)
+	}
+	result := logger2.VerifyIntegrityDetailed(verifier)
+	if !result.Valid || !result.SignatureValid {
+		t.Errorf("expected valid signature, got: %+v", result)
+	}
+	_ = logger2.Close()
+
+	_, wrongPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate wrong keypair: %v", err)
+	}
+	wrongVerifier := NewEd25519Verifier(wrongPriv.Public().(ed25519.PublicKey), "wrong-key")
+	logger3, err := NewAuditLoggerWithOptions(AuditLoggerOptions{LogPath: opts.LogPath})
+	if err != nil {
+		t.Fatalf("failed to reopen logger for wrong key: %v", err)
+	}
+	result2 := logger3.VerifyIntegrityDetailed(wrongVerifier)
+	if result2.SignatureValid {
+		t.Error("expected signature verification to fail with wrong key")
+	}
+	if result2.Valid {
+		t.Error("expected overall verification to fail with wrong key")
+	}
+	_ = logger3.Close()
+}
+
+func TestAuditLogger_TruncationDetection(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate keypair: %v", err)
+	}
+	verifier := NewEd25519Verifier(pub, "test-key")
+
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "audit.log")
+	checkpointPath := logPath + ".checkpoint"
+
+	logger, err := NewAuditLoggerWithOptions(AuditLoggerOptions{
+		LogPath:        logPath,
+		Signer:         NewEd25519Signer(priv, "test-key"),
+		CheckpointPath: checkpointPath,
+	})
+	if err != nil {
+		t.Fatalf("failed to create logger: %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		if err := logger.Log(EventPolicyCreated, "admin", "policy", "created", map[string]any{"index": i}); err != nil {
+			t.Fatalf("failed to log entry: %v", err)
+		}
+	}
+	_ = logger.Close()
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed to read log: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatalf("unexpected empty log")
+	}
+	if len(data) > 1 {
+		data = data[:len(data)-1]
+	}
+	if err := os.WriteFile(logPath, data, 0600); err != nil {
+		t.Fatalf("failed to truncate log: %v", err)
+	}
+
+	logger2, err := NewAuditLoggerWithOptions(AuditLoggerOptions{LogPath: logPath, CheckpointPath: checkpointPath})
+	if err != nil {
+		t.Fatalf("failed to reopen logger: %v", err)
+	}
+	result := logger2.VerifyIntegrityDetailed(verifier)
+	if result.CheckpointValid {
+		t.Fatalf("expected checkpoint mismatch after truncation")
+	}
+	_ = logger2.Close()
+}
+
+func TestAuditLogger_TamperAndRecompute(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate keypair: %v", err)
+	}
+	verifier := NewEd25519Verifier(pub, "test-key")
+
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	logger, err := NewAuditLoggerWithOptions(AuditLoggerOptions{
+		LogPath: logPath,
+		Signer:  NewEd25519Signer(priv, "test-key"),
+	})
+	if err != nil {
+		t.Fatalf("failed to create logger: %v", err)
+	}
+	for i := 0; i < 4; i++ {
+		if err := logger.Log(EventPolicyCreated, "admin", "policy", "created", map[string]any{"index": i}); err != nil {
+			t.Fatalf("failed to log entry: %v", err)
+		}
+	}
+	_ = logger.Close()
+
+	entries, err := QueryFile(logPath, QueryOptions{})
+	if err != nil {
+		t.Fatalf("failed to read entries: %v", err)
+	}
+	if len(entries) < 3 {
+		t.Fatalf("expected at least 3 entries")
+	}
+	entries[1].Actor = "mallory"
+	entries[1].Hash = EntryHash(&entries[1])
+	for i := 2; i < len(entries); i++ {
+		entries[i].PreviousHash = entries[i-1].Hash
+		entries[i].Hash = EntryHash(&entries[i])
+	}
+
+	f, err := os.Create(logPath)
+	if err != nil {
+		t.Fatalf("failed to rewrite log: %v", err)
+	}
+	enc := json.NewEncoder(f)
+	for _, entry := range entries {
+		if err := enc.Encode(entry); err != nil {
+			_ = f.Close()
+			t.Fatalf("failed to encode entry: %v", err)
+		}
+	}
+	_ = f.Close()
+
+	logger2, err := NewAuditLoggerWithOptions(AuditLoggerOptions{LogPath: logPath})
+	if err != nil {
+		t.Fatalf("failed to reopen logger: %v", err)
+	}
+	result := logger2.VerifyIntegrityDetailed(verifier)
+	if result.SignatureValid {
+		t.Fatalf("expected signature verification to fail after tamper")
+	}
+	if result.Valid {
+		t.Fatalf("expected overall verification to fail after tamper")
+	}
+	_ = logger2.Close()
 }
 
 func TestAuditLogger_Query(t *testing.T) {

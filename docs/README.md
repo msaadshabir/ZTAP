@@ -19,7 +19,7 @@ Technical documentation for ZTAP.
 | [Deployment](deployment.md) | Docker and containerized deployment                         |
 | [Cluster](cluster.md)       | Distributed coordination and policy sync (history/rollback) |
 | [etcd Setup](etcd.md)       | etcd backend for production clusters                        |
-| [Audit Logging](audit.md)   | Tamper-proof audit system                                   |
+| [Audit Logging](audit.md)   | Tamper-evident audit system                                 |
 
 ## Reference
 
