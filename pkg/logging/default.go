@@ -9,6 +9,7 @@ import (
 var (
 	defaultMu     sync.RWMutex
 	defaultLogger *Logger
+	exitFn        = os.Exit
 )
 
 // Configure initializes the default logger using the provided config.
@@ -84,7 +85,7 @@ func Errorf(format string, args ...any) {
 // Fatal logs an error entry and exits.
 func Fatal(msg string, fields Fields) {
 	Error(msg, fields)
-	os.Exit(1)
+	exitFn(1)
 }
 
 // Fatalf logs an error entry with formatting and exits.

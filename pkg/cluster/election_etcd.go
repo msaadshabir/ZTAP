@@ -17,9 +17,10 @@ import (
 type EtcdElection struct {
 	config       LeaderElectionConfig
 	etcdConfig   *EtcdConfig
-	client       *clientv3.Client
+	client       etcdElectionClient
+	rawClient    *clientv3.Client
 	session      *concurrency.Session
-	election     *concurrency.Election
+	election     etcdLeaderElection
 	mu           sync.RWMutex
 	isLeader     bool
 	currentState ClusterState
@@ -29,6 +30,21 @@ type EtcdElection struct {
 	leaderChs    []chan *Node
 	ctx          context.Context
 	cancel       context.CancelFunc
+	newClient    func(*EtcdConfig) (*clientv3.Client, error)
+}
+
+type etcdElectionClient interface {
+	Grant(ctx context.Context, ttl int64) (*clientv3.LeaseGrantResponse, error)
+	Put(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error)
+	Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error)
+	Watch(ctx context.Context, key string, opts ...clientv3.OpOption) clientv3.WatchChan
+	Close() error
+}
+
+type etcdLeaderElection interface {
+	Campaign(ctx context.Context, val string) error
+	Resign(ctx context.Context) error
+	Leader(ctx context.Context) (*clientv3.GetResponse, error)
 }
 
 // NewEtcdElection creates a new etcd-based leader election backend.
@@ -58,7 +74,22 @@ func NewEtcdElection(config LeaderElectionConfig, etcdConfig *EtcdConfig) (*Etcd
 		stopCh:       make(chan struct{}),
 		nodeUpdates:  make([]chan ClusterStateChange, 0),
 		leaderChs:    make([]chan *Node, 0),
+		newClient:    func(cfg *EtcdConfig) (*clientv3.Client, error) { return cfg.NewEtcdClient() },
 	}, nil
+}
+
+// NewEtcdElectionWithClient creates a new etcd election backend with an injected client.
+// This is intended for unit tests with in-memory fakes.
+func NewEtcdElectionWithClient(config LeaderElectionConfig, etcdConfig *EtcdConfig, client etcdElectionClient) (*EtcdElection, error) {
+	election, err := NewEtcdElection(config, etcdConfig)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("etcd client cannot be nil")
+	}
+	election.client = client
+	return election, nil
 }
 
 // Start begins the leader election process.
@@ -72,13 +103,14 @@ func (e *EtcdElection) Start(ctx context.Context) error {
 	e.mu.Unlock()
 
 	// Create etcd client
-	client, err := e.etcdConfig.NewEtcdClient()
+	client, err := e.newClient(e.etcdConfig)
 	if err != nil {
 		e.mu.Lock()
 		e.running = false
 		e.mu.Unlock()
 		return fmt.Errorf("failed to create etcd client: %w", err)
 	}
+	e.rawClient = client
 	e.client = client
 
 	// Create context for this election
@@ -86,12 +118,12 @@ func (e *EtcdElection) Start(ctx context.Context) error {
 
 	// Create session with TTL
 	session, err := concurrency.NewSession(
-		e.client,
+		e.rawClient,
 		concurrency.WithTTL(int(e.etcdConfig.SessionTTL.Seconds())),
 		concurrency.WithContext(e.ctx),
 	)
 	if err != nil {
-		_ = e.client.Close()
+		_ = e.rawClient.Close()
 		e.mu.Lock()
 		e.running = false
 		e.mu.Unlock()
@@ -182,6 +214,9 @@ func (e *EtcdElection) GetLeader() *Node {
 	if e.currentState.Leader != nil {
 		return e.currentState.Leader
 	}
+	if e.election == nil {
+		return nil
+	}
 
 	// Query etcd for current leader
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -232,6 +267,9 @@ func (e *EtcdElection) RegisterNode(node *Node) error {
 	if node == nil {
 		return fmt.Errorf("node cannot be nil")
 	}
+	if e.client == nil {
+		return fmt.Errorf("etcd client not initialized")
+	}
 
 	nodeData, err := json.Marshal(node)
 	if err != nil {
@@ -258,6 +296,9 @@ func (e *EtcdElection) RegisterNode(node *Node) error {
 
 // DeregisterNode removes a node from the cluster.
 func (e *EtcdElection) DeregisterNode(nodeID string) error {
+	if e.client == nil {
+		return fmt.Errorf("etcd client not initialized")
+	}
 	key := fmt.Sprintf("%s/nodes/%s", e.etcdConfig.KeyPrefix, nodeID)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -439,6 +480,9 @@ func (e *EtcdElection) runElectionLoop() {
 
 // registerNode registers this node in etcd.
 func (e *EtcdElection) registerNode() error {
+	if e.client == nil {
+		return fmt.Errorf("etcd client not initialized")
+	}
 	node := &Node{
 		ID:       e.config.NodeID,
 		Address:  e.config.NodeAddress,
@@ -478,6 +522,9 @@ func (e *EtcdElection) registerNode() error {
 
 // deregisterNode removes this node from etcd.
 func (e *EtcdElection) deregisterNode() error {
+	if e.client == nil {
+		return fmt.Errorf("etcd client not initialized")
+	}
 	key := fmt.Sprintf("%s/nodes/%s", e.etcdConfig.KeyPrefix, e.config.NodeID)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -497,6 +544,9 @@ func (e *EtcdElection) deregisterNode() error {
 
 // monitorNodes watches for node changes in etcd.
 func (e *EtcdElection) monitorNodes() {
+	if e.client == nil {
+		return
+	}
 	prefix := fmt.Sprintf("%s/nodes/", e.etcdConfig.KeyPrefix)
 	watchChan := e.client.Watch(e.ctx, prefix, clientv3.WithPrefix())
 

@@ -41,7 +41,8 @@ func (s *Server) handleFlowsStream(w http.ResponseWriter, r *http.Request) {
 	// Send a comment to establish the stream.
 	_, _ = fmt.Fprint(w, ": ok\n\n")
 	flusher.Flush()
-
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -52,11 +53,11 @@ func (s *Server) handleFlowsStream(w http.ResponseWriter, r *http.Request) {
 			}
 			b, err := json.Marshal(ev)
 			if err != nil {
-				continue
+				return
 			}
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
 			flusher.Flush()
-		case <-time.After(15 * time.Second):
+		case <-ticker.C:
 			// Keep-alive comment
 			_, _ = fmt.Fprint(w, ": keep-alive\n\n")
 			flusher.Flush()

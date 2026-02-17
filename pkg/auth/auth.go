@@ -254,6 +254,9 @@ func (am *AuthManager) CreateUser(username, password string, role Role) error {
 	if username == "" {
 		return fmt.Errorf("username cannot be empty")
 	}
+	if password == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
 
 	role = Role(strings.TrimSpace(string(role)))
 	if !isValidRole(role) {
@@ -304,6 +307,13 @@ func (am *AuthManager) GetUser(username string) (*User, error) {
 func (am *AuthManager) Authenticate(username, password string) (*Session, error) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, ErrInvalidCredentials
+	}
+	if password == "" {
+		return nil, ErrInvalidCredentials
+	}
 
 	user, exists := am.users[username]
 	if !exists {
@@ -348,6 +358,10 @@ func (am *AuthManager) Authenticate(username, password string) (*Session, error)
 
 // ValidateSession checks if a session is valid
 func (am *AuthManager) ValidateSession(token string) (*Session, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrSessionNotFound
+	}
 	session, err := am.store.Get(context.Background(), token)
 	if err != nil {
 		return nil, err
@@ -361,6 +375,10 @@ func (am *AuthManager) ValidateSession(token string) (*Session, error) {
 
 // HasPermission checks if a user has a specific permission
 func (am *AuthManager) HasPermission(token string, perm Permission) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ErrSessionNotFound
+	}
 	session, err := am.ValidateSession(token)
 	if err != nil {
 		return err
@@ -381,6 +399,10 @@ func (am *AuthManager) HasPermission(token string, perm Permission) error {
 
 // Logout invalidates a session
 func (am *AuthManager) Logout(token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
 	_ = am.store.Delete(context.Background(), token)
 	return nil
 }
@@ -393,6 +415,9 @@ func (am *AuthManager) ChangePassword(username, oldPassword, newPassword string)
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return ErrUserNotFound
+	}
+	if oldPassword == "" || newPassword == "" {
+		return ErrInvalidCredentials
 	}
 
 	user, exists := am.users[username]
@@ -420,6 +445,9 @@ func (am *AuthManager) SetPassword(username, newPassword string) error {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return ErrUserNotFound
+	}
+	if newPassword == "" {
+		return ErrInvalidCredentials
 	}
 
 	user, exists := am.users[username]
@@ -605,6 +633,10 @@ func (am *AuthManager) loadUsers() error {
 	data, err := os.ReadFile(am.dbPath)
 	if err != nil {
 		return err
+	}
+	if len(data) == 0 {
+		am.users = make(map[string]*User)
+		return nil
 	}
 
 	return json.Unmarshal(data, &am.users)

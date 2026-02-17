@@ -58,7 +58,12 @@ func (m *Monitor) Start(ctx context.Context) error {
 
 	// Start the platform-specific reader
 	go func() {
-		if err := m.reader.Start(ctx, rawEvents); err != nil {
+		err := m.reader.Start(ctx, rawEvents)
+		close(rawEvents)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			logging.Warnf("Flow reader error: %v", err)
 		}
 	}()

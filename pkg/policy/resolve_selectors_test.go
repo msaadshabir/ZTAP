@@ -563,3 +563,54 @@ func TestResolvePodSelectorsToIPBlocks_NamedPortEgress(t *testing.T) {
 		t.Fatalf("expected %v, got %v", expected, got)
 	}
 }
+
+func TestResolvePodSelectorsToIPBlocks_NamedPortIngress(t *testing.T) {
+	pods := []PodInfo{
+		{IP: "10.0.0.10", Ports: []PodPort{{Name: "http", Port: 8080, Protocol: "TCP"}}},
+		{IP: "10.0.0.11", Ports: []PodPort{{Name: "http", Port: 18080, Protocol: "TCP"}}},
+		{IP: "10.0.0.12", Ports: []PodPort{{Name: "metrics", Port: 9091, Protocol: "TCP"}}},
+	}
+	resolver := NewPolicyResolver(&mockPodDiscovery{pods: pods})
+
+	policies := []NetworkPolicy{
+		{
+			Metadata: NetworkPolicyMetadata{Name: "named-ingress"},
+			Spec: NetworkPolicySpec{
+				PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "api"}},
+				Ingress: []IngressRule{
+					{
+						From:  IngressSource{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "web"}}},
+						Ports: []PortSpec{{Protocol: "TCP", PortName: "http"}},
+					},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+	if err != nil {
+		t.Fatalf("ResolvePodSelectorsToIPBlocks failed: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 policy, got %d", len(resolved))
+	}
+	if len(resolved[0].Spec.Ingress) != 2 {
+		t.Fatalf("expected 2 ingress rules, got %d", len(resolved[0].Spec.Ingress))
+	}
+
+	got := make(map[string]int)
+	for _, rule := range resolved[0].Spec.Ingress {
+		if len(rule.Ports) != 1 {
+			t.Fatalf("expected 1 port per rule, got %d", len(rule.Ports))
+		}
+		if strings.TrimSpace(rule.Ports[0].PortName) != "" {
+			t.Fatalf("expected named port to be resolved, got %q", rule.Ports[0].PortName)
+		}
+		got[rule.From.IPBlock.CIDR] = rule.Ports[0].Port
+	}
+
+	expected := map[string]int{"10.0.0.10/32": 8080, "10.0.0.11/32": 18080}
+	if !reflect.DeepEqual(expected, got) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+}

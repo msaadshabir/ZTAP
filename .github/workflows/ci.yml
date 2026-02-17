@@ -128,7 +128,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     env:
       GOFLAGS: -buildvcs=false
@@ -147,45 +147,20 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test ./... -v -coverprofile=coverage-${{ matrix.os }}.out -timeout 10m
+        run: go test ./... -v -covermode=atomic -coverpkg=./pkg/... -coverprofile=coverage-${{ matrix.os }}.out -timeout 10m
+
+      - name: Coverage gate (pkg/, per-OS)
+        run: go run ./cmd/covergate -coverprofile coverage-${{ matrix.os }}.out -repo .
 
       - name: Upload coverage artifact
+        if: failure() || github.event_name != 'pull_request'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: coverage-${{ matrix.os }}
           path: coverage-${{ matrix.os }}.out
+          if-no-files-found: ignore
 
-  test-windows:
-    name: Go Tests (windows-latest)
-    runs-on: windows-latest
-    needs: lint
-    if: github.event_name != 'pull_request'
-    timeout-minutes: 30
-
-    env:
-      GOFLAGS: -buildvcs=false
-
-    steps:
-      - name: Check out code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run tests
-        run: go test ./... -v -coverprofile=coverage-windows.out -timeout 10m
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: coverage-windows
-          path: coverage-windows.out
+  # Windows is covered via the 3-OS matrix in test-go.
 
   test-integration:
     name: Integration Tests (Linux)
@@ -369,9 +344,9 @@ jobs:
 
   coverage-report:
     name: Generate Coverage Report
-    needs: [test-go, test-windows, test-python]
+    needs: [test-go, test-python]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && always() && (needs.test-go.result == 'success' || needs.test-windows.result == 'success' || needs.test-python.result == 'success')
+    if: github.event_name != 'pull_request' && always() && (needs.test-go.result == 'success' || needs.test-python.result == 'success')
     timeout-minutes: 10
 
     steps:
@@ -482,7 +457,6 @@ jobs:
       - lint
       - actionlint
       - test-go
-      - test-windows
       - test-integration
       - test-python
       - docker-build

@@ -102,6 +102,45 @@ func TestEnforcementStart_SelectorWithoutDiscovery(t *testing.T) {
 	}
 }
 
+func TestEnforcementStart_MethodNotAllowed(t *testing.T) {
+	srv := newEnforcementTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/enforcement/start", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestEnforcementStop_MethodNotAllowed(t *testing.T) {
+	srv := newEnforcementTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/enforcement/stop", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestEnforcementStop_WindowsStubError(t *testing.T) {
+	if enforcer.IsLinux() || enforcer.IsWindows() {
+		t.Skip("stub path not applicable on windows")
+	}
+	srv := newEnforcementTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/enforcement/stop", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotImplemented && rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 501/500, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestEnforcementStop_UnsupportedPlatform(t *testing.T) {
 	if enforcer.IsLinux() || enforcer.IsWindows() {
 		t.Skip("unsupported platform path not applicable")

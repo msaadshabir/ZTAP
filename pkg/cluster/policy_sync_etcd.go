@@ -17,9 +17,18 @@ import (
 // EtcdPolicySync stores policy state and revisions in etcd.
 // It is intended for production clusters alongside EtcdElection.
 type EtcdPolicySync struct {
-	client *clientv3.Client
+	client etcdPolicySyncClient
 	config *EtcdConfig
 	nodeID string
+}
+
+type etcdPolicySyncClient interface {
+	Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error)
+	Put(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error)
+	Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error)
+	Watch(ctx context.Context, key string, opts ...clientv3.OpOption) clientv3.WatchChan
+	Txn(ctx context.Context) clientv3.Txn
+	Close() error
 }
 
 // NewEtcdPolicySync creates a new etcd-backed policy sync.
@@ -33,6 +42,21 @@ func NewEtcdPolicySync(config *EtcdConfig, nodeID string) (*EtcdPolicySync, erro
 	client, err := config.NewEtcdClient()
 	if err != nil {
 		return nil, err
+	}
+	return &EtcdPolicySync{client: client, config: config, nodeID: nodeID}, nil
+}
+
+// NewEtcdPolicySyncWithClient creates a new etcd-backed policy sync with an injected client.
+// This is intended for unit tests with in-memory fakes.
+func NewEtcdPolicySyncWithClient(config *EtcdConfig, nodeID string, client etcdPolicySyncClient) (*EtcdPolicySync, error) {
+	if config == nil {
+		return nil, fmt.Errorf("etcd config cannot be nil")
+	}
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("etcd client cannot be nil")
 	}
 	return &EtcdPolicySync{client: client, config: config, nodeID: nodeID}, nil
 }
@@ -53,6 +77,9 @@ func (ps *EtcdPolicySync) Stop() error {
 
 // SyncPolicy broadcasts a policy update to the cluster (leader-only enforced by caller).
 func (ps *EtcdPolicySync) SyncPolicy(ctx context.Context, policyName string, policyYAML []byte) error {
+	if ps.client == nil {
+		return fmt.Errorf("etcd client not initialized")
+	}
 	_, err := ps.applyPolicy(ctx, policyName, policyYAML, nil, "", false)
 	return err
 }

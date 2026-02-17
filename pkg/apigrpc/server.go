@@ -42,6 +42,17 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
+var (
+	enforceWithEBPF      = enforcer.EnforceWithEBPFIfAvailable
+	validateEBPFPolicies = enforcer.ValidatePoliciesForEBPF
+	enforceWithPF        = enforcer.EnforceWithPF
+	enforceWithWFP       = enforcer.EnforceWithWFP
+	stopEBPFEnforcement  = enforcer.StopEBPFEnforcement
+	stopWFPEnforcement   = enforcer.StopWFPEnforcement
+	geteuid              = os.Geteuid
+	statFn               = os.Stat
+)
+
 type Config struct {
 	Listen      string
 	AuthEnabled bool
@@ -877,7 +888,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 	platform := runtime.GOOS
 	if enforcer.IsLinux() {
 		platform = "linux"
-		if os.Geteuid() != 0 {
+		if geteuid() != 0 {
 			return nil, status.Error(codes.PermissionDenied, "eBPF enforcement requires root privileges")
 		}
 
@@ -904,7 +915,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			}
 			resolvedCgroupPath = absCgroupPath
 		}
-		if _, err := os.Stat(resolvedCgroupPath); err != nil {
+		if _, err := statFn(resolvedCgroupPath); err != nil {
 			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s: %w", resolvedCgroupPath, err).Error())
 		}
 
@@ -930,13 +941,13 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("bpf_object must be within %s", baseDirAbs).Error())
 			}
-			if _, err := os.Stat(absPath); err != nil {
+			if _, err := statFn(absPath); err != nil {
 				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid bpf_object %s: %w", bpfObject, err).Error())
 			}
 			bpfObjectPath = absPath
 		}
 
-		if err := enforcer.ValidatePoliciesForEBPF(policies); err != nil {
+		if err := validateEBPFPolicies(policies); err != nil {
 			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy is not supported by eBPF enforcer yet: %w", err).Error())
 		}
 		srvCtx := e.srv.runCtx
@@ -944,7 +955,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			srvCtx = context.Background()
 		}
 		opts := enforcer.EnforcementOptions{Policies: policies, CgroupPath: resolvedCgroupPath, BPFObjectPath: bpfObjectPath, DebugEBPF: debugEBPF, Context: srvCtx}
-		if err := enforcer.EnforceWithEBPFIfAvailable(opts); err != nil {
+		if err := enforceWithEBPF(opts); err != nil {
 			e.srv.emitAlert(alert.Alert{
 				Source:   "api-grpc",
 				Severity: alert.SeverityError,
@@ -968,10 +979,10 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 				}
 				e.srv.enforcementMu.Lock()
 				defer e.srv.enforcementMu.Unlock()
-				if err := enforcer.ValidatePoliciesForEBPF(next); err != nil {
+				if err := validateEBPFPolicies(next); err != nil {
 					return err
 				}
-				return enforcer.EnforceWithEBPFIfAvailable(enforcer.EnforcementOptions{Policies: next, CgroupPath: resolvedCgroupPath, BPFObjectPath: bpfObjectPath, DebugEBPF: debugEBPF, Context: refreshCtx})
+				return enforceWithEBPF(enforcer.EnforcementOptions{Policies: next, CgroupPath: resolvedCgroupPath, BPFObjectPath: bpfObjectPath, DebugEBPF: debugEBPF, Context: refreshCtx})
 			})
 		}
 
@@ -984,7 +995,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 	if srvCtx == nil {
 		srvCtx = context.Background()
 	}
-	if err := enforcer.EnforceWithPF(enforcer.EnforcementOptions{Policies: policies, Context: srvCtx}); err != nil {
+	if err := enforceWithPF(enforcer.EnforcementOptions{Policies: policies, Context: srvCtx}); err != nil {
 		return nil, fmt.Errorf("failed to enforce via pf: %w", err)
 	}
 	e.srv.stopEnforcementRefreshLocked()
@@ -1001,10 +1012,10 @@ func (e *enforcementService) Stop(ctx context.Context, _ *emptypb.Empty) (*apiv1
 	if !enforcer.IsLinux() {
 		return nil, status.Error(codes.Unimplemented, "stop is only supported for eBPF enforcement on linux")
 	}
-	if os.Geteuid() != 0 {
+	if geteuid() != 0 {
 		return nil, status.Error(codes.PermissionDenied, "eBPF enforcement requires root privileges")
 	}
-	if err := enforcer.StopEBPFEnforcement(); err != nil {
+	if err := stopEBPFEnforcement(); err != nil {
 		return nil, status.Error(codes.Internal, fmt.Errorf("failed to stop eBPF enforcement: %w", err).Error())
 	}
 	return &apiv1.EnforcementStopResponse{Stopped: true}, nil

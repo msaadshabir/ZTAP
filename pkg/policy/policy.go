@@ -1314,7 +1314,61 @@ func (r *PolicyResolver) ResolvePodSelectorsToIPBlocksScoped(scope string, polic
 
 		// Resolve Ingress
 		for _, ingress := range p.Spec.Ingress {
-			if !selectorIsEmpty(ingress.From.PodSelector) || !selectorIsEmpty(ingress.From.NamespaceSelector) {
+			hasSelectors := !selectorIsEmpty(ingress.From.PodSelector) || !selectorIsEmpty(ingress.From.NamespaceSelector)
+			hasNamedPorts := HasNamedPorts(ingress.Ports)
+			if hasSelectors {
+				if hasNamedPorts {
+					pods, err := r.resolveTargetPods(scope, ingress.From.PodSelector, ingress.From.NamespaceSelector)
+					if err != nil {
+						if isNoMatchesError(err) {
+							logging.Warnf("policy %s: ingress selector resolved to zero pods (%v)", p.Metadata.Name, err)
+							continue
+						}
+						return nil, fmt.Errorf("policy %s: failed to resolve ingress selector: %w", p.Metadata.Name, err)
+					}
+
+					rulesAdded := 0
+					for _, pod := range pods {
+						cidr, err := ipToHostCIDR(pod.IP)
+						if err != nil {
+							return nil, fmt.Errorf("policy %s: invalid resolved IP for ingress selector: %w", p.Metadata.Name, err)
+						}
+						portMap, err := BuildNamedPortMap(pod.Ports)
+						if err != nil {
+							target := strings.TrimSpace(pod.IP)
+							if ns := strings.TrimSpace(pod.Namespace); ns != "" {
+								target = ns + "/" + target
+							}
+							logging.Warnf("policy %s: named ports for source %s are ambiguous: %v", p.Metadata.Name, target, err)
+							continue
+						}
+						resolvedPorts, missing := ResolveNamedPorts(ingress.Ports, portMap)
+						if len(missing) > 0 {
+							missing = dedupeAndSortStrings(missing)
+							target := strings.TrimSpace(pod.IP)
+							if ns := strings.TrimSpace(pod.Namespace); ns != "" {
+								target = ns + "/" + target
+							}
+							logging.Warnf("policy %s: named ports %v not found on source %s", p.Metadata.Name, missing, target)
+						}
+						if len(resolvedPorts) == 0 {
+							continue
+						}
+						newIngress := ingress
+						newIngress.Ports = resolvedPorts
+						newIngress.From.PodSelector = PodSelectorSpec{}
+						newIngress.From.NamespaceSelector = PodSelectorSpec{}
+						newIngress.From.IPBlock = IPBlockSpec{CIDR: cidr}
+						rp.Spec.Ingress = append(rp.Spec.Ingress, newIngress)
+						rulesAdded++
+					}
+					if rulesAdded == 0 {
+						logging.Warnf("policy %s: named ports resolved to zero ingress rules", p.Metadata.Name)
+						continue
+					}
+					continue
+				}
+
 				ips, err := r.ResolvePeerTargets(scope, ingress.From.PodSelector, ingress.From.NamespaceSelector)
 				if err != nil {
 					if isNoMatchesError(err) {
@@ -1336,6 +1390,9 @@ func (r *PolicyResolver) ResolvePodSelectorsToIPBlocksScoped(scope string, polic
 					rp.Spec.Ingress = append(rp.Spec.Ingress, newIngress)
 				}
 				continue
+			}
+			if hasNamedPorts {
+				return nil, fmt.Errorf("policy %s: named ports require podSelector or namespaceSelector in ingress rules", p.Metadata.Name)
 			}
 			rp.Spec.Ingress = append(rp.Spec.Ingress, ingress)
 		}
