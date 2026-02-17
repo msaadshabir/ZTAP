@@ -46,9 +46,7 @@ var (
 	enforceWithEBPF      = enforcer.EnforceWithEBPFIfAvailable
 	validateEBPFPolicies = enforcer.ValidatePoliciesForEBPF
 	enforceWithPF        = enforcer.EnforceWithPF
-	enforceWithWFP       = enforcer.EnforceWithWFP
 	stopEBPFEnforcement  = enforcer.StopEBPFEnforcement
-	stopWFPEnforcement   = enforcer.StopWFPEnforcement
 	geteuid              = os.Geteuid
 	statFn               = os.Stat
 )

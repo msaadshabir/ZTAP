@@ -25,11 +25,10 @@ type block struct {
 }
 
 type fileCov struct {
-	file        string
-	totalStmts  int
-	coverStmts  int
-	uncovered   []block
-	parseErrors []string
+	file       string
+	totalStmts int
+	coverStmts int
+	uncovered  []block
 }
 
 func main() {

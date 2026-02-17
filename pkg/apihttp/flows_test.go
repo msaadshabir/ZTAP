@@ -12,25 +12,6 @@ import (
 	"ztap/pkg/flow"
 )
 
-type staticFlowReader struct {
-	events []flow.RawFlowEvent
-}
-
-func (r *staticFlowReader) Start(ctx context.Context, ch chan<- flow.RawFlowEvent) error {
-	for _, ev := range r.events {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case ch <- ev:
-		}
-	}
-	return nil
-}
-
-func (r *staticFlowReader) Stop() error { return nil }
-
-func (r *staticFlowReader) Available() bool { return true }
-
 type gatedFlowReader struct {
 	ready   chan struct{}
 	proceed chan struct{}

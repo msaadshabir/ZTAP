@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewK8sSubjectResolver_LinuxDefaults(t *testing.T) {
-	resolver := newK8sSubjectResolver(fake.NewSimpleClientset(), "")
+	resolver := newK8sSubjectResolver(fake.NewClientset(), "")
 	linuxResolver, ok := resolver.(*k8sSubjectResolver)
 	if !ok {
 		t.Fatalf("expected linux resolver implementation")
@@ -18,7 +18,7 @@ func TestNewK8sSubjectResolver_LinuxDefaults(t *testing.T) {
 		t.Fatalf("expected default cgroup root, got %s", linuxResolver.cgroupRoot)
 	}
 
-	resolver = newK8sSubjectResolver(fake.NewSimpleClientset(), "/custom/cgroup")
+	resolver = newK8sSubjectResolver(fake.NewClientset(), "/custom/cgroup")
 	linuxResolver, ok = resolver.(*k8sSubjectResolver)
 	if !ok {
 		t.Fatalf("expected linux resolver implementation")
