@@ -20,6 +20,7 @@ and Semantic Versioning (https://semver.org/).
 - Removed data races in flow-stream API tests by avoiding concurrent reads/writes of `httptest.ResponseRecorder` in `pkg/apihttp/flows_test.go`.
 - Resolved `staticcheck` `SA5011` nil-dereference warning in `cmd/policy.go` by returning early in `policy show` when a policy is not found.
 - Fixed Windows CI failure in `.github/workflows/ci.yml` by removing bash-only line continuation from the advisory coverage gate step so matrix jobs run correctly under PowerShell.
+- Fixed advisory coverage gate behavior in `.github/workflows/ci.yml` to skip `covergate` when `coverage-<os>.out` is missing and avoid failing the job on Windows shell semantics.
 
 ### Security
 - Added documented secret-scanning step using `gitleaks detect --source . --redact --no-banner`.
