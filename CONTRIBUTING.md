@@ -43,6 +43,8 @@ go vet ./...
 
 CI also runs `golangci-lint` (see `.github/workflows/ci.yml`).
 
+When editing GitHub Actions, keep `run:` commands shell-agnostic for matrix jobs that include Windows (`pwsh`) and Linux/macOS (bash). Avoid bash-only line continuations (for example trailing `\`) in shared steps.
+
 ### Security Audit
 
 Run the project security checks before opening a PR:

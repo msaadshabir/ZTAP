@@ -253,7 +253,13 @@ services := []Service{
 
 ## Continuous Integration
 
-The repository ships with `.github/workflows/ci.yml`, which runs Go tests and uploads coverage on push and pull request events.
+The repository ships with `.github/workflows/ci.yml`, which runs linting plus Go tests on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
+
+Coverage notes:
+
+- Each matrix job writes `coverage-${{ matrix.os }}.out`.
+- The `cmd/covergate` report step is advisory in CI (it logs uncovered statements but should not fail the workflow).
+- Shared matrix `run:` commands must be shell-compatible across bash and PowerShell.
 
 ### GitHub Actions (Recommended)
 
