@@ -150,9 +150,7 @@ jobs:
         run: go test ./... -v -covermode=atomic -coverpkg=./pkg/... -coverprofile=coverage-${{ matrix.os }}.out -timeout 10m
 
       - name: Coverage report (pkg/, advisory)
-        run: |
-          go run ./cmd/covergate -coverprofile coverage-${{ matrix.os }}.out -repo . || \
-            echo "coverage gate reported uncovered statements (advisory only in CI)"
+        run: go run ./cmd/covergate -coverprofile coverage-${{ matrix.os }}.out -repo . || echo "coverage gate reported uncovered statements (advisory only in CI)"
 
       - name: Upload coverage artifact
         if: failure() || github.event_name != 'pull_request'
