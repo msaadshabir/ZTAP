@@ -2,7 +2,6 @@
 
 Thanks for contributing to ZTAP.
 
-- Code of Conduct: see `CODE_OF_CONDUCT.md`
 - Security issues: see `SECURITY.md` (please do not file public issues for vulnerabilities)
 
 ## Ways To Contribute

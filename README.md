@@ -150,13 +150,13 @@ Cluster backend:
 
 Full documentation lives under [`docs/`](docs/index.md).
 
-| Section | Key Pages |
-| --- | --- |
-| **Guides** | [Setup](docs/guides/setup.md), [Deployment](docs/guides/deployment.md), [Testing](docs/guides/testing.md), [etcd](docs/guides/etcd.md) |
-| **Concepts** | [Architecture](docs/concepts/architecture.md), [eBPF](docs/concepts/ebpf.md), [Cluster](docs/concepts/cluster.md), [Audit](docs/concepts/audit.md), [Compliance](docs/concepts/compliance.md) |
-| **Reference** | [CLI](docs/reference/cli.md), [Configuration](docs/reference/config.md), [API](docs/reference/api.md) |
-| **Runbooks** | [Windows Flow Monitoring](docs/runbooks/windows-flow-monitoring.md) |
-| **Project** | [Project Status](docs/project-status.md), [Anomaly Detection](pkg/anomaly/README.md) |
+| Section       | Key Pages                                                                                                                                                                                     |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Guides**    | [Setup](docs/guides/setup.md), [Deployment](docs/guides/deployment.md), [Testing](docs/guides/testing.md), [etcd](docs/guides/etcd.md)                                                        |
+| **Concepts**  | [Architecture](docs/concepts/architecture.md), [eBPF](docs/concepts/ebpf.md), [Cluster](docs/concepts/cluster.md), [Audit](docs/concepts/audit.md), [Compliance](docs/concepts/compliance.md) |
+| **Reference** | [CLI](docs/reference/cli.md), [Configuration](docs/reference/config.md), [API](docs/reference/api.md)                                                                                         |
+| **Runbooks**  | [Windows Flow Monitoring](docs/runbooks/windows-flow-monitoring.md)                                                                                                                           |
+| **Project**   | [Project Status](docs/project-status.md), [Anomaly Detection](pkg/anomaly/README.md)                                                                                                          |
 
 ---
 
@@ -450,7 +450,7 @@ Dashboard auto-provisioned from `deployments/grafana/dashboards/ztap-dashboard.j
 | -------------- | -------------------------------- | ----------------------------------- |
 | **OS**         | Linux (kernel ≥5.7) or macOS 12+ | Linux for production, macOS for dev |
 | **Go**         | 1.25+                            | Build requirement                   |
-| **eBPF Tools** | clang, llvm, make, linux-headers | Only if recompiling eBPF source   |
+| **eBPF Tools** | clang, llvm, make, linux-headers | Only if recompiling eBPF source     |
 | **Privileges** | Root or CAP_BPF + CAP_NET_ADMIN  | Linux eBPF enforcement              |
 | **AWS**        | EC2/VPC access (optional)        | For cloud integration               |
 | **Docker**     | Latest (optional)                | For Prometheus/Grafana stack        |
@@ -504,7 +504,6 @@ MIT License - See [LICENSE](LICENSE)
 
 - Security policy: `SECURITY.md`
 - Contributing guide: `CONTRIBUTING.md`
-- Code of Conduct: `CODE_OF_CONDUCT.md`
 - Changelog: `CHANGELOG.md`
 
 ---

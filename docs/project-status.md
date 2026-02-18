@@ -46,7 +46,7 @@ Current state of the ZTAP project: what has been delivered and what is planned.
 - Alerting with webhook integrations (Slack, PagerDuty)
 - Python-based anomaly detection using Isolation Forest
 - Structured logging with filtering
-- `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`
+- `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`
 
 ## Current Focus
 
