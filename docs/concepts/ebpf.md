@@ -50,7 +50,7 @@ If you are building ZTAP from source or modifying the eBPF program, you will nee
 
 - `clang` (LLVM compiler)
 - `llvm`
-- Go 1.24+
+- Go 1.25+
 
 #### Install Build Dependencies (Ubuntu/Debian)
 
@@ -314,7 +314,7 @@ cd bpf && make
 **Solution**: Run with root privileges or add `CAP_BPF` capability:
 
 ```bash
-sudo ztap daemon
+sudo ztap enforce -f policy.yaml
 # OR
 sudo setcap cap_bpf,cap_net_admin+ep ./ztap
 ```

@@ -1,5 +1,7 @@
 # ZTAP Testing Documentation
 
+How to run the test suite, interpret coverage, and maintain test quality.
+
 ## Overview
 
 ZTAP includes comprehensive test coverage across all critical components with unit tests, integration tests, and validation scenarios.
@@ -164,6 +166,27 @@ go tool cover -html=coverage.out
 go test ./... -race
 ```
 
+### Security Audit
+
+Run the built-in security audit script:
+
+```bash
+bash scripts/security_check.sh
+```
+
+The script runs:
+
+- `go test ./...`
+- `go vet ./...`
+- `govulncheck ./...`
+- `gosec -exclude=G304,G602 -exclude-generated ./...`
+
+Optional dedicated secret scanning:
+
+```bash
+gitleaks detect --source . --redact --no-banner
+```
+
 ### Windows Notes (WFP)
 
 - Windows support uses Windows Filtering Platform (WFP) and requires an elevated terminal (Administrator) to actually apply/tear down filters.
@@ -244,7 +267,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
-          go-version: "1.24"
+          go-version: "1.25"
       - run: go test ./... -v -race -coverprofile=coverage.out
       - run: go tool cover -func=coverage.out
 ```
@@ -287,3 +310,4 @@ go test ./pkg/discovery -run TestInMemoryDiscovery_Watch -v
 - Add integration tests for new service discovery backends (Consul, K8s)
 - Keep test data synchronized with documentation examples
 - Run `go test ./... -race` regularly to detect concurrency issues
+- Run `bash scripts/security_check.sh` before merging changes

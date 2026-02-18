@@ -31,6 +31,7 @@ go build ./...
 
 ```bash
 go test ./... -v
+go test ./... -race
 ```
 
 ### Lint / Format
@@ -41,6 +42,22 @@ go vet ./...
 ```
 
 CI also runs `golangci-lint` (see `.github/workflows/ci.yml`).
+
+### Security Audit
+
+Run the project security checks before opening a PR:
+
+```bash
+bash scripts/security_check.sh
+```
+
+This runs unit tests, `go vet`, `govulncheck`, and `gosec`.
+
+Optional secret scan (recommended):
+
+```bash
+gitleaks detect --source . --redact --no-banner
+```
 
 ## Project-Specific Workflows
 
@@ -65,6 +82,7 @@ make -C bpf
 - Keep PRs focused and small when possible
 - Include tests and docs updates for behavior changes
 - Make sure `go test ./...` passes locally
+- Run `bash scripts/security_check.sh` before submitting
 - Run `gofmt` on any Go changes
 
 By submitting a contribution, you agree that your work will be licensed under

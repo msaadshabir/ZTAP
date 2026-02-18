@@ -38,7 +38,7 @@ The etcd backend provides:
 
 ### System Requirements
 
-- Go 1.24+ (for building ZTAP)
+- Go 1.25+ (for building ZTAP)
 - etcd 3.4+ cluster
 - Network connectivity between ZTAP nodes and etcd cluster
 - Sufficient disk space for etcd data (recommend 10GB+)
@@ -118,7 +118,7 @@ services:
 Start the cluster:
 
 ```bash
-docker-compose -f etcd-cluster.yml up -d
+docker compose -f etcd-cluster.yml up -d
 ```
 
 #### Option 3: System Package Manager
@@ -515,7 +515,7 @@ Test with multiple concurrent nodes:
 
 ```bash
 # Start etcd
-docker-compose -f etcd-cluster.yml up -d
+docker compose -f etcd-cluster.yml up -d
 
 # Run 10 concurrent ZTAP nodes
 for i in {1..10}; do
@@ -736,7 +736,7 @@ ztap_cluster_nodes_total
 - [etcd Hardware Recommendations](https://etcd.io/docs/v3.5/op-guide/hardware/)
 - [etcd Security Guide](https://etcd.io/docs/v3.5/op-guide/security/)
 - [Raft Consensus Algorithm](https://raft.github.io/)
-- [ZTAP Cluster Documentation](cluster.md)
+- [ZTAP Cluster Documentation](../concepts/cluster.md)
 
 ---
 
@@ -744,7 +744,7 @@ ztap_cluster_nodes_total
 
 For issues or questions:
 
-1. Check [cluster.md](cluster.md) for general cluster documentation
+1. Check [Cluster documentation](../concepts/cluster.md) for general cluster documentation
 2. Review [Troubleshooting](#troubleshooting) section above
 3. Open an issue on GitHub with:
    - etcd version (`etcdctl version`)

@@ -10,16 +10,16 @@ Run the complete ZTAP stack with Prometheus, Grafana, and Anomaly Detection:
 
 ```bash
 # Build and start all services
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop all services
-docker-compose down
+docker compose down
 
 # Stop and remove volumes
-docker-compose down -v
+docker compose down -v
 ```
 
 ### Using Docker Build Directly
@@ -101,7 +101,7 @@ ZTAP can also run a gRPC API server (see `ztap grpc serve`). If you run it in a 
 
 ### Environment Variables
 
-Configure ZTAP via environment variables in `docker-compose.yml`:
+Configure ZTAP via environment variables in `docker-compose.yml` (or `compose.yaml`):
 
 ```yaml
 environment:
@@ -235,7 +235,7 @@ curl http://localhost:5000/health
 
 ```bash
 # Check logs
-docker-compose logs ztap
+docker compose logs ztap
 
 # Verify privileged mode (Linux only)
 docker inspect ztap | grep Privileged
@@ -256,7 +256,7 @@ If you encounter permission issues:
 
 ```bash
 # Run with elevated privileges
-sudo docker-compose up -d
+sudo docker compose up -d
 
 # Or add user to docker group
 sudo usermod -aG docker $USER
@@ -273,7 +273,7 @@ sudo usermod -aG docker $USER
 
 1. Verify Python dependencies are installed
 2. Check for sufficient training data (minimum 10 samples)
-3. Review logs: `docker-compose logs anomaly-detector`
+3. Review logs: `docker compose logs anomaly-detector`
 
 ## Development
 
@@ -281,33 +281,33 @@ sudo usermod -aG docker $USER
 
 ```bash
 # Rebuild specific service
-docker-compose build ztap
+docker compose build ztap
 
 # Rebuild and restart
-docker-compose up -d --build ztap
+docker compose up -d --build ztap
 ```
 
 ### Run Tests in Container
 
 ```bash
 # Go tests
-docker-compose run --rm ztap go test ./... -v
+docker compose run --rm ztap go test ./... -v
 
 # Python tests
-docker-compose run --rm anomaly-detector python -m pytest test_service.py -v
+docker compose run --rm anomaly-detector python -m pytest test_service.py -v
 ```
 
 ### Debug Mode
 
 ```bash
 # Run with debug logging
-docker-compose run --rm ztap ztap --log-level debug status
+docker compose run --rm ztap ztap --log-level debug status
 
 # Or via environment variable
-docker-compose run --rm ztap env ZTAP_LOG_LEVEL=debug ztap status
+docker compose run --rm ztap env ZTAP_LOG_LEVEL=debug ztap status
 
 # Interactive shell
-docker-compose run --rm ztap sh
+docker compose run --rm ztap sh
 ```
 
 ## Production Considerations
@@ -347,7 +347,7 @@ For production deployments:
 Full eBPF enforcement supported:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### macOS (Development)
@@ -356,7 +356,7 @@ Limited to pf (packet filter):
 
 ```bash
 # Use without privileged mode
-docker-compose -f docker-compose.yml -f docker-compose.mac.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.mac.yml up -d
 ```
 
 Create `docker-compose.mac.yml`:
@@ -377,10 +377,12 @@ Windows hosts are supported via Windows Filtering Platform (WFP) when running `z
 Notes:
 
 - Docker Compose stack is Linux-first; on Windows, prefer running the stack under WSL2.
+
+> **Compatibility note:** If your Docker installation only provides the legacy `docker-compose` binary (hyphenated), substitute it for `docker compose` throughout this guide.
 - Windows flow monitoring uses WFP NetEvents and requires an elevated terminal. See `docs/runbooks/windows-flow-monitoring.md`.
 
 ## Related Documentation
 
-- [eBPF Setup](ebpf.md)
+- [eBPF Setup](../concepts/ebpf.md)
 - [Testing Guide](testing.md)
-- [Architecture](architecture.md)
+- [Architecture](../concepts/architecture.md)

@@ -75,7 +75,7 @@ etcdConfig := &cluster.EtcdConfig{
 election, err := cluster.NewEtcdElection(config, etcdConfig)
 ```
 
-See [etcd Setup](etcd.md) for detailed configuration.
+See [etcd Setup](../guides/etcd.md) for detailed configuration.
 
 Note: when using etcd and running multiple ZTAP servers on the same host, set a unique `cluster.node_id` (or `ZTAP_NODE_ID`) per process.
 
@@ -214,6 +214,6 @@ go test -tags=integration ./pkg/enforcer -v
 
 ## Related Documentation
 
-- [etcd Setup](etcd.md) - Production backend configuration
+- [etcd Setup](../guides/etcd.md) - Production backend configuration
 - [Architecture](architecture.md) - System design overview
-- [Testing](testing.md) - Test suite documentation
+- [Testing](../guides/testing.md) - Test suite documentation

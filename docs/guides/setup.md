@@ -1,11 +1,13 @@
 # ZTAP Setup Guide
 
+Installation, configuration, and first-steps walkthrough for all supported platforms.
+
 ## Prerequisites
 
 ### System Requirements
 
 - **Operating System**: macOS 12+, Linux (eBPF requires kernel ≥5.7; automatically falls back to iptables on older kernels), or Windows (WFP)
-- **Go**: 1.24 or later
+- **Go**: 1.25 or later
 - **Memory**: 2 GB RAM minimum
 - **Disk**: 200 MB for binary, policies, and logs
 - **Note on eBPF**: Production binaries include pre-compiled bytecode. Runtime dependencies like `clang` or `llvm` are **not** required for enforcement.
@@ -286,7 +288,7 @@ sudo apt-get install clang llvm make linux-headers-$(uname -r)
 cd bpf && make && cd ..
 ```
 
-See [eBPF Setup Guide](ebpf.md) for detailed Linux configuration.
+See [eBPF Setup Guide](../concepts/ebpf.md) for detailed Linux configuration.
 
 ### 4. Windows-Specific Setup
 
@@ -781,6 +783,6 @@ ztap metrics --port 9091
 
 ## Next Steps
 
-- Read [Architecture](architecture.md) to understand internals
-- Check [examples/](../examples/) for sample policies
+- Read [Architecture](../concepts/architecture.md) to understand internals
+- Check [examples/](../../examples/) for sample policies
 - See [Testing Guide](testing.md) for test scenarios

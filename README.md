@@ -2,11 +2,11 @@
 
 > Open-source zero-trust microsegmentation with eBPF enforcement, policy-as-code, and hybrid cloud support
 
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/ebpf.md)
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/concepts/ebpf.md)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Compatible-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![AWS](https://img.shields.io/badge/AWS-Integration-FF9900?logo=amazon-aws&logoColor=white)](docs/setup.md)
-[![Test Coverage](https://img.shields.io/badge/coverage-43.7%25-orange.svg)](docs/testing.md)
+[![AWS](https://img.shields.io/badge/AWS-Integration-FF9900?logo=amazon-aws&logoColor=white)](docs/guides/setup.md)
+[![Test Coverage](https://img.shields.io/badge/coverage-check%20locally-orange.svg)](docs/guides/testing.md)
 [![NIST SP 800-207](https://img.shields.io/badge/NIST-SP%20800--207-blue.svg)](https://csrc.nist.gov/publications/detail/sp/800-207/final)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -29,7 +29,10 @@ sudo mv ztap /usr/local/bin/
 
 ```bash
 # 1. Authenticate
-echo "ztap-admin-change-me" | ztap user login admin
+# On first run ZTAP creates an admin account.
+# The initial password comes from ZTAP_BOOTSTRAP_ADMIN_PASSWORD,
+# or is generated and written to ~/.ztap/bootstrap_admin_password.txt.
+ztap user login admin
 ztap user change-password admin
 
 # 2. Register services
@@ -77,7 +80,7 @@ Cluster backend:
 - Default: in-memory (single-process)
 - Production: configure etcd via `cluster.*` in `config.yaml` (see `config.yaml.example`) or env vars like `ZTAP_ETCD_ENDPOINTS`
 
-**[Full Setup Guide](docs/setup.md)** | **[Architecture](docs/architecture.md)** | **[eBPF Setup](docs/ebpf.md)**
+**[Full Setup Guide](docs/guides/setup.md)** | **[Architecture](docs/concepts/architecture.md)** | **[eBPF Setup](docs/concepts/ebpf.md)**
 
 ---
 
@@ -134,7 +137,7 @@ Cluster backend:
 - **Compliance Reporting** – PCI-DSS, SOC2, HIPAA policy mapping exports and reports
 - **REST API Server** – Minimal v1 endpoints via `ztap api serve`
 - **gRPC API Server** – Minimal v1 RPCs via `ztap grpc serve`
-- **43.7% Test Coverage** – Production-ready
+- **Tested** – Run `go test ./... -cover` for current coverage
 - **Multi-Platform** – Linux (eBPF) + macOS (pf) + Windows (WFP)
 
 </td>
@@ -145,18 +148,15 @@ Cluster backend:
 
 ## Documentation
 
-| Guide                                      | Description                               |
-| ------------------------------------------ | ----------------------------------------- |
-| [Setup Guide](docs/setup.md)               | Installation and configuration            |
-| [Architecture](docs/architecture.md)       | System design and components              |
-| [eBPF Enforcement](docs/ebpf.md)           | Linux kernel-level enforcement            |
-| [Cluster Coordination](docs/cluster.md)    | Multi-node clustering and leader election |
-| [Audit Logging](docs/audit.md)             | Tamper-evident audit log system           |
-| [Compliance Reporting](docs/compliance.md) | Compliance mapping exports and reports    |
-| [Testing Guide](docs/testing.md)           | Comprehensive testing documentation       |
-| [Roadmap](docs/roadmap.md)                 | Delivered and planned features            |
-| [Windows Flow Runbook](docs/runbooks/windows-flow-monitoring.md) | Manual validation for WFP flows |
-| [Anomaly Detection](pkg/anomaly/README.md) | ML service setup                          |
+Full documentation lives under [`docs/`](docs/index.md).
+
+| Section | Key Pages |
+| --- | --- |
+| **Guides** | [Setup](docs/guides/setup.md), [Deployment](docs/guides/deployment.md), [Testing](docs/guides/testing.md), [etcd](docs/guides/etcd.md) |
+| **Concepts** | [Architecture](docs/concepts/architecture.md), [eBPF](docs/concepts/ebpf.md), [Cluster](docs/concepts/cluster.md), [Audit](docs/concepts/audit.md), [Compliance](docs/concepts/compliance.md) |
+| **Reference** | [CLI](docs/reference/cli.md), [Configuration](docs/reference/config.md), [API](docs/reference/api.md) |
+| **Runbooks** | [Windows Flow Monitoring](docs/runbooks/windows-flow-monitoring.md) |
+| **Project** | [Project Status](docs/project-status.md), [Anomaly Detection](pkg/anomaly/README.md) |
 
 ---
 
@@ -256,7 +256,7 @@ ztap compliance export -f examples/pci-compliant.yaml --format csv --out complia
 ztap compliance report -f examples/pci-compliant.yaml --format md
 ```
 
-See `docs/compliance.md` for policy annotations and mapping files.
+See [Compliance Reporting](docs/concepts/compliance.md) for policy annotations and mapping files.
 
 </details>
 
@@ -300,70 +300,13 @@ ztap api serve
 # Start gRPC API server (default 127.0.0.1:9092)
 ztap grpc serve
 
-# If you run both REST and gRPC servers on one host in etcd mode, set a unique
-# node id per process (or use `cluster.node_id` in config.yaml)
-# export ZTAP_NODE_ID=ztap-grpc-1
-
-# Liveness
+# Liveness / Readiness
 curl -s http://127.0.0.1:8080/healthz
-
-# Readiness
 curl -s http://127.0.0.1:8080/readyz
-
-# Login (default users DB: ~/.ztap/users.json)
-# Sessions persist by default in ~/.ztap/sessions.db (SQLite)
-token=$(curl -sS http://127.0.0.1:8080/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"ztap-admin-change-me"}' | jq -r .token)
-
-# Who am I
-curl -sS http://127.0.0.1:8080/v1/auth/whoami -H "Authorization: Bearer $token"
 ```
 
-Core endpoints:
-
-- `POST /v1/auth/login`, `GET /v1/auth/whoami`
-
-Rate limiting:
-
-- Config (default: disabled): `api.rate_limit`, `grpc.rate_limit` in `config.yaml`
-- CLI flags: `ztap api serve --rate-limit ...`, `ztap grpc serve --rate-limit ...`
-- REST: invalid/expired `Authorization` tokens fall back to unauthenticated bucket
-- REST: probe endpoints (`/healthz`, `/readyz`) are always exempt from rate limiting
-- gRPC: rate-limited calls return `RESOURCE_EXHAUSTED` and include `RetryInfo` (retry delay)
-- gRPC: health RPCs (`/grpc.health.v1.Health/Check`, `/grpc.health.v1.Health/Watch`) are always exempt from rate limiting
-- `POST /v1/config/backup` (download bundle; requires `backup_restore`)
-- `POST /v1/config/restore?dry_run=1&force=1` (upload bundle; requires `backup_restore`)
-- `POST /v1/compliance/report` (requires `view_compliance`)
-- `POST /v1/compliance/export` (requires `view_compliance`)
-- `GET /v1/status`
-- `GET /v1/enforcement/status`, `POST /v1/enforcement/start`, `POST /v1/enforcement/stop` (Linux only)
-- `GET /v1/flows/stream` (SSE)
-- `GET /metrics`
-- `GET /v1/policies`, `GET/PUT/DELETE /v1/policies/{tenant}/{name}`
-- `GET /v1/policies/{tenant}/{name}/revisions`, `GET /v1/policies/{tenant}/{name}/revisions/{version}`, `POST /v1/policies/{tenant}/{name}/rollback`
-- `GET/POST /v1/users`, `GET/PATCH/DELETE /v1/users/{username}`, `POST /v1/users/{username}/password`
-- `GET /v1/cluster/status`, `GET/POST/DELETE /v1/cluster/nodes...`
-
-Config backup/restore notes:
-
-- Backup request body is optional JSON; implemented flags: `include_users`, `include_sessions`, `include_config` (defaults: true). Optional: `include_policy_current` (defaults: false).
-- Export is best-effort: unavailable items are skipped and recorded in `manifest.warnings` inside the bundle.
-- Restore supports `dry_run=1` to preview changes and `force=1` to apply; without `force=1`, destructive restores return `409`.
-- Restore request body is capped (default: 100 MiB); oversized uploads return `413`.
-- Restore writes files atomically but requires a process restart to take effect.
-
-gRPC services (v1):
-
-- `ztap.api.v1.AuthService` (`Login`, `WhoAmI`)
-- `ztap.api.v1.StatusService` (`GetStatus`)
-- `ztap.api.v1.EnforcementService` (`GetStatus`, `Start`, `Stop`)
-- `ztap.api.v1.FlowsService` (`Stream` server-streaming)
-- `ztap.api.v1.PolicyService` (`ListPolicies`, `GetPolicy`, `PutPolicy`, `DeletePolicy`, `ListPolicyRevisions`, `GetPolicyRevision`, `RollbackPolicy`)
-- `ztap.api.v1.UsersService` (`ListUsers`, `GetUser`, `CreateUser`, `UpdateUser`, `SetUserPassword`, `DeleteUser`)
-- `ztap.api.v1.ClusterService` (`GetClusterStatus`, `ListNodes`, `RegisterNode`, `DeregisterNode`)
-
-Auth: send `authorization: Bearer <token>` as gRPC metadata.
+See [API Reference](docs/reference/api.md) for all endpoints, gRPC services, and rate limiting details.
+See [Configuration Reference](docs/reference/config.md) for `api.*` and `grpc.*` settings.
 
 </details>
 
@@ -506,14 +449,14 @@ Dashboard auto-provisioned from `deployments/grafana/dashboards/ztap-dashboard.j
 | Component      | Requirement                      | Notes                               |
 | -------------- | -------------------------------- | ----------------------------------- |
 | **OS**         | Linux (kernel ≥5.7) or macOS 12+ | Linux for production, macOS for dev |
-| **Go**         | 1.24+                            | Build requirement                   |
-| **eBPF Tools** | clang, llvm, make, linux-headers | Linux production only               |
+| **Go**         | 1.25+                            | Build requirement                   |
+| **eBPF Tools** | clang, llvm, make, linux-headers | Only if recompiling eBPF source   |
 | **Privileges** | Root or CAP_BPF + CAP_NET_ADMIN  | Linux eBPF enforcement              |
 | **AWS**        | EC2/VPC access (optional)        | For cloud integration               |
 | **Docker**     | Latest (optional)                | For Prometheus/Grafana stack        |
-| **Python**     | 3.8+ (optional)                  | For anomaly detection service       |
+| **Python**     | 3.11+ (optional)                 | For anomaly detection service       |
 
-**[Full eBPF Setup Guide](docs/ebpf.md)**
+**[Full eBPF Setup Guide](docs/concepts/ebpf.md)**
 
 ---
 
@@ -526,14 +469,23 @@ go build
 # Run tests
 go test ./...
 
+# Comprehensive security audit (tests + vet + govulncheck + gosec)
+bash scripts/security_check.sh
+
 # eBPF integration test (Linux + root required)
 sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v
 
 # Coverage
 go test ./... -cover
 
+# Race detection
+go test ./... -race
+
 # Lint
 go fmt ./... && go vet ./...
+
+# Optional: repository secret scan
+gitleaks detect --source . --redact --no-banner
 ```
 
 ### Demo
@@ -570,6 +522,6 @@ MIT License - See [LICENSE](LICENSE)
 
 **Note:** macOS enforcement (pf) is for development only. Use Linux + eBPF for production.
 
-[eBPF Setup Guide](docs/ebpf.md) | [Get Started](docs/setup.md) | [Open an Issue](../../issues)
+[eBPF Setup Guide](docs/concepts/ebpf.md) | [Get Started](docs/guides/setup.md) | [Open an Issue](../../issues)
 
 </div>

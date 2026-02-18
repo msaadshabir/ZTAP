@@ -238,15 +238,14 @@ func TestFlowsStream_ReaderError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/flows/stream", nil).WithContext(ctx)
 	rr := httptest.NewRecorder()
 	done := make(chan struct{})
-	go srv.Handler().ServeHTTP(rr, req)
 	go func() {
-		<-ctx.Done()
+		srv.Handler().ServeHTTP(rr, req)
 		close(done)
 	}()
 
 	select {
 	case <-done:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(700 * time.Millisecond):
 		t.Fatalf("timeout waiting for stream to exit")
 	}
 	if rr.Code != http.StatusOK {
@@ -268,10 +267,14 @@ func TestFlowsStream_KeepAlive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 17*time.Second)
 	defer cancel()
 	req := httptest.NewRequest(http.MethodGet, "/v1/flows/stream", nil).WithContext(ctx)
-	rr := httptest.NewRecorder()
+	conn := &responseStreamConn{readCh: make(chan string, 16)}
+	resp := &streamingResponseWriter{
+		header: make(http.Header),
+		conn:   conn,
+	}
 	done := make(chan struct{})
 	go func() {
-		srv.Handler().ServeHTTP(rr, req)
+		srv.Handler().ServeHTTP(resp, req)
 		close(done)
 	}()
 
@@ -281,19 +284,21 @@ func TestFlowsStream_KeepAlive(t *testing.T) {
 		t.Fatalf("reader did not start")
 	}
 
-	deadline := time.Now().Add(16 * time.Second)
-	for time.Now().Before(deadline) {
-		if strings.Contains(rr.Body.String(), ": keep-alive") {
-			cancel()
-			select {
-			case <-done:
-			case <-time.After(500 * time.Millisecond):
+	timeout := time.NewTimer(16 * time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case line := <-conn.readCh:
+			if line == ": keep-alive" {
+				cancel()
+				select {
+				case <-done:
+				case <-time.After(500 * time.Millisecond):
+				}
+				return
 			}
-			return
+		case <-timeout.C:
+			t.Fatalf("expected keep-alive comment")
 		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if !strings.Contains(rr.Body.String(), ": keep-alive") {
-		t.Fatalf("expected keep-alive comment")
 	}
 }

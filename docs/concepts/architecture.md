@@ -1,5 +1,7 @@
 # ZTAP Architecture
 
+System design, component responsibilities, and data-flow overview for ZTAP.
+
 ## Overview
 
 ZTAP (Zero Trust Access Platform) implements microsegmentation across hybrid environments using a modular, policy-driven architecture.

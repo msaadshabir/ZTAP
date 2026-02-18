@@ -16,7 +16,7 @@ go run ./examples/etcd_election node1
 go run ./examples/etcd_election node2
 ```
 
-See [etcd Setup](../docs/etcd.md) for prerequisites.
+See [etcd Setup](../docs/guides/etcd.md) for prerequisites.
 
 ### policy_sync
 
@@ -33,7 +33,7 @@ ztap policy history web-to-db
 ztap policy rollback web-to-db --to 1 --reason "back to known-good"
 ```
 
-See [Cluster Documentation](../docs/cluster.md) for details.
+See [Cluster Documentation](../docs/concepts/cluster.md) for details.
 
 If you run multiple ZTAP processes against the same etcd cluster, set a unique
 `cluster.node_id` (or `ZTAP_NODE_ID`) per process.
@@ -41,7 +41,7 @@ If you run multiple ZTAP processes against the same etcd cluster, set a unique
 ## Policy Examples
 
 Note: on Linux, ZTAP enforces via eBPF when available (otherwise falls back to iptables).
-The eBPF enforcer supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP (ICMP ignores `port`). See `docs/ebpf.md`.
+The eBPF enforcer supports IPv4/IPv6 `ipBlock.cidr` (arbitrary CIDRs) and TCP/UDP/ICMP (ICMP ignores `port`). See `docs/concepts/ebpf.md`.
 Policies that use `podSelector` targets can be enforced by resolving selectors into concrete `ipBlock` rules via discovery (in-cluster via `ztap agent`, or locally via `ztap enforce` with `discovery.backend: k8s`).
 `ztap enforce` refreshes selector resolution while it is running; tune with `--resolve-labels-interval` (default: `5s`; set to `0` to resolve once).
 If a selector currently resolves to zero targets, enforcement still starts; the rule becomes active when targets appear and resolution refreshes.
@@ -200,6 +200,6 @@ spec:
 
 ## Related Documentation
 
-- [Architecture](../docs/architecture.md)
-- [Setup Guide](../docs/setup.md)
-- [Testing](../docs/testing.md)
+- [Architecture](../docs/concepts/architecture.md)
+- [Setup Guide](../docs/guides/setup.md)
+- [Testing](../docs/guides/testing.md)

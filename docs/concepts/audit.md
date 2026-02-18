@@ -1,5 +1,7 @@
 # Audit Logging System
 
+Tamper-evident audit logging with SHA-256 hash chaining, optional signing, and CLI/API access.
+
 ## Overview
 
 ZTAP includes a tamper-evident audit logging system that records all policy operations, user actions, and system events with cryptographic integrity guarantees. The audit log uses SHA-256 hash chaining to detect any tampering or unauthorized modifications.
@@ -319,7 +321,7 @@ The audit logging system helps meet compliance requirements for:
 - **PCI DSS**: Requirement 10 - Track and monitor all access to network resources
 - **HIPAA**: 164.312(b) - Audit controls
 
-ZTAP compliance reports (see `docs/compliance.md`) use the audit log for:
+ZTAP compliance reports (see [Compliance Reporting](compliance.md)) use the audit log for:
 
 - integrity verification (hash chain)
 - enforcement evidence (`policy.enforced` events)
@@ -416,7 +418,7 @@ ztap audit verify
 **See Also:**
 
 - [Architecture](architecture.md)
-- [Testing Guide](testing.md)
+- [Testing Guide](../guides/testing.md)
 
 ### Generate Signing Keys
 
