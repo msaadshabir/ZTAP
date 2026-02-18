@@ -186,7 +186,7 @@ var policyShowCmd = &cobra.Command{
 		}
 		if policy == nil {
 			fmt.Printf("policy '%s' not found in cluster\n", policyName)
-			os.Exit(1)
+			return
 		}
 
 		fmt.Printf("Policy: %s\n", policy.Name)
