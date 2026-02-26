@@ -222,6 +222,17 @@ User
 
 ## Security Model
 
+### Error Handling
+
+API servers (REST and gRPC) follow a consistent error-handling pattern:
+
+- **Server-side logging**: Full error details including stack context are logged for operators.
+- **Client-facing errors**: Sanitized messages with appropriate HTTP status codes or gRPC status codes. Internal details are never returned to clients.
+- **Audit hashing**: `EntryHash` returns an error if an entry's `Details` field cannot be serialized, preventing silent creation of incorrect hashes.
+- **Discovery watchers**: K8s watchers propagate initial resolve errors to callers, treating `NoMatchesError` as empty initial state rather than a failure.
+- **Flow subscribers**: Channel lifecycle is managed by a `subscriber` struct with explicit close-once semantics, avoiding `recover()`-based panic suppression.
+- **Auth context**: `Authenticate` accepts a `context.Context` so session creation respects request timeouts and cancellation.
+
 ### Threat Model
 
 | Threat              | Mitigation                         |

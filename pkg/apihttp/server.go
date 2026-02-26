@@ -682,7 +682,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := s.auth.Authenticate(req.Username, req.Password)
+	sess, err := s.auth.Authenticate(r.Context(), req.Username, req.Password)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return

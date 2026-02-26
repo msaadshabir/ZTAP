@@ -8,12 +8,18 @@ import (
 	"ztap/pkg/logging"
 )
 
+// subscriber wraps a flow event channel with close-once semantics.
+type subscriber struct {
+	ch     chan FlowEvent
+	closed bool
+}
+
 // Monitor implements FlowMonitor with subscriber management.
 type Monitor struct {
 	mu          sync.RWMutex
 	running     bool
 	stopCh      chan struct{}
-	subscribers []chan FlowEvent
+	subscribers []*subscriber
 	stats       FlowStats
 	reader      FlowReader // Platform-specific reader
 }
@@ -32,7 +38,7 @@ type FlowReader interface {
 func NewMonitor(reader FlowReader) *Monitor {
 	return &Monitor{
 		stopCh:      make(chan struct{}),
-		subscribers: make([]chan FlowEvent, 0),
+		subscribers: make([]*subscriber, 0),
 		reader:      reader,
 	}
 }
@@ -92,19 +98,18 @@ func (m *Monitor) Stop() error {
 		close(m.stopCh)
 	}
 
-	// Copy subscribers to close outside lock to prevent deadlock
-	subsToClose := make([]chan FlowEvent, len(m.subscribers))
-	copy(subsToClose, m.subscribers)
-	m.subscribers = make([]chan FlowEvent, 0)
+	// Close all subscriber channels under the lock
+	for _, sub := range m.subscribers {
+		if !sub.closed {
+			sub.closed = true
+			close(sub.ch)
+		}
+	}
+	m.subscribers = make([]*subscriber, 0)
 
 	// Recreate stopCh for potential restart
 	m.stopCh = make(chan struct{})
 	m.mu.Unlock()
-
-	// Close subscriber channels outside the lock
-	for _, ch := range subsToClose {
-		close(ch)
-	}
 
 	if err := m.reader.Stop(); err != nil {
 		return err
@@ -124,7 +129,8 @@ func (m *Monitor) Subscribe(ctx context.Context) <-chan FlowEvent {
 		close(ch)
 		return ch
 	}
-	m.subscribers = append(m.subscribers, ch)
+	sub := &subscriber{ch: ch}
+	m.subscribers = append(m.subscribers, sub)
 	m.mu.Unlock()
 
 	// Handle context cancellation
@@ -133,21 +139,14 @@ func (m *Monitor) Subscribe(ctx context.Context) <-chan FlowEvent {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 
-		// Remove this subscriber and close the channel
-		for i, sub := range m.subscribers {
-			if sub == ch {
+		// Remove this subscriber and close the channel if not already closed
+		for i, s := range m.subscribers {
+			if s == sub {
 				m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)
-				// Safe close - only close if we removed it (not already closed by Stop)
-				select {
-				case <-ch:
-					// Channel already closed or has data, try to close
-				default:
+				if !sub.closed {
+					sub.closed = true
+					close(sub.ch)
 				}
-				// Use recover to handle double-close panic
-				func() {
-					defer func() { _ = recover() }()
-					close(ch)
-				}()
 				break
 			}
 		}
@@ -209,11 +208,13 @@ func (m *Monitor) processEvents(ctx context.Context, rawEvents <-chan RawFlowEve
 			}
 
 			// Broadcast to subscribers
-			for _, ch := range m.subscribers {
-				select {
-				case ch <- event:
-				default:
-					// Drop event if subscriber is slow
+			for _, sub := range m.subscribers {
+				if !sub.closed {
+					select {
+					case sub.ch <- event:
+					default:
+						// Drop event if subscriber is slow
+					}
 				}
 			}
 			m.mu.Unlock()

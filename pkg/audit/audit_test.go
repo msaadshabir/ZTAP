@@ -345,9 +345,23 @@ func TestAuditLogger_TruncationDetection(t *testing.T) {
 	if len(data) == 0 {
 		t.Fatalf("unexpected empty log")
 	}
-	if len(data) > 1 {
-		data = data[:len(data)-1]
+	// Remove the last complete JSON entry (newline-delimited).
+	// Find the second-to-last newline and truncate there.
+	trimmed := data
+	if trimmed[len(trimmed)-1] == '\n' {
+		trimmed = trimmed[:len(trimmed)-1]
 	}
+	lastNL := -1
+	for i := len(trimmed) - 1; i >= 0; i-- {
+		if trimmed[i] == '\n' {
+			lastNL = i
+			break
+		}
+	}
+	if lastNL < 0 {
+		t.Fatalf("could not find entry boundary in log")
+	}
+	data = data[:lastNL+1] // keep up to and including the newline
 	if err := os.WriteFile(logPath, data, 0600); err != nil {
 		t.Fatalf("failed to truncate log: %v", err)
 	}
@@ -395,10 +409,18 @@ func TestAuditLogger_TamperAndRecompute(t *testing.T) {
 		t.Fatalf("expected at least 3 entries")
 	}
 	entries[1].Actor = "mallory"
-	entries[1].Hash = EntryHash(&entries[1])
+	h, err := EntryHash(&entries[1])
+	if err != nil {
+		t.Fatalf("failed to compute hash: %v", err)
+	}
+	entries[1].Hash = h
 	for i := 2; i < len(entries); i++ {
 		entries[i].PreviousHash = entries[i-1].Hash
-		entries[i].Hash = EntryHash(&entries[i])
+		ih, err := EntryHash(&entries[i])
+		if err != nil {
+			t.Fatalf("failed to compute hash for entry %d: %v", i, err)
+		}
+		entries[i].Hash = ih
 	}
 
 	f, err := os.Create(logPath)
@@ -652,4 +674,107 @@ func TestAuditLogger_ConcurrentWrites(t *testing.T) {
 	if !valid {
 		t.Error("audit log should be valid after concurrent writes")
 	}
+}
+
+func TestVerifyIntegrityDetailed_EntryCount(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	logger, err := NewAuditLogger(logPath)
+	if err != nil {
+		t.Fatalf("failed to create audit logger: %v", err)
+	}
+
+	// Log exactly 5 entries
+	for i := 0; i < 5; i++ {
+		err := logger.Log(EventPolicyCreated, "admin", "policy", "created", map[string]interface{}{"i": i})
+		if err != nil {
+			t.Fatalf("failed to log entry %d: %v", i, err)
+		}
+	}
+
+	lastHash := logger.lastHash
+	lastSeq := logger.nextSeq - 1
+	_ = logger.Close()
+
+	// Reopen and verify
+	logger2, err := NewAuditLogger(logPath)
+	if err != nil {
+		t.Fatalf("failed to reopen audit logger: %v", err)
+	}
+
+	result := logger2.VerifyIntegrityDetailed(nil)
+	if !result.Valid {
+		t.Fatalf("expected valid result, got error: %v", result.Error)
+	}
+	if result.EntryCount != 5 {
+		t.Errorf("expected EntryCount=5, got %d", result.EntryCount)
+	}
+	if result.LastSeq != lastSeq {
+		t.Errorf("expected LastSeq=%d, got %d", lastSeq, result.LastSeq)
+	}
+	if result.LastHash != lastHash {
+		t.Errorf("expected LastHash=%s, got %s", lastHash, result.LastHash)
+	}
+	_ = logger2.Close()
+}
+
+func TestLoadLastHash_ResetsCounterOnReopen(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	// Create logger and log 3 entries
+	logger, err := NewAuditLogger(logPath)
+	if err != nil {
+		t.Fatalf("failed to create audit logger: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		_ = logger.Log(EventPolicyCreated, "admin", "policy", "created", nil)
+	}
+	if logger.entryCount != 3 {
+		t.Fatalf("expected entryCount=3 after logging, got %d", logger.entryCount)
+	}
+	_ = logger.Close()
+
+	// Reopen - entryCount should be exactly 3 (not accumulated)
+	logger2, err := NewAuditLogger(logPath)
+	if err != nil {
+		t.Fatalf("failed to reopen: %v", err)
+	}
+	if logger2.entryCount != 3 {
+		t.Errorf("expected entryCount=3 after reopen, got %d", logger2.entryCount)
+	}
+	_ = logger2.Close()
+
+	// Reopen again - should still be 3, not 6
+	logger3, err := NewAuditLogger(logPath)
+	if err != nil {
+		t.Fatalf("failed to reopen: %v", err)
+	}
+	if logger3.entryCount != 3 {
+		t.Errorf("expected entryCount=3 after second reopen, got %d", logger3.entryCount)
+	}
+	_ = logger3.Close()
+}
+
+func TestVerifyIntegrityDetailed_EmptyLog(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	logger, err := NewAuditLogger(logPath)
+	if err != nil {
+		t.Fatalf("failed to create audit logger: %v", err)
+	}
+
+	result := logger.VerifyIntegrityDetailed(nil)
+	if !result.Valid {
+		t.Errorf("expected valid result for empty log, got error: %v", result.Error)
+	}
+	if result.EntryCount != 0 {
+		t.Errorf("expected EntryCount=0, got %d", result.EntryCount)
+	}
+	if result.LastHash != zeroHash {
+		t.Errorf("expected LastHash=%s, got %s", zeroHash, result.LastHash)
+	}
+	_ = logger.Close()
 }

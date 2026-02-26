@@ -86,5 +86,12 @@ make -C bpf
 - Run `bash scripts/security_check.sh` before submitting
 - Run `gofmt` on any Go changes
 
+## Error Handling Conventions
+
+- **API handlers** (REST and gRPC): log full error details server-side; return sanitized messages to clients. For gRPC, use `status.Error(codes.*, "short message")`. Never return `err.Error()` directly.
+- **Audit hashing**: `EntryHash` returns `(string, error)`. Callers must check the error.
+- **Context propagation**: functions that perform I/O or interact with external stores should accept `context.Context` as the first parameter.
+- **Channel lifecycle**: do not use `recover()` to suppress double-close panics. Use explicit close-once coordination (e.g., a `closed` flag under a lock).
+
 By submitting a contribution, you agree that your work will be licensed under
 the MIT License (see `LICENSE`).

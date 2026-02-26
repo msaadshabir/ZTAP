@@ -141,6 +141,13 @@ type ValidationError struct {
 }
 ```
 
+API error conventions:
+
+- **gRPC handlers**: log full error server-side, return `status.Error(codes.*, "sanitized message")`. Never return `err.Error()` directly.
+- **REST handlers**: log full error, return sanitized JSON error with appropriate HTTP status code.
+- **Audit hashing**: `EntryHash` returns `(string, error)`. Callers must propagate the error.
+- **Channel lifecycle**: use explicit close-once coordination (closed flag under lock). Do not use `recover()` to suppress double-close panics.
+
 ## Audit Logging
 
 `pkg/audit/audit.go` uses SHA-256 hash chaining (optionally signatures/checkpoints) for tamper detection:
@@ -153,6 +160,18 @@ auditLogger.VerifyIntegrity() // Hash-chain verification
 // Detailed verification (signatures/checkpoints when configured)
 auditLogger.VerifyIntegrityDetailed(verifier)
 ```
+
+`EntryHash` returns `(string, error)` — callers must handle the error (returned when `Details` cannot be JSON-serialized).
+
+## Authentication
+
+`auth.Authenticate` accepts a `context.Context` as the first parameter:
+
+```go
+token, err := auth.Authenticate(ctx, username, password)
+```
+
+All internal callers (gRPC, REST, CLI) pass the request context or `context.Background()` accordingly.
 
 ## Policy YAML Format
 

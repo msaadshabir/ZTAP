@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -197,7 +198,24 @@ func (d *K8sDiscovery) Watch(ctx context.Context, selector map[string]string) (<
 	d.mu.Unlock()
 
 	// Send initial state
-	ips, _ := d.ResolveLabels(selector)
+	ips, err := d.ResolveLabels(selector)
+	if err != nil {
+		// NoMatchesError is expected when no pods match yet; treat as empty
+		var noMatch *NoMatchesError
+		if !errors.As(err, &noMatch) {
+			d.mu.Lock()
+			for i, w := range d.watchers {
+				if w == watcher {
+					d.watchers = append(d.watchers[:i], d.watchers[i+1:]...)
+					break
+				}
+			}
+			d.mu.Unlock()
+			close(ch)
+			return nil, fmt.Errorf("resolving initial watch state: %w", err)
+		}
+		ips = nil
+	}
 	watcher.lastIPs = ips
 	ch <- ips
 
@@ -235,7 +253,24 @@ func (d *K8sDiscovery) WatchSelector(ctx context.Context, selector policy.PodSel
 	d.mu.Unlock()
 
 	// Send initial state
-	ips, _ := d.ResolveSelector(selector)
+	ips, err := d.ResolveSelector(selector)
+	if err != nil {
+		// NoMatchesError is expected when no pods match yet; treat as empty
+		var noMatch *NoMatchesError
+		if !errors.As(err, &noMatch) {
+			d.mu.Lock()
+			for i, w := range d.watchers {
+				if w == watcher {
+					d.watchers = append(d.watchers[:i], d.watchers[i+1:]...)
+					break
+				}
+			}
+			d.mu.Unlock()
+			close(ch)
+			return nil, fmt.Errorf("resolving initial watch selector state: %w", err)
+		}
+		ips = nil
+	}
 	watcher.lastIPs = ips
 	ch <- ips
 

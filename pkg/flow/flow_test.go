@@ -449,3 +449,118 @@ func TestUint32ToIP(t *testing.T) {
 		}
 	}
 }
+
+func TestMonitor_SubscriberLifecycle_NoPanic(t *testing.T) {
+	// This test verifies that stopping a monitor while a subscriber's context
+	// is cancelled does not cause a double-close panic.
+	reader := &delayedReader{events: []RawFlowEvent{
+		{Protocol: ProtocolTCP, Direction: DirectionEgress, Action: ActionAllowed},
+	}, delay: 50 * time.Millisecond}
+	monitor := NewMonitor(reader)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := monitor.Start(ctx); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+
+	// Create multiple subscribers
+	subCtx1, subCancel1 := context.WithCancel(ctx)
+	subCtx2, subCancel2 := context.WithCancel(ctx)
+	ch1 := monitor.Subscribe(subCtx1)
+	ch2 := monitor.Subscribe(subCtx2)
+	_ = ch1
+	_ = ch2
+
+	// Cancel one subscriber's context right before stopping
+	subCancel1()
+	time.Sleep(10 * time.Millisecond) // Give goroutine time to run
+
+	// Stop the monitor - should close remaining subscribers without panic
+	if err := monitor.Stop(); err != nil {
+		t.Fatalf("Stop error: %v", err)
+	}
+
+	// Cancel the second subscriber's context after stop
+	subCancel2()
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify channels are closed
+	select {
+	case _, ok := <-ch1:
+		if ok {
+			// Might receive a buffered event, drain
+			for range ch1 {
+			}
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Error("ch1 should be closed")
+	}
+
+	select {
+	case _, ok := <-ch2:
+		if ok {
+			for range ch2 {
+			}
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Error("ch2 should be closed")
+	}
+}
+
+func TestMonitor_SubscribeAfterStop(t *testing.T) {
+	reader := &testReader{events: nil}
+	monitor := NewMonitor(reader)
+
+	ctx := context.Background()
+	_ = monitor.Start(ctx)
+	_ = monitor.Stop()
+
+	// Subscribing after stop should return a closed channel
+	ch := monitor.Subscribe(ctx)
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Error("expected closed channel after stop")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Error("channel should be closed immediately")
+	}
+}
+
+func TestMonitor_ConcurrentSubscribeUnsubscribe(t *testing.T) {
+	reader := &delayedReader{events: []RawFlowEvent{
+		{Protocol: ProtocolTCP, Direction: DirectionEgress, Action: ActionAllowed},
+		{Protocol: ProtocolUDP, Direction: DirectionIngress, Action: ActionBlocked},
+	}, delay: 50 * time.Millisecond}
+
+	monitor := NewMonitor(reader)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := monitor.Start(ctx); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	// Spin up multiple subscribers that cancel at different times
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			subCtx, subCancel := context.WithTimeout(ctx, time.Duration(50+n*10)*time.Millisecond)
+			ch := monitor.Subscribe(subCtx)
+			for range ch {
+			}
+			subCancel()
+		}(i)
+	}
+
+	// Stop the monitor while subscribers are active
+	time.Sleep(100 * time.Millisecond)
+	_ = monitor.Stop()
+
+	// Wait for all goroutines to finish without panic
+	wg.Wait()
+}

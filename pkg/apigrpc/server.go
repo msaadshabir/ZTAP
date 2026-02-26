@@ -23,6 +23,7 @@ import (
 	"ztap/pkg/enforcer"
 	"ztap/pkg/flow"
 	"ztap/pkg/health"
+	"ztap/pkg/logging"
 	"ztap/pkg/policy"
 	"ztap/pkg/ratelimit"
 	apiv1 "ztap/proto/ztap/api/v1"
@@ -769,9 +770,9 @@ func (a *authService) Login(ctx context.Context, req *apiv1.LoginRequest) (*apiv
 		return nil, status.Error(codes.InvalidArgument, "username and password are required")
 	}
 
-	sess, err := a.srv.auth.Authenticate(username, password)
+	sess, err := a.srv.auth.Authenticate(ctx, username, password)
 	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, err.Error())
+		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 	}
 
 	return &apiv1.LoginResponse{
@@ -854,7 +855,8 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			return nil, status.Error(codes.InvalidArgument, "policy contains podSelector targets but no discovery backend is configured")
 		}
 		if err := e.srv.ensureDiscoveryStarted(); err != nil {
-			return nil, status.Error(codes.Internal, fmt.Errorf("failed to start discovery backend: %w", err).Error())
+			logging.Errorf("failed to start discovery backend: %v", err)
+			return nil, status.Error(codes.Internal, "failed to start discovery backend")
 		}
 		enforcer.WarnNoMatchPolicyTargets(e.srv.discovery, enforcer.SelectorRefreshOptions{Scope: policyTenant}, basePolicies)
 		resolver := policy.NewPolicyResolver(e.srv.discovery)
@@ -926,7 +928,8 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			}
 			baseDirAbs, err := filepath.Abs(safeBPFDir)
 			if err != nil {
-				return nil, status.Error(codes.Internal, fmt.Errorf("failed to resolve bpf directory: %w", err).Error())
+				logging.Errorf("failed to resolve bpf directory: %v", err)
+				return nil, status.Error(codes.Internal, "failed to resolve bpf directory")
 			}
 			absPath := cleaned
 			if !filepath.IsAbs(cleaned) {
@@ -962,7 +965,8 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 				DedupKey: fmt.Sprintf("%s:%s:error", policyKey, platform),
 				Details:  map[string]any{"platform": platform, "count": len(policies)},
 			})
-			return nil, status.Error(codes.Internal, fmt.Errorf("failed to enforce via eBPF: %w", err).Error())
+			logging.Errorf("failed to enforce via eBPF: %v", err)
+			return nil, status.Error(codes.Internal, "failed to enforce policy via eBPF")
 		}
 
 		e.srv.stopEnforcementRefreshLocked()
@@ -994,7 +998,8 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 		srvCtx = context.Background()
 	}
 	if err := enforceWithPF(enforcer.EnforcementOptions{Policies: policies, Context: srvCtx}); err != nil {
-		return nil, fmt.Errorf("failed to enforce via pf: %w", err)
+		logging.Errorf("failed to enforce via pf: %v", err)
+		return nil, status.Error(codes.Internal, "failed to enforce policy")
 	}
 	e.srv.stopEnforcementRefreshLocked()
 	_ = e.srv.audit.Log(audit.EventPolicyEnforced, "system", policyKey, "enforce", map[string]any{"platform": runtime.GOOS, "count": len(policies)})
@@ -1014,7 +1019,8 @@ func (e *enforcementService) Stop(ctx context.Context, _ *emptypb.Empty) (*apiv1
 		return nil, status.Error(codes.PermissionDenied, "eBPF enforcement requires root privileges")
 	}
 	if err := stopEBPFEnforcement(); err != nil {
-		return nil, status.Error(codes.Internal, fmt.Errorf("failed to stop eBPF enforcement: %w", err).Error())
+		logging.Errorf("failed to stop eBPF enforcement: %v", err)
+		return nil, status.Error(codes.Internal, "failed to stop eBPF enforcement")
 	}
 	return &apiv1.EnforcementStopResponse{Stopped: true}, nil
 }
@@ -1025,7 +1031,8 @@ func (f *flowsService) Stream(_ *emptypb.Empty, stream apiv1.FlowsService_Stream
 	reader := f.srv.flowReader()
 	monitor := flow.NewMonitor(reader)
 	if err := monitor.Start(ctx); err != nil {
-		return status.Error(codes.Internal, err.Error())
+		logging.Errorf("failed to start flow monitor: %v", err)
+		return status.Error(codes.Internal, "failed to start flow monitor")
 	}
 	defer func() { _ = monitor.Stop() }()
 
@@ -1083,7 +1090,8 @@ func (p *policyService) GetPolicy(ctx context.Context, req *apiv1.GetPolicyReque
 	policyKey := key + "/" + name
 	state, err := p.srv.policyManager.GetPolicy(policyKey)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		logging.Errorf("failed to get policy %s: %v", policyKey, err)
+		return nil, status.Error(codes.Internal, "failed to retrieve policy")
 	}
 	if state == nil {
 		return nil, status.Error(codes.NotFound, "policy not found")
@@ -1122,7 +1130,8 @@ func (p *policyService) PutPolicy(ctx context.Context, req *apiv1.PutPolicyReque
 		}
 		current, err := p.srv.policyManager.GetPolicyVersion(policyKey)
 		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			logging.Errorf("failed to get policy version for %s: %v", policyKey, err)
+			return nil, status.Error(codes.Internal, "failed to retrieve policy version")
 		}
 		if current != expected {
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("expected version %d, got %d", expected, current))
@@ -1184,7 +1193,8 @@ func (p *policyService) ListPolicyRevisions(ctx context.Context, req *apiv1.List
 	limit := int(req.GetLimit())
 	revs, err := p.srv.policyManager.ListPolicyRevisions(policyKey, limit)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		logging.Errorf("failed to list policy revisions for %s: %v", policyKey, err)
+		return nil, status.Error(codes.Internal, "failed to list policy revisions")
 	}
 	resp := &apiv1.ListPolicyRevisionsResponse{Revisions: make([]*apiv1.PolicyRevision, 0, len(revs))}
 	includeYAML := req.GetIncludeYaml()
@@ -1230,7 +1240,8 @@ func (p *policyService) GetPolicyRevision(ctx context.Context, req *apiv1.GetPol
 	policyKey := tenant + "/" + name
 	rev, err := p.srv.policyManager.GetPolicyRevision(policyKey, req.GetVersion())
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		logging.Errorf("failed to get policy revision for %s v%d: %v", policyKey, req.GetVersion(), err)
+		return nil, status.Error(codes.Internal, "failed to retrieve policy revision")
 	}
 	if rev == nil {
 		return nil, status.Error(codes.NotFound, "revision not found")
@@ -1312,9 +1323,10 @@ func (u *usersService) GetUser(ctx context.Context, req *apiv1.GetUserRequest) (
 	user, err := u.srv.auth.GetUser(username)
 	if err != nil {
 		if errors.Is(err, auth.ErrUserNotFound) {
-			return nil, status.Error(codes.NotFound, err.Error())
+			return nil, status.Error(codes.NotFound, "user not found")
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		logging.Errorf("failed to get user %s: %v", username, err)
+		return nil, status.Error(codes.Internal, "failed to retrieve user")
 	}
 	info := &apiv1.User{
 		Username:  user.Username,

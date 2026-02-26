@@ -7,16 +7,32 @@ and Semantic Versioning (https://semver.org/).
 
 ## Unreleased
 
-### Changed
+### Breaking Changes
 
-- **Documentation overhaul**: restructured docs into `guides/`, `concepts/`, `reference/`, and `runbooks/` subdirectories. Created `docs/index.md` as navigation hub and dedicated CLI, Configuration, and API reference pages. Replaced `docs/roadmap.md` with `docs/project-status.md`. Fixed Go version (1.25), Python version (3.11+), removed nonexistent `ztap daemon` command, corrected admin bootstrap workflow, standardized `docker compose` (no hyphen), and removed stale coverage numbers.
+- **`auth.Authenticate` signature change**: `Authenticate(username, password string)` is now `Authenticate(ctx context.Context, username, password string)`. All internal callers (gRPC, REST, CLI) have been updated. External consumers of the library API must pass a `context.Context` as the first argument.
+- **`audit.EntryHash` return type change**: `EntryHash(entry)` now returns `(string, error)` instead of `string`. Callers must handle the error (returned when `Details` cannot be JSON-serialized).
+
+### Fixed
+
+- **Audit: `VerifyIntegrityDetailed` double-counted entries**: The entry position was incremented twice per iteration, inflating `EntryCount` in the verification result.
+- **Audit: `loadLastHash` accumulated `entryCount` across calls**: Reopening an audit log file caused `entryCount` to grow without bound. The index cache was also exposed in a partially-built state during loading. Fixed by building a local cache and assigning atomically under the lock.
+- **Audit: `EntryHash` silently ignored marshal errors**: If `Details` contained a non-serializable value, `json.Marshal` would fail silently and produce an incorrect hash. `EntryHash` now returns an error.
+- **Audit: truncation detection test fragility**: `TestAuditLogger_TruncationDetection` now removes the last full JSON entry instead of a single trailing byte, ensuring a deterministic checkpoint mismatch.
+- **Discovery: K8s watchers ignored initial resolve errors**: `Watch` and `WatchSelector` in `K8sDiscovery` discarded errors from `ResolveLabels`/`ResolveSelector` when sending initial state. Real errors are now propagated to the caller; `NoMatchesError` is treated as empty initial state.
+- **gRPC: raw error strings leaked internal details**: Several gRPC handlers returned `err.Error()` or `fmt.Errorf(...).Error()` directly to clients. Handlers now log full error details server-side and return sanitized `status.Error` responses with appropriate gRPC codes.
+- **Flow: `Monitor.Subscribe` used `recover()` to catch double-close panics**: This masked a channel ownership/race problem. Replaced with a `subscriber` struct that tracks a `closed` flag; both `Stop()` and context-cancel coordinate closure under a lock.
+- **Auth: `Authenticate` used `context.Background()` for session store calls**: Requests were un-cancelable. `Authenticate` now accepts and propagates a caller-supplied `context.Context`.
 
 ### Added
 
+- New audit tests: `TestVerifyIntegrityDetailed_EntryCount`, `TestLoadLastHash_ResetsCounterOnReopen`, `TestVerifyIntegrityDetailed_EmptyLog`, `TestEntryHash_NilEntry`, `TestEntryHash_ValidEntry`, `TestEntryHash_NonSerializableDetails`.
+- New flow monitor tests: `TestMonitor_SubscriberLifecycle_NoPanic`, `TestMonitor_SubscribeAfterStop`, `TestMonitor_ConcurrentSubscribeUnsubscribe`.
+- New discovery test: `TestK8sDiscovery_WatchNoMatchInitialState`.
 - Documented comprehensive local security audit workflow in `README.md`, `CONTRIBUTING.md`, and `docs/guides/testing.md`.
 
 ### Changed
 
+- **Documentation overhaul**: restructured docs into `guides/`, `concepts/`, `reference/`, and `runbooks/` subdirectories. Created `docs/index.md` as navigation hub and dedicated CLI, Configuration, and API reference pages. Replaced `docs/roadmap.md` with `docs/project-status.md`. Fixed Go version (1.25), Python version (3.11+), removed nonexistent `ztap daemon` command, corrected admin bootstrap workflow, standardized `docker compose` (no hyphen), and removed stale coverage numbers.
 - Clarified recommended contributor test workflow to include race detection (`go test ./... -race`).
 
 ### Fixed

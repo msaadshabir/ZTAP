@@ -179,7 +179,11 @@ func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, acti
 	}
 
 	// Calculate hash of this entry
-	entry.Hash = al.calculateHash(&entry)
+	hash, err := al.calculateHash(&entry)
+	if err != nil {
+		return fmt.Errorf("failed to calculate entry hash: %w", err)
+	}
+	entry.Hash = hash
 
 	// Sign entry if signer is configured
 	if al.signer != nil {
@@ -364,7 +368,10 @@ func (al *AuditLogger) VerifyIntegrity() (bool, error) {
 		}
 
 		// Verify entry hash
-		expectedHash := al.calculateHash(&entry)
+		expectedHash, err := al.calculateHash(&entry)
+		if err != nil {
+			return false, fmt.Errorf("failed to calculate hash at position %d: %w", position, err)
+		}
 		if entry.Hash != expectedHash {
 			return false, fmt.Errorf("entry %s has been tampered with: expected hash %s, got %s",
 				entry.ID, expectedHash, entry.Hash)
@@ -441,7 +448,14 @@ func (al *AuditLogger) VerifyIntegrityDetailed(verifier Verifier) VerifyResult {
 			return result
 		}
 
-		expectedHash := al.calculateHash(&entry)
+		expectedHash, err := al.calculateHash(&entry)
+		if err != nil {
+			result.Valid = false
+			result.HashChainValid = false
+			result.FirstInvalidEntry = entry.ID
+			result.Error = fmt.Errorf("failed to calculate hash at entry %s: %w", entry.ID, err)
+			return result
+		}
 		if entry.Hash != expectedHash {
 			result.Valid = false
 			result.HashChainValid = false
@@ -504,7 +518,6 @@ func (al *AuditLogger) VerifyIntegrityDetailed(verifier Verifier) VerifyResult {
 		}
 
 		previousHash = entry.Hash
-		position++
 	}
 
 	result.EntryCount = position
@@ -605,7 +618,7 @@ func (al *AuditLogger) GetStats() (map[string]interface{}, error) {
 }
 
 // calculateHash computes SHA-256 hash of the entry (excluding the Hash field itself).
-func (al *AuditLogger) calculateHash(entry *AuditEntry) string {
+func (al *AuditLogger) calculateHash(entry *AuditEntry) (string, error) {
 	return EntryHash(entry)
 }
 
@@ -661,28 +674,27 @@ func (al *AuditLogger) loadLastHash() error {
 	decoder := json.NewDecoder(reader)
 	var lastEntry AuditEntry
 
-	// Build index cache while scanning (without expensive marshaling)
-	al.cacheMu.Lock()
-	al.indexCache = make([]indexEntry, 0, 1000)
+	// Build index cache locally, then replace atomically
+	newCache := make([]indexEntry, 0, 1000)
 
-	position := int64(0)
+	var entryCount int64
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
 			if err == io.EOF {
 				break
 			}
-			al.cacheMu.Unlock()
+			al.cacheMu.Lock()
 			al.cacheValid = false
-			return fmt.Errorf("corrupted entry at position %d: %w", position, err)
+			al.cacheMu.Unlock()
+			return fmt.Errorf("corrupted entry at position %d: %w", entryCount, err)
 		}
 
 		lastEntry = entry
-		al.entryCount++
-		position++
+		entryCount++
 
 		// Add to index cache (sequential access, no file seeking needed)
-		al.indexCache = append(al.indexCache, indexEntry{
+		newCache = append(newCache, indexEntry{
 			timestamp: entry.Timestamp,
 			eventType: entry.EventType,
 			actor:     entry.Actor,
@@ -690,8 +702,13 @@ func (al *AuditLogger) loadLastHash() error {
 		})
 	}
 
+	// Atomically replace cache and counters
+	al.cacheMu.Lock()
+	al.indexCache = newCache
 	al.cacheValid = true
 	al.cacheMu.Unlock()
+
+	al.entryCount = entryCount
 
 	if lastEntry.Hash != "" {
 		al.lastHash = lastEntry.Hash
@@ -700,8 +717,8 @@ func (al *AuditLogger) loadLastHash() error {
 	}
 	if lastEntry.Seq > 0 {
 		al.nextSeq = lastEntry.Seq + 1
-	} else if al.entryCount > 0 {
-		al.nextSeq = al.entryCount + 1
+	} else if entryCount > 0 {
+		al.nextSeq = entryCount + 1
 	}
 
 	return nil

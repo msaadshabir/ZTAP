@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -251,7 +252,7 @@ var loginCmd = &cobra.Command{
 		}
 		defer func() { _ = am.Close() }()
 
-		session, err := am.Authenticate(username, string(passwordBytes))
+		session, err := am.Authenticate(context.Background(), username, string(passwordBytes))
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)

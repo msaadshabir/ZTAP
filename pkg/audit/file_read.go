@@ -13,9 +13,10 @@ import (
 
 // EntryHash computes the SHA-256 hash of an audit entry, excluding the Hash field itself.
 // This must remain compatible with the hash chaining used by AuditLogger.
-func EntryHash(entry *AuditEntry) string {
+// Returns an error if the entry cannot be serialized.
+func EntryHash(entry *AuditEntry) (string, error) {
 	if entry == nil {
-		return ""
+		return "", nil
 	}
 
 	data := struct {
@@ -46,9 +47,12 @@ func EntryHash(entry *AuditEntry) string {
 		NodeID:       entry.NodeID,
 	}
 
-	b, _ := json.Marshal(data)
+	b, err := json.Marshal(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal audit entry for hashing: %w", err)
+	}
 	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // FileStats is a lightweight summary of an audit log file.
@@ -125,7 +129,10 @@ func VerifyFileIntegrity(path string) (bool, error) {
 		if entry.PreviousHash != previousHash {
 			return false, fmt.Errorf("hash chain broken at entry %s: expected previous hash %s, got %s", entry.ID, previousHash, entry.PreviousHash)
 		}
-		expected := EntryHash(&entry)
+		expected, err := EntryHash(&entry)
+		if err != nil {
+			return false, fmt.Errorf("failed to compute hash for entry %s: %w", entry.ID, err)
+		}
 		if entry.Hash != expected {
 			return false, fmt.Errorf("entry %s has been tampered with: expected hash %s, got %s", entry.ID, expected, entry.Hash)
 		}

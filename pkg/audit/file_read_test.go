@@ -92,3 +92,62 @@ func TestVerifyFileIntegrityDetectsTamper(t *testing.T) {
 		t.Fatalf("expected ok=false")
 	}
 }
+
+func TestEntryHash_NilEntry(t *testing.T) {
+	hash, err := EntryHash(nil)
+	if err != nil {
+		t.Fatalf("unexpected error for nil entry: %v", err)
+	}
+	if hash != "" {
+		t.Errorf("expected empty hash for nil entry, got %s", hash)
+	}
+}
+
+func TestEntryHash_ValidEntry(t *testing.T) {
+	entry := &AuditEntry{
+		ID:           "test-1",
+		Timestamp:    time.Now().UTC(),
+		EventType:    EventPolicyCreated,
+		Actor:        "admin",
+		Resource:     "policy-1",
+		Action:       "created",
+		PreviousHash: "0000000000000000000000000000000000000000000000000000000000000000",
+	}
+
+	hash, err := EntryHash(entry)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hash == "" {
+		t.Fatal("expected non-empty hash")
+	}
+
+	// Calling again with same data should produce the same hash
+	hash2, err := EntryHash(entry)
+	if err != nil {
+		t.Fatalf("unexpected error on second call: %v", err)
+	}
+	if hash != hash2 {
+		t.Errorf("expected same hash, got %s and %s", hash, hash2)
+	}
+}
+
+func TestEntryHash_NonSerializableDetails(t *testing.T) {
+	entry := &AuditEntry{
+		ID:           "test-1",
+		Timestamp:    time.Now().UTC(),
+		EventType:    EventPolicyCreated,
+		Actor:        "admin",
+		Resource:     "policy-1",
+		Action:       "created",
+		PreviousHash: "0000000000000000000000000000000000000000000000000000000000000000",
+		Details: map[string]interface{}{
+			"bad_value": make(chan int), // channels are not JSON-serializable
+		},
+	}
+
+	_, err := EntryHash(entry)
+	if err == nil {
+		t.Fatal("expected error for non-serializable Details, got nil")
+	}
+}

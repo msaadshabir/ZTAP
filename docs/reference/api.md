@@ -114,6 +114,10 @@ When rate limiting is enabled (`api.rate_limit.enabled: true` or `--rate-limit`)
 
 Default listen: `127.0.0.1:9092`. Auth: send `authorization: Bearer <token>` as gRPC metadata.
 
+### Error Handling
+
+gRPC handlers return sanitized error messages using standard gRPC status codes. Internal error details are logged server-side but never exposed to clients. For example, an internal failure during enforcement returns `status.Error(codes.Internal, "enforcement failed")` rather than the raw error string. This prevents leaking implementation details to API consumers.
+
 ### Services
 
 | Service | RPCs |

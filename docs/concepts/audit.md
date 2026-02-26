@@ -23,7 +23,7 @@ ZTAP includes a tamper-evident audit logging system that records all policy oper
 
 Each audit entry contains:
 
-- **Hash**: SHA-256 hash of the current entry's content
+- **Hash**: SHA-256 hash of the current entry's content (returns an error if the entry's Details cannot be JSON-serialized)
 - **Previous Hash**: Hash of the immediately preceding entry
 - **Seq**: Monotonic sequence number
 - **Signature Fields** (optional): `integrity_alg`, `key_id`, `sig`
@@ -286,6 +286,18 @@ result := logger.VerifyIntegrityDetailed(verifier)
 if !result.Valid {
     log.Printf("Integrity check failed: %v", result.Error)
 }
+// result.EntryCount contains the number of entries verified
+```
+
+### Computing Entry Hashes
+
+`EntryHash` returns an error if the entry's `Details` field cannot be JSON-serialized:
+
+```go
+hash, err := audit.EntryHash(entry)
+if err != nil {
+    log.Printf("cannot hash entry: %v", err)
+}
 ```
 
 ## Security Considerations
@@ -353,6 +365,12 @@ go test ./pkg/audit -v -cover
 # PASS: TestAuditLogger_ConcurrentWrites
 # PASS: TestVerifyFileIntegrityAndQueryFile
 # PASS: TestVerifyFileIntegrityDetectsTamper
+# PASS: TestVerifyIntegrityDetailed_EntryCount
+# PASS: TestLoadLastHash_ResetsCounterOnReopen
+# PASS: TestVerifyIntegrityDetailed_EmptyLog
+# PASS: TestEntryHash_NilEntry
+# PASS: TestEntryHash_ValidEntry
+# PASS: TestEntryHash_NonSerializableDetails
 # coverage: (varies)
 ```
 

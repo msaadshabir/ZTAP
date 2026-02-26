@@ -52,7 +52,7 @@ func TestAuthenticate(t *testing.T) {
 
 	_ = manager.CreateUser("testuser", "correctpassword", RoleOperator)
 
-	session, err := manager.Authenticate("testuser", "correctpassword")
+	session, err := manager.Authenticate(context.Background(), "testuser", "correctpassword")
 	if err != nil {
 		t.Fatalf("Authentication failed: %v", err)
 	}
@@ -65,18 +65,18 @@ func TestAuthenticate(t *testing.T) {
 		t.Error("Session token is empty")
 	}
 
-	_, err = manager.Authenticate("testuser", "wrongpassword")
+	_, err = manager.Authenticate(context.Background(), "testuser", "wrongpassword")
 	if err == nil {
 		t.Error("Expected error for wrong password")
 	}
 
-	_, err = manager.Authenticate("nonexistent", "password")
+	_, err = manager.Authenticate(context.Background(), "nonexistent", "password")
 	if err == nil {
 		t.Error("Expected error for nonexistent user")
 	}
 
 	_ = manager.DisableUser("testuser")
-	_, err = manager.Authenticate("testuser", "correctpassword")
+	_, err = manager.Authenticate(context.Background(), "testuser", "correctpassword")
 	if err == nil {
 		t.Error("Expected error for disabled user")
 	}
@@ -87,7 +87,7 @@ func TestValidateSession(t *testing.T) {
 	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
 
 	_ = manager.CreateUser("testuser", "password", RoleOperator)
-	session, _ := manager.Authenticate("testuser", "password")
+	session, _ := manager.Authenticate(context.Background(), "testuser", "password")
 
 	validatedSession, err := manager.ValidateSession(session.Token)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestDisableUserRevokesSessions(t *testing.T) {
 	manager, _ := NewAuthManager(filepath.Join(tmpDir, "users.json"))
 
 	_ = manager.CreateUser("testuser", "password", RoleOperator)
-	session, _ := manager.Authenticate("testuser", "password")
+	session, _ := manager.Authenticate(context.Background(), "testuser", "password")
 
 	if _, err := manager.ValidateSession(session.Token); err != nil {
 		t.Fatalf("ValidateSession before disable: %v", err)
@@ -142,9 +142,9 @@ func TestHasPermission(t *testing.T) {
 	_ = manager.CreateUser("viewer", "pass", RoleViewer)
 
 	// Authenticate and get tokens
-	adminSession, _ := manager.Authenticate("admin2", "pass")
-	operatorSession, _ := manager.Authenticate("operator", "pass")
-	viewerSession, _ := manager.Authenticate("viewer", "pass")
+	adminSession, _ := manager.Authenticate(context.Background(), "admin2", "pass")
+	operatorSession, _ := manager.Authenticate(context.Background(), "operator", "pass")
+	viewerSession, _ := manager.Authenticate(context.Background(), "viewer", "pass")
 
 	tests := []struct {
 		token      string
@@ -181,12 +181,12 @@ func TestChangePassword(t *testing.T) {
 		t.Fatalf("Failed to change password: %v", err)
 	}
 
-	_, err = manager.Authenticate("testuser", "oldpassword")
+	_, err = manager.Authenticate(context.Background(), "testuser", "oldpassword")
 	if err == nil {
 		t.Error("Old password still works")
 	}
 
-	_, err = manager.Authenticate("testuser", "newpassword")
+	_, err = manager.Authenticate(context.Background(), "testuser", "newpassword")
 	if err != nil {
 		t.Errorf("New password doesn't work: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestDefaultAdmin(t *testing.T) {
 		t.Errorf("Expected admin role, got '%s'", admin.Role)
 	}
 
-	_, err := manager.Authenticate("admin", "ztap-admin-change-me")
+	_, err := manager.Authenticate(context.Background(), "admin", "ztap-admin-change-me")
 	if err != nil {
 		t.Errorf("Admin authentication failed: %v", err)
 	}

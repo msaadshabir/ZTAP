@@ -304,7 +304,7 @@ func (am *AuthManager) GetUser(username string) (*User, error) {
 }
 
 // Authenticate validates credentials and creates a session
-func (am *AuthManager) Authenticate(username, password string) (*Session, error) {
+func (am *AuthManager) Authenticate(ctx context.Context, username, password string) (*Session, error) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 	username = strings.TrimSpace(username)
@@ -345,7 +345,7 @@ func (am *AuthManager) Authenticate(username, password string) (*Session, error)
 		ExpiresAt: time.Now().Add(am.sessionTTL),
 	}
 
-	if err := am.store.Put(context.Background(), token, session); err != nil {
+	if err := am.store.Put(ctx, token, session); err != nil {
 		return nil, err
 	}
 

@@ -31,6 +31,41 @@ ZTAP includes comprehensive test coverage across all critical components with un
 
 **Run**: `go test ./pkg/compliance/... -v`
 
+#### Audit Package (`pkg/audit`)
+
+- **TestNewAuditLogger**: Logger creation and initialization
+- **TestAuditLogger_Log**: Event logging
+- **TestAuditLogger_LogFailure**: Failure event logging
+- **TestAuditLogger_HashChaining**: SHA-256 hash chain correctness
+- **TestAuditLogger_VerifyIntegrity**: Full integrity verification pass
+- **TestAuditLogger_VerifyIntegrityDetectsTampering**: Tamper detection
+- **TestAuditLogger_Ed25519Signing**: Ed25519 signature verification
+- **TestAuditLogger_TruncationDetection**: Checkpoint-based truncation detection
+- **TestAuditLogger_TamperAndRecompute**: Tamper and re-hash detection
+- **TestVerifyIntegrity_DetectsCorruption**: Corruption detection
+- **TestFullWorkflow**: End-to-end audit workflow
+- **TestAuditLogger_Query** / **TestAuditLogger_QueryByResource**: Query filtering
+- **TestAuditLogger_GetStats**: Statistics reporting
+- **TestAuditLogger_Persistence**: Log persistence across reopens
+- **TestAuditLogger_ConcurrentWrites**: Thread-safety under concurrent writes
+- **TestVerifyFileIntegrityAndQueryFile** / **TestVerifyFileIntegrityDetectsTamper**: File-level integrity
+- **TestVerifyIntegrityDetailed_EntryCount**: Verifies entry count accuracy in detailed verification
+- **TestLoadLastHash_ResetsCounterOnReopen**: Verifies entryCount resets correctly when log is reopened
+- **TestVerifyIntegrityDetailed_EmptyLog**: Empty log edge case
+- **TestEntryHash_NilEntry**: Nil entry hash behavior
+- **TestEntryHash_ValidEntry**: Valid entry hash computation
+- **TestEntryHash_NonSerializableDetails**: Verifies error return when Details cannot be JSON-serialized
+
+**Run**: `go test ./pkg/audit/... -v`
+
+#### Flow Package (`pkg/flow`)
+
+- **TestMonitor_SubscriberLifecycle_NoPanic**: Subscribe/unsubscribe without panics or races
+- **TestMonitor_SubscribeAfterStop**: Subscribing after monitor stop returns nil channel
+- **TestMonitor_ConcurrentSubscribeUnsubscribe**: Concurrent subscribe/unsubscribe safety
+
+**Run**: `go test ./pkg/flow/... -v`
+
 #### Discovery Package (`pkg/discovery/discovery_test.go`)
 
 - **TestInMemoryDiscovery_RegisterAndResolve**: Service registration and label-based resolution
@@ -45,6 +80,7 @@ ZTAP includes comprehensive test coverage across all critical components with un
   - TTL expiration
   - Cache clearing
 - **TestMatchLabels**: Label selector matching logic
+- **TestK8sDiscovery_WatchNoMatchInitialState**: Validates that K8s watcher treats `NoMatchesError` as empty initial state while propagating real errors
 
 **Run**: `go test ./pkg/discovery/... -v`
 

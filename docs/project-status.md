@@ -48,6 +48,16 @@ Current state of the ZTAP project: what has been delivered and what is planned.
 - Structured logging with filtering
 - `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`
 
+## Recent Work
+
+- Correctness and robustness audit across core packages (audit, discovery, flow, auth, gRPC)
+- Fixed audit integrity verification double-counting, index cache race, and silent hash errors
+- Fixed K8s discovery watcher error propagation on initial resolve
+- Sanitized gRPC error responses (log full details server-side, return safe messages to clients)
+- Reworked flow monitor subscriber lifecycle to eliminate recover()-based double-close
+- Added context propagation to `auth.Authenticate` (breaking API change)
+- Added regression tests for audit, flow, and discovery edge cases
+
 ## Current Focus
 
-Documentation overhaul and bug fixes to stabilize the project. No new feature work is planned at this time.
+Bug fixes and test hardening to stabilize the project for production use. No new feature work is planned at this time.
