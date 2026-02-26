@@ -241,7 +241,7 @@ Compile-check WFP codepaths from non-Windows hosts:
 GOOS=windows GOARCH=amd64 go test ./... -c
 ```
 
-CI note: `.github/workflows/ci.yml` runs Go unit tests on `windows-latest` and includes Windows in the cross-build matrix.
+CI note: `.github/workflows/ci.yml` runs Go unit tests on `windows-latest` (in the matrix) and includes Windows in the cross-build matrix.
 
 ## Test Results Summary
 
@@ -289,13 +289,16 @@ services := []Service{
 
 ## Continuous Integration
 
-The repository ships with `.github/workflows/ci.yml`, which runs linting plus Go tests on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
+The repository ships with `.github/workflows/ci.yml`, which runs `golangci-lint` plus Go tests on `ubuntu-24.04`, `macos-latest`, and `windows-latest`. The CI runs on every PR and weekly on Monday at 02:00 UTC.
 
 Coverage notes:
 
 - Each matrix job writes `coverage-${{ matrix.os }}.out`.
 - The `cmd/covergate` report step is advisory in CI (it logs uncovered statements but should not fail the workflow).
 - Shared matrix `run:` commands must be shell-compatible across bash and PowerShell.
+- CI artifacts (coverage, benchmarks) have a 14-30 day retention policy.
+
+Docker builds are parallelized via a matrix strategy (ztap, ztap-anomaly, ztap-operator) with GHA layer caching. A separate Docker Compose test job validates the full stack on non-PR events.
 
 ### GitHub Actions (Recommended)
 
@@ -304,12 +307,12 @@ name: Tests
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version-file: go.mod
       - run: go test ./... -v -race -coverprofile=coverage.out
       - run: go tool cover -func=coverage.out
 ```

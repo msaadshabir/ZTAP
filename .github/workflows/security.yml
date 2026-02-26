@@ -8,6 +8,12 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".github/copilot-instructions.md"
+      - ".github/dependabot.yml"
   pull_request:
     # Run lightweight security checks on PRs; heavy checks run on main only
     types: [opened, synchronize, reopened]
@@ -24,7 +30,7 @@ env:
 jobs:
   security:
     name: Govulncheck + Gosec (light)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       ZTAP_SECURITY_SKIP_TESTS: "1"
@@ -39,6 +45,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Cache security tools
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: security-tools-${{ runner.os }}-govulncheck-v1.1.4-gosec-v2.22.11
+
       - name: Run scripted security checks
         run: |
           chmod +x scripts/security_check.sh
@@ -46,9 +58,8 @@ jobs:
 
   security-deep:
     name: Trivy + SARIF upload (main only)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')
-    needs: security
     timeout-minutes: 20
     permissions:
       security-events: write

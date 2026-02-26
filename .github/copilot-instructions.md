@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-ZTAP (Zero Trust Access Platform) is a Go 1.24+ CLI for zero-trust microsegmentation. It enforces network policies using eBPF (Linux), pf (macOS), or WFP (Windows), with distributed coordination via etcd.
+ZTAP (Zero Trust Access Platform) is a Go 1.25+ CLI for zero-trust microsegmentation. It enforces network policies using eBPF (Linux), pf (macOS), or WFP (Windows), with distributed coordination via etcd.
 
 ## Architecture
 
@@ -217,7 +217,7 @@ Note: this limitation is specific to kernel enforcement. Cloud sync backends can
 go build                  # Build CLI
 cd bpf && make           # Compile eBPF (Linux only)
 ./demo.sh                # Interactive demo
-docker-compose up -d     # Prometheus + Grafana stack
+docker compose up -d       # Prometheus + Grafana stack
 
 # REST API server
 ztap api serve

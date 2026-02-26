@@ -481,8 +481,8 @@ go test ./... -cover
 # Race detection
 go test ./... -race
 
-# Lint
-go fmt ./... && go vet ./...
+# Lint (CI uses golangci-lint which includes gofmt + go vet)
+go fmt ./...
 
 # Optional: repository secret scan
 gitleaks detect --source . --redact --no-banner

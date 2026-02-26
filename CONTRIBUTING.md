@@ -37,10 +37,9 @@ go test ./... -race
 
 ```bash
 gofmt -w .
-go vet ./...
 ```
 
-CI also runs `golangci-lint` (see `.github/workflows/ci.yml`).
+CI runs [`golangci-lint`](https://golangci-lint.run/) as the primary lint tool (which includes `gofmt` and `go vet` checks). See `.github/workflows/ci.yml`.
 
 When editing GitHub Actions, keep `run:` commands shell-agnostic for matrix jobs that include Windows (`pwsh`) and Linux/macOS (bash). Avoid bash-only line continuations (for example trailing `\`) in shared steps.
 
@@ -85,7 +84,6 @@ make -C bpf
 - Make sure `go test ./...` passes locally
 - Run `bash scripts/security_check.sh` before submitting
 - Run `gofmt` on any Go changes
-
 ## Error Handling Conventions
 
 - **API handlers** (REST and gRPC): log full error details server-side; return sanitized messages to clients. For gRPC, use `status.Error(codes.*, "short message")`. Never return `err.Error()` directly.

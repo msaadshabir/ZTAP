@@ -1,5 +1,9 @@
 name: Release
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     tags:
@@ -11,7 +15,7 @@ permissions:
 jobs:
   build-release:
     name: Build Release Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       matrix:
@@ -74,11 +78,12 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+          retention-days: 7
 
   create-release:
     name: Create GitHub Release
     needs: build-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
@@ -91,10 +96,19 @@ jobs:
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           path: artifacts
+          pattern: ztap-*
+          merge-multiple: false
 
       - name: Get version from tag
         id: version
         run: printf 'VERSION=%s\n' "${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec sha256sum {} + | sed 's|  \./[^/]*/|  |' | sort -k2 > ../checksums.txt
+          echo "Generated checksums:"
+          cat ../checksums.txt
 
       - name: Generate changelog
         id: changelog
@@ -117,6 +131,7 @@ jobs:
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
+            checksums.txt
           body_path: release-notes.md
           draft: false
           prerelease: ${{ contains(steps.version.outputs.VERSION, 'rc') || contains(steps.version.outputs.VERSION, 'beta') }}
@@ -126,7 +141,7 @@ jobs:
   docker-release:
     name: Build and Push Docker Images
     needs: create-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read

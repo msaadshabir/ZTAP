@@ -16,6 +16,22 @@ and Semantic Versioning (https://semver.org/).
 
 ### Changed
 
+- **CI: optimized GitHub Actions workflows** across all four workflow files (`ci.yml`, `security.yml`, `codeql.yml`, `release.yml`):
+  - Removed redundant `gofmt` and `go vet` steps from lint job (golangci-lint covers both).
+  - Parallelized Docker builds via matrix strategy (ztap, ztap-anomaly, ztap-operator build concurrently).
+  - Reduced CI schedule from nightly to weekly. Reduced CodeQL timeout from 360 to 90 minutes.
+  - Added `paths-ignore` to push triggers so doc-only changes skip CI/security/CodeQL pipelines.
+  - Added `pull_request` trigger to CodeQL with path filters for Go and Python source files.
+  - Removed `needs: security` from Trivy scan job so security checks run in parallel.
+  - Pinned all runners from `ubuntu-latest` to `ubuntu-24.04` for reproducibility.
+  - Added artifact retention policies (14 days for coverage, 30 days for benchmarks, 7 days for release artifacts).
+  - Added `actions/cache` for govulncheck/gosec binaries to avoid recompilation on each run.
+  - Replaced `sleep 10` in Docker Compose test with `docker compose up --wait`.
+  - Refactored actionlint job to use the pinned `rhysd/actionlint` action instead of compiling from source via Go.
+  - Removed duplicated `GOFLAGS` env declarations from jobs (inherited from workflow level).
+  - Added concurrency group to release workflow. Added SHA256 checksums to release artifacts.
+  - Filtered `download-artifact` in coverage report to only download `coverage-*` pattern.
+- Updated documentation (`CONTRIBUTING.md`, `README.md`, `docs/guides/testing.md`, `.github/copilot-instructions.md`, `docs/project-status.md`) to reflect CI/CD changes.
 - **BREAKING**: `auth.Authenticate` signature changed from `Authenticate(username, password string)` to `Authenticate(ctx context.Context, username, password string)`. All internal callers (gRPC, REST, CLI) have been updated. External consumers of the library API must pass a `context.Context` as the first argument.
 - **BREAKING**: `audit.EntryHash` return type changed from `string` to `(string, error)`. Callers must handle the error (returned when `Details` cannot be JSON-serialized).
 - **Documentation overhaul**: restructured docs into `guides/`, `concepts/`, `reference/`, and `runbooks/` subdirectories. Created `docs/index.md` as navigation hub and dedicated CLI, Configuration, and API reference pages. Replaced `docs/roadmap.md` with `docs/project-status.md`. Fixed Go version (1.25), Python version (3.11+), removed nonexistent `ztap daemon` command, corrected admin bootstrap workflow, standardized `docker compose` (no hyphen), and removed stale coverage numbers.

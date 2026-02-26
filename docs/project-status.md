@@ -47,6 +47,7 @@ Current state of the ZTAP project: what has been delivered and what is planned.
 - Python-based anomaly detection using Isolation Forest
 - Structured logging with filtering
 - `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`
+- CI/CD pipeline: GitHub Actions with golangci-lint, multi-OS test matrix, parallelized Docker builds, CodeQL and Trivy security scanning, SHA256 release checksums, and Dependabot for automated dependency updates
 - Correctness and robustness hardening across audit, discovery, flow, auth, and gRPC packages (see [CHANGELOG](../CHANGELOG.md) for details)
 
 ## Current Focus
