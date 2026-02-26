@@ -153,7 +153,7 @@ func TestK8sDiscovery_WatchNoMatchInitialState(t *testing.T) {
 	select {
 	case initialIPs := <-ch:
 		// nil or empty is acceptable
-		if initialIPs != nil && len(initialIPs) > 0 {
+		if len(initialIPs) > 0 {
 			t.Errorf("Expected nil/empty initial IPs, got %v", initialIPs)
 		}
 	case <-time.After(1 * time.Second):
