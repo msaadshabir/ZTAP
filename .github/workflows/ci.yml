@@ -79,7 +79,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
         with:
           go-version-file: go.mod
           cache: true
@@ -100,7 +100,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Run actionlint
-        uses: rhysd/actionlint@v1.7.10
+        uses: rhysd/actionlint@v1.7.11
         with:
           args: -color
 
@@ -119,7 +119,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
         with:
           go-version-file: go.mod
           cache: true
@@ -141,7 +141,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: failure() || github.event_name != 'pull_request'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: coverage-${{ matrix.os }}
           path: coverage-${{ matrix.os }}.out
@@ -161,7 +161,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
         with:
           go-version-file: go.mod
           cache: true
@@ -220,7 +220,7 @@ jobs:
         run: python -m pytest test_service.py -v --cov=service --cov-report=xml
 
       - name: Upload Python coverage
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: python-coverage
           path: pkg/anomaly/coverage.xml
@@ -297,7 +297,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
         with:
           go-version-file: go.mod
           cache: true
@@ -342,13 +342,13 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Download all coverage artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
         with:
           path: coverage-reports
           pattern: coverage-*
@@ -373,7 +373,7 @@ jobs:
           } > coverage-summary.md
 
       - name: Upload coverage summary
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: coverage-summary
           path: coverage-summary.md
@@ -395,7 +395,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
         with:
           go-version-file: go.mod
           cache: true
@@ -425,7 +425,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
         with:
           go-version-file: go.mod
           cache: true
@@ -436,7 +436,7 @@ jobs:
           cat benchmark-results.txt
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: benchmark-results
           path: benchmark-results.txt
