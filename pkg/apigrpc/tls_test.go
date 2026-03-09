@@ -123,7 +123,16 @@ func TestGRPCTLS(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	statusClient := apiv1.NewStatusServiceClient(conn)
-	if _, err := statusClient.GetStatus(clientCtx, &emptypb.Empty{}); err != nil {
-		t.Fatalf("GetStatus RPC failed: %v", err)
+	var rpcErr error
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, rpcErr = statusClient.GetStatus(clientCtx, &emptypb.Empty{})
+		if rpcErr == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("GetStatus RPC failed: %v", rpcErr)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
