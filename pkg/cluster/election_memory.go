@@ -25,6 +25,24 @@ type InMemoryElection struct {
 	lastElection time.Time
 }
 
+func removeNodeUpdateWatcherLocked(watchers []chan ClusterStateChange, ch chan ClusterStateChange) ([]chan ClusterStateChange, bool) {
+	for i, watcher := range watchers {
+		if watcher == ch {
+			return append(watchers[:i], watchers[i+1:]...), true
+		}
+	}
+	return watchers, false
+}
+
+func removeLeaderWatcherLocked(watchers []chan *Node, ch chan *Node) ([]chan *Node, bool) {
+	for i, watcher := range watchers {
+		if watcher == ch {
+			return append(watchers[:i], watchers[i+1:]...), true
+		}
+	}
+	return watchers, false
+}
+
 func cloneNode(n *Node) *Node {
 	if n == nil {
 		return nil
@@ -72,6 +90,7 @@ func (e *InMemoryElection) Start(ctx context.Context) error {
 		e.mu.Unlock()
 		return fmt.Errorf("leader election already running")
 	}
+	e.stopCh = make(chan struct{})
 	e.running = true
 
 	// Register this node
@@ -254,29 +273,21 @@ func (e *InMemoryElection) SetNodeState(nodeID string, state NodeState) error {
 func (e *InMemoryElection) Watch(ctx context.Context) <-chan ClusterStateChange {
 	ch := make(chan ClusterStateChange, 10)
 
-	go func() {
-		<-ctx.Done()
-		e.mu.Lock()
-		// Remove this channel from watchers
-		for i, watcher := range e.nodeUpdates {
-			if watcher == ch {
-				e.nodeUpdates = append(e.nodeUpdates[:i], e.nodeUpdates[i+1:]...)
-				break
-			}
-		}
-		e.mu.Unlock()
-		// Close channel after removal to avoid double-close
-		select {
-		case <-ch:
-			// Channel already closed
-		default:
-			close(ch)
-		}
-	}()
-
 	e.mu.Lock()
 	e.nodeUpdates = append(e.nodeUpdates, ch)
 	e.mu.Unlock()
+
+	go func() {
+		<-ctx.Done()
+		e.mu.Lock()
+		var removed bool
+		e.nodeUpdates, removed = removeNodeUpdateWatcherLocked(e.nodeUpdates, ch)
+		e.mu.Unlock()
+
+		if removed {
+			close(ch)
+		}
+	}()
 
 	return ch
 }
@@ -285,29 +296,21 @@ func (e *InMemoryElection) Watch(ctx context.Context) <-chan ClusterStateChange 
 func (e *InMemoryElection) LeaderChanges(ctx context.Context) <-chan *Node {
 	ch := make(chan *Node, 10)
 
-	go func() {
-		<-ctx.Done()
-		e.mu.Lock()
-		// Remove this channel from watchers
-		for i, watcher := range e.leaderChs {
-			if watcher == ch {
-				e.leaderChs = append(e.leaderChs[:i], e.leaderChs[i+1:]...)
-				break
-			}
-		}
-		e.mu.Unlock()
-		// Close channel after removal to avoid double-close
-		select {
-		case <-ch:
-			// Channel already closed
-		default:
-			close(ch)
-		}
-	}()
-
 	e.mu.Lock()
 	e.leaderChs = append(e.leaderChs, ch)
 	e.mu.Unlock()
+
+	go func() {
+		<-ctx.Done()
+		e.mu.Lock()
+		var removed bool
+		e.leaderChs, removed = removeLeaderWatcherLocked(e.leaderChs, ch)
+		e.mu.Unlock()
+
+		if removed {
+			close(ch)
+		}
+	}()
 
 	return ch
 }
