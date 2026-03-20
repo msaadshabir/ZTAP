@@ -543,7 +543,18 @@ func ratelimitBearer(h string) (string, bool) {
 	return tok, true
 }
 
+func validateFullMethod(fullMethod string) error {
+	if strings.HasPrefix(fullMethod, "/") {
+		return nil
+	}
+	return status.Error(codes.Unimplemented, "malformed grpc method path")
+}
+
 func (s *Server) unaryAuthInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	if err := validateFullMethod(info.FullMethod); err != nil {
+		return nil, err
+	}
+
 	perm, requiresAuth := permissionForMethod(info.FullMethod)
 	if !requiresAuth || !s.cfg.AuthEnabled {
 		return handler(ctx, req)
@@ -566,6 +577,10 @@ func (s *Server) unaryAuthInterceptor(ctx context.Context, req any, info *grpc.U
 }
 
 func (s *Server) streamAuthInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if err := validateFullMethod(info.FullMethod); err != nil {
+		return err
+	}
+
 	perm, requiresAuth := permissionForMethod(info.FullMethod)
 	if !requiresAuth || !s.cfg.AuthEnabled {
 		return handler(srv, ss)
