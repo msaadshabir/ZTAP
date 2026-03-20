@@ -74,9 +74,13 @@ func normalizeNamespaces(in []string) []string {
 	return out
 }
 
-func safeClosePolicyUpdateChan(ch chan PolicyUpdate) {
-	defer func() { _ = recover() }()
-	close(ch)
+func removePolicySubscriberLocked(subscribers []chan PolicyUpdate, ch chan PolicyUpdate) ([]chan PolicyUpdate, bool) {
+	for i, sub := range subscribers {
+		if sub == ch {
+			return append(subscribers[:i], subscribers[i+1:]...), true
+		}
+	}
+	return subscribers, false
 }
 
 // Start begins watching policy ConfigMaps for updates.
@@ -86,6 +90,7 @@ func (s *K8sPolicySync) Start(ctx context.Context) error {
 		s.mu.Unlock()
 		return nil
 	}
+	s.stopCh = make(chan struct{})
 	s.running = true
 	s.mu.Unlock()
 
@@ -107,7 +112,7 @@ func (s *K8sPolicySync) Stop() error {
 	}
 	close(s.stopCh)
 	for _, ch := range s.subscribers {
-		safeClosePolicyUpdateChan(ch)
+		close(ch)
 	}
 	s.subscribers = nil
 	s.running = false
@@ -136,14 +141,12 @@ func (s *K8sPolicySync) SubscribePolicies(ctx context.Context) <-chan PolicyUpda
 	go func() {
 		<-ctx.Done()
 		s.mu.Lock()
-		for i, sub := range s.subscribers {
-			if sub == ch {
-				s.subscribers = append(s.subscribers[:i], s.subscribers[i+1:]...)
-				break
-			}
-		}
-		safeClosePolicyUpdateChan(ch)
+		var removed bool
+		s.subscribers, removed = removePolicySubscriberLocked(s.subscribers, ch)
 		s.mu.Unlock()
+		if removed {
+			close(ch)
+		}
 	}()
 
 	return ch
