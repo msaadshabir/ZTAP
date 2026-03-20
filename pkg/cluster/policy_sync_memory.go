@@ -35,6 +35,15 @@ type PolicyState struct {
 	Deleted   bool      // True if the policy has been deleted
 }
 
+func removeInMemoryPolicySubscriberLocked(subscribers []chan PolicyUpdate, ch chan PolicyUpdate) ([]chan PolicyUpdate, bool) {
+	for i, subscriber := range subscribers {
+		if subscriber == ch {
+			return append(subscribers[:i], subscribers[i+1:]...), true
+		}
+	}
+	return subscribers, false
+}
+
 // NewInMemoryPolicySync creates a new in-memory policy synchronization backend.
 // It requires an active LeaderElection instance for cluster coordination.
 func NewInMemoryPolicySync(election LeaderElection, nodeID string) *InMemoryPolicySync {
@@ -56,6 +65,7 @@ func (ps *InMemoryPolicySync) Start(ctx context.Context) error {
 		ps.mu.Unlock()
 		return fmt.Errorf("policy sync already running")
 	}
+	ps.stopCh = make(chan struct{})
 	ps.running = true
 	ps.mu.Unlock()
 
@@ -83,6 +93,7 @@ func (ps *InMemoryPolicySync) Stop() error {
 	// Close all subscriber channels
 	for _, ch := range ps.subscribers {
 		close(ch)
+		decrementPolicySubscribers()
 	}
 	ps.subscribers = make([]chan PolicyUpdate, 0)
 	ps.mu.Unlock()
@@ -325,33 +336,22 @@ func (ps *InMemoryPolicySync) SubscribePolicies(ctx context.Context) <-chan Poli
 	// Increment subscriber count
 	incrementPolicySubscribers()
 
-	go func() {
-		<-ctx.Done()
-		ps.mu.Lock()
-		// Remove this channel from subscribers
-		for i, subscriber := range ps.subscribers {
-			if subscriber == ch {
-				ps.subscribers = append(ps.subscribers[:i], ps.subscribers[i+1:]...)
-				break
-			}
-		}
-		ps.mu.Unlock()
-
-		// Decrement subscriber count
-		decrementPolicySubscribers()
-
-		// Close channel after removal to avoid double-close
-		select {
-		case <-ch:
-			// Channel already closed
-		default:
-			close(ch)
-		}
-	}()
-
 	ps.mu.Lock()
 	ps.subscribers = append(ps.subscribers, ch)
 	ps.mu.Unlock()
+
+	go func() {
+		<-ctx.Done()
+		ps.mu.Lock()
+		var removed bool
+		ps.subscribers, removed = removeInMemoryPolicySubscriberLocked(ps.subscribers, ch)
+		ps.mu.Unlock()
+
+		if removed {
+			decrementPolicySubscribers()
+			close(ch)
+		}
+	}()
 
 	return ch
 }
