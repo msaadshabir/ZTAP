@@ -12,10 +12,14 @@ and Semantic Versioning (https://semver.org/).
 - New audit tests: `TestVerifyIntegrityDetailed_EntryCount`, `TestLoadLastHash_ResetsCounterOnReopen`, `TestVerifyIntegrityDetailed_EmptyLog`, `TestEntryHash_NilEntry`, `TestEntryHash_ValidEntry`, `TestEntryHash_NonSerializableDetails`.
 - New flow monitor tests: `TestMonitor_SubscriberLifecycle_NoPanic`, `TestMonitor_SubscribeAfterStop`, `TestMonitor_ConcurrentSubscribeUnsubscribe`.
 - New discovery test: `TestK8sDiscovery_WatchNoMatchInitialState`.
+- New gRPC interceptor regression tests for malformed/unknown method paths.
 - Documented comprehensive local security audit workflow in `README.md`, `CONTRIBUTING.md`, and `docs/guides/testing.md`.
 
 ### Changed
 
+- Dependencies: upgraded `google.golang.org/grpc` to v1.79.3.
+- Tooling: bumped Go toolchain to 1.25.8 for the security workflow.
+- Dependencies: refreshed Go module and GitHub Actions versions via Dependabot.
 - **CI: optimized GitHub Actions workflows** across all four workflow files (`ci.yml`, `security.yml`, `codeql.yml`, `release.yml`):
   - Removed redundant `gofmt` and `go vet` steps from lint job (golangci-lint covers both).
   - Parallelized Docker builds via matrix strategy (ztap, ztap-anomaly, ztap-operator build concurrently).
@@ -43,6 +47,7 @@ and Semantic Versioning (https://semver.org/).
 
 ### Fixed
 
+- **Cluster: watcher/subscriber channel lifecycle fixes** across in-memory election, in-memory policy sync, and Kubernetes-backed policy sync (remove-before-close, restart-safe `stopCh`, accurate subscriber accounting).
 - **Audit: `VerifyIntegrityDetailed` double-counted entries**: The entry position was incremented twice per iteration, inflating `EntryCount` in the verification result.
 - **Audit: `loadLastHash` accumulated `entryCount` across calls**: Reopening an audit log file caused `entryCount` to grow without bound. The index cache was also exposed in a partially-built state during loading. Fixed by building a local cache and assigning atomically under the lock.
 - **Audit: `EntryHash` silently ignored marshal errors**: If `Details` contained a non-serializable value, `json.Marshal` would fail silently and produce an incorrect hash. `EntryHash` now returns an error.
@@ -58,6 +63,7 @@ and Semantic Versioning (https://semver.org/).
 
 ### Security
 
+- **gRPC: hardened auth interceptors against malformed/unknown method paths** to prevent `:path`-based auth bypass; added regression tests.
 - Added documented secret-scanning step using `gitleaks detect --source . --redact --no-banner`.
 
 [Unreleased]: https://github.com/msaadshabir/ZTAP/commits/main
