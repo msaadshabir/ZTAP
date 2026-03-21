@@ -145,29 +145,6 @@ Run prerequisites (Linux only):
 
 **Run**: `go test ./pkg/enforcer/... -v`
 
-### Integration Tests (`tests/integration_test.go`)
-
-#### Policy-Discovery Integration
-
-- **TestPolicyDiscoveryIntegration**: End-to-end label resolution flow
-- **TestPolicyLoadAndValidate**: Policy loading, parsing, and validation
-- **TestMultiplePoliciesWithDiscovery**: Complex multi-label queries
-
-#### Dynamic Service Management
-
-- **TestDynamicServiceUpdates**: Real-time service change tracking
-- **TestDiscoveryWithCache**: Cache performance and correctness
-
-#### Validation Scenarios
-
-- **TestPolicyValidationErrors**: Comprehensive error handling
-  - Valid policy acceptance
-  - Invalid CIDR rejection
-  - Invalid port rejection
-  - Invalid protocol rejection
-
-**Run**: `go test ./tests/... -v`
-
 ## Running Tests
 
 ### All Tests
@@ -185,7 +162,6 @@ go test ./pkg/policy/... -v
 go test ./pkg/cloud/... -v
 go test ./pkg/discovery/... -v
 go test ./pkg/metrics/... -v
-go test ./tests/... -v
 ```
 
 ### With Coverage
