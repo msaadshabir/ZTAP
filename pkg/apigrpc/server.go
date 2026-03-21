@@ -544,10 +544,14 @@ func ratelimitBearer(h string) (string, bool) {
 }
 
 func validateFullMethod(fullMethod string) error {
-	if strings.HasPrefix(fullMethod, "/") {
-		return nil
+	if !strings.HasPrefix(fullMethod, "/") {
+		return status.Error(codes.Unimplemented, "malformed grpc method path")
 	}
-	return status.Error(codes.Unimplemented, "malformed grpc method path")
+	parts := strings.Split(fullMethod, "/")
+	if len(parts) != 3 || parts[1] == "" || parts[2] == "" {
+		return status.Error(codes.Unimplemented, "malformed grpc method path")
+	}
+	return nil
 }
 
 func (s *Server) unaryAuthInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
@@ -555,7 +559,10 @@ func (s *Server) unaryAuthInterceptor(ctx context.Context, req any, info *grpc.U
 		return nil, err
 	}
 
-	perm, requiresAuth := permissionForMethod(info.FullMethod)
+	perm, requiresAuth, known := permissionForMethod(info.FullMethod)
+	if !known {
+		return nil, status.Error(codes.Unimplemented, "unknown grpc method")
+	}
 	if !requiresAuth || !s.cfg.AuthEnabled {
 		return handler(ctx, req)
 	}
@@ -581,7 +588,10 @@ func (s *Server) streamAuthInterceptor(srv any, ss grpc.ServerStream, info *grpc
 		return err
 	}
 
-	perm, requiresAuth := permissionForMethod(info.FullMethod)
+	perm, requiresAuth, known := permissionForMethod(info.FullMethod)
+	if !known {
+		return status.Error(codes.Unimplemented, "unknown grpc method")
+	}
 	if !requiresAuth || !s.cfg.AuthEnabled {
 		return handler(srv, ss)
 	}
@@ -634,62 +644,62 @@ func bearerTokenFromMetadata(ctx context.Context) (string, error) {
 	return okTok, nil
 }
 
-func permissionForMethod(fullMethod string) (auth.Permission, bool) {
+func permissionForMethod(fullMethod string) (auth.Permission, bool, bool) {
 	switch fullMethod {
 	case apiv1.AuthService_Login_FullMethodName:
-		return "", false
+		return "", false, true
 	case "/grpc.health.v1.Health/Check":
-		return "", false
+		return "", false, true
 	case "/grpc.health.v1.Health/Watch":
-		return "", false
+		return "", false, true
 	case apiv1.AuthService_WhoAmI_FullMethodName:
-		return auth.PermViewStatus, true
+		return auth.PermViewStatus, true, true
 	case apiv1.StatusService_GetStatus_FullMethodName:
-		return auth.PermViewStatus, true
+		return auth.PermViewStatus, true, true
 	case apiv1.EnforcementService_GetStatus_FullMethodName:
-		return auth.PermViewStatus, true
+		return auth.PermViewStatus, true, true
 	case apiv1.EnforcementService_Start_FullMethodName:
-		return auth.PermEnforce, true
+		return auth.PermEnforce, true, true
 	case apiv1.EnforcementService_Stop_FullMethodName:
-		return auth.PermEnforce, true
+		return auth.PermEnforce, true, true
 	case apiv1.FlowsService_Stream_FullMethodName:
-		return auth.PermViewStatus, true
+		return auth.PermViewStatus, true, true
 	case apiv1.PolicyService_ListPolicies_FullMethodName:
-		return auth.PermViewPolicies, true
+		return auth.PermViewPolicies, true, true
 	case apiv1.PolicyService_GetPolicy_FullMethodName:
-		return auth.PermViewPolicies, true
+		return auth.PermViewPolicies, true, true
 	case apiv1.PolicyService_PutPolicy_FullMethodName:
-		return auth.PermManagePolicies, true
+		return auth.PermManagePolicies, true, true
 	case apiv1.PolicyService_DeletePolicy_FullMethodName:
-		return auth.PermManagePolicies, true
+		return auth.PermManagePolicies, true, true
 	case apiv1.PolicyService_ListPolicyRevisions_FullMethodName:
-		return auth.PermViewPolicies, true
+		return auth.PermViewPolicies, true, true
 	case apiv1.PolicyService_GetPolicyRevision_FullMethodName:
-		return auth.PermViewPolicies, true
+		return auth.PermViewPolicies, true, true
 	case apiv1.PolicyService_RollbackPolicy_FullMethodName:
-		return auth.PermManagePolicies, true
+		return auth.PermManagePolicies, true, true
 	case apiv1.UsersService_ListUsers_FullMethodName:
-		return auth.PermManageUsers, true
+		return auth.PermManageUsers, true, true
 	case apiv1.UsersService_GetUser_FullMethodName:
-		return auth.PermManageUsers, true
+		return auth.PermManageUsers, true, true
 	case apiv1.UsersService_CreateUser_FullMethodName:
-		return auth.PermManageUsers, true
+		return auth.PermManageUsers, true, true
 	case apiv1.UsersService_UpdateUser_FullMethodName:
-		return auth.PermManageUsers, true
+		return auth.PermManageUsers, true, true
 	case apiv1.UsersService_SetUserPassword_FullMethodName:
-		return auth.PermManageUsers, true
+		return auth.PermManageUsers, true, true
 	case apiv1.UsersService_DeleteUser_FullMethodName:
-		return auth.PermManageUsers, true
+		return auth.PermManageUsers, true, true
 	case apiv1.ClusterService_GetClusterStatus_FullMethodName:
-		return auth.PermManageCluster, true
+		return auth.PermManageCluster, true, true
 	case apiv1.ClusterService_ListNodes_FullMethodName:
-		return auth.PermManageCluster, true
+		return auth.PermManageCluster, true, true
 	case apiv1.ClusterService_RegisterNode_FullMethodName:
-		return auth.PermManageCluster, true
+		return auth.PermManageCluster, true, true
 	case apiv1.ClusterService_DeregisterNode_FullMethodName:
-		return auth.PermManageCluster, true
+		return auth.PermManageCluster, true, true
 	default:
-		return "", false
+		return "", false, false
 	}
 }
 
