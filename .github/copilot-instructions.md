@@ -114,8 +114,8 @@ go test ./...
 # Note: these tests recompile bpf/filter.o and require make + clang + llvm-strip.
 sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v
 
-# iptables integration (Linux + NetAdmin only)
-sudo ZTAP_FORCE_IPTABLES=1 go test -tags integration -v ./tests/integration_iptables.sh
+# iptables coverage (Linux)
+go test ./pkg/enforcer -run TestIptablesRestoreGeneration -v
 
 # Race detection
 go test ./... -race
