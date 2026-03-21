@@ -21,62 +21,124 @@ func (n *noopServerStream) Context() context.Context     { return n.ctx }
 func (n *noopServerStream) SendMsg(any) error            { return nil }
 func (n *noopServerStream) RecvMsg(any) error            { return nil }
 
-func TestUnaryAuthInterceptor_RejectsMalformedMethodPath(t *testing.T) {
+func TestUnaryAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 	t.Parallel()
 
-	srv := &Server{cfg: Config{AuthEnabled: true}}
-	called := false
+	authModes := []struct {
+		name        string
+		authEnabled bool
+	}{
+		{name: "auth_enabled", authEnabled: true},
+		{name: "auth_disabled", authEnabled: false},
+	}
 
-	_, err := srv.unaryAuthInterceptor(
-		context.Background(),
-		nil,
-		&grpc.UnaryServerInfo{FullMethod: "ztap.api.v1.AuthService/WhoAmI"},
-		func(ctx context.Context, req any) (any, error) {
-			called = true
-			return nil, nil
-		},
-	)
-	if err == nil {
-		t.Fatalf("expected error")
+	cases := []struct {
+		name       string
+		fullMethod string
+	}{
+		{name: "missing_leading_slash", fullMethod: "ztap.api.v1.AuthService/WhoAmI"},
+		{name: "double_leading_slash", fullMethod: "//ztap.api.v1.AuthService/WhoAmI"},
+		{name: "extra_segment", fullMethod: "/ztap.api.v1.AuthService/WhoAmI/Extra"},
+		{name: "unknown_method", fullMethod: "/unknown.Service/Method"},
 	}
-	st, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("expected grpc status error")
-	}
-	if st.Code() != codes.Unimplemented {
-		t.Fatalf("expected UNIMPLEMENTED, got %v", st.Code())
-	}
-	if called {
-		t.Fatalf("handler should not be called for malformed method path")
+
+	for _, mode := range authModes {
+		mode := mode
+		t.Run(mode.name, func(t *testing.T) {
+			t.Parallel()
+			for _, tc := range cases {
+				tc := tc
+				t.Run(tc.name, func(t *testing.T) {
+					t.Parallel()
+
+					srv := &Server{cfg: Config{AuthEnabled: mode.authEnabled}}
+					called := false
+
+					_, err := srv.unaryAuthInterceptor(
+						context.Background(),
+						nil,
+						&grpc.UnaryServerInfo{FullMethod: tc.fullMethod},
+						func(ctx context.Context, req any) (any, error) {
+							called = true
+							return nil, nil
+						},
+					)
+					if err == nil {
+						t.Fatalf("expected error")
+					}
+					st, ok := status.FromError(err)
+					if !ok {
+						t.Fatalf("expected grpc status error")
+					}
+					if st.Code() != codes.Unimplemented {
+						t.Fatalf("expected UNIMPLEMENTED, got %v", st.Code())
+					}
+					if called {
+						t.Fatalf("handler should not be called")
+					}
+				})
+			}
+		})
 	}
 }
 
-func TestStreamAuthInterceptor_RejectsMalformedMethodPath(t *testing.T) {
+func TestStreamAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 	t.Parallel()
 
-	srv := &Server{cfg: Config{AuthEnabled: true}}
-	called := false
+	authModes := []struct {
+		name        string
+		authEnabled bool
+	}{
+		{name: "auth_enabled", authEnabled: true},
+		{name: "auth_disabled", authEnabled: false},
+	}
 
-	err := srv.streamAuthInterceptor(
-		nil,
-		&noopServerStream{ctx: context.Background()},
-		&grpc.StreamServerInfo{FullMethod: "ztap.api.v1.FlowsService/Stream"},
-		func(srv any, ss grpc.ServerStream) error {
-			called = true
-			return nil
-		},
-	)
-	if err == nil {
-		t.Fatalf("expected error")
+	cases := []struct {
+		name       string
+		fullMethod string
+	}{
+		{name: "missing_leading_slash", fullMethod: "ztap.api.v1.FlowsService/Stream"},
+		{name: "double_leading_slash", fullMethod: "//ztap.api.v1.FlowsService/Stream"},
+		{name: "extra_segment", fullMethod: "/ztap.api.v1.FlowsService/Stream/Extra"},
+		{name: "unknown_method", fullMethod: "/unknown.Service/Method"},
 	}
-	st, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("expected grpc status error")
-	}
-	if st.Code() != codes.Unimplemented {
-		t.Fatalf("expected UNIMPLEMENTED, got %v", st.Code())
-	}
-	if called {
-		t.Fatalf("handler should not be called for malformed method path")
+
+	for _, mode := range authModes {
+		mode := mode
+		t.Run(mode.name, func(t *testing.T) {
+			t.Parallel()
+			for _, tc := range cases {
+				tc := tc
+				t.Run(tc.name, func(t *testing.T) {
+					t.Parallel()
+
+					srv := &Server{cfg: Config{AuthEnabled: mode.authEnabled}}
+					called := false
+
+					err := srv.streamAuthInterceptor(
+						nil,
+						&noopServerStream{ctx: context.Background()},
+						&grpc.StreamServerInfo{FullMethod: tc.fullMethod},
+						func(srv any, ss grpc.ServerStream) error {
+							called = true
+							return nil
+						},
+					)
+					if err == nil {
+						t.Fatalf("expected error")
+					}
+					st, ok := status.FromError(err)
+					if !ok {
+						t.Fatalf("expected grpc status error")
+					}
+					if st.Code() != codes.Unimplemented {
+						t.Fatalf("expected UNIMPLEMENTED, got %v", st.Code())
+					}
+					if called {
+						t.Fatalf("handler should not be called")
+					}
+				})
+			}
+		})
 	}
 }
