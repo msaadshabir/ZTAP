@@ -717,7 +717,8 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 					continue
 				}
 				activeWatches[key] = cancel
-				go func(key string, ch <-chan []string) {
+				keyCopy := key
+				go func(ch <-chan []string) {
 					for range ch {
 						select {
 						case pe.retriggerCh <- struct{}{}:
@@ -725,10 +726,10 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 						}
 					}
 					select {
-					case watchEndedCh <- key:
+					case watchEndedCh <- keyCopy:
 					default:
 					}
-				}(key, ch)
+				}(ch)
 			}
 
 			for key, cancel := range activeWatches {
