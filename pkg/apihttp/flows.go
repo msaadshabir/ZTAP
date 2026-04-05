@@ -28,13 +28,12 @@ func (s *Server) handleFlowsStream(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	reader := s.flowReader()
-	monitor := flow.NewMonitor(reader)
-	if err := monitor.Start(ctx); err != nil {
+	monitor, err := s.acquireFlowMonitor()
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	defer func() { _ = monitor.Stop() }()
+	defer s.releaseFlowMonitor()
 
 	eventCh := monitor.Subscribe(ctx)
 

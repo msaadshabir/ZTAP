@@ -19,28 +19,10 @@ type InMemoryElection struct {
 	isLeader     bool
 	running      bool
 	stopCh       chan struct{}
-	nodeUpdates  []chan ClusterStateChange
-	leaderChs    []chan *Node
+	nodeUpdates  map[chan ClusterStateChange]struct{}
+	leaderChs    map[chan *Node]struct{}
 	ticker       *time.Ticker
 	lastElection time.Time
-}
-
-func removeNodeUpdateWatcherLocked(watchers []chan ClusterStateChange, ch chan ClusterStateChange) ([]chan ClusterStateChange, bool) {
-	for i, watcher := range watchers {
-		if watcher == ch {
-			return append(watchers[:i], watchers[i+1:]...), true
-		}
-	}
-	return watchers, false
-}
-
-func removeLeaderWatcherLocked(watchers []chan *Node, ch chan *Node) ([]chan *Node, bool) {
-	for i, watcher := range watchers {
-		if watcher == ch {
-			return append(watchers[:i], watchers[i+1:]...), true
-		}
-	}
-	return watchers, false
 }
 
 func cloneNode(n *Node) *Node {
@@ -77,8 +59,8 @@ func NewInMemoryElection(config LeaderElectionConfig) *InMemoryElection {
 		config:       config,
 		state:        ClusterState{Nodes: make(map[string]*Node)},
 		stopCh:       make(chan struct{}),
-		nodeUpdates:  make([]chan ClusterStateChange, 0),
-		leaderChs:    make([]chan *Node, 0),
+		nodeUpdates:  make(map[chan ClusterStateChange]struct{}),
+		leaderChs:    make(map[chan *Node]struct{}),
 		lastElection: time.Now(),
 	}
 }
@@ -130,14 +112,14 @@ func (e *InMemoryElection) Stop() error {
 	close(e.stopCh)
 
 	// Close all watcher channels
-	for _, ch := range e.nodeUpdates {
+	for ch := range e.nodeUpdates {
 		close(ch)
 	}
-	for _, ch := range e.leaderChs {
+	for ch := range e.leaderChs {
 		close(ch)
 	}
-	e.nodeUpdates = make([]chan ClusterStateChange, 0)
-	e.leaderChs = make([]chan *Node, 0)
+	e.nodeUpdates = make(map[chan ClusterStateChange]struct{})
+	e.leaderChs = make(map[chan *Node]struct{})
 
 	e.mu.Unlock()
 	return nil
@@ -274,14 +256,14 @@ func (e *InMemoryElection) Watch(ctx context.Context) <-chan ClusterStateChange 
 	ch := make(chan ClusterStateChange, 10)
 
 	e.mu.Lock()
-	e.nodeUpdates = append(e.nodeUpdates, ch)
+	e.nodeUpdates[ch] = struct{}{}
 	e.mu.Unlock()
 
 	go func() {
 		<-ctx.Done()
 		e.mu.Lock()
-		var removed bool
-		e.nodeUpdates, removed = removeNodeUpdateWatcherLocked(e.nodeUpdates, ch)
+		_, removed := e.nodeUpdates[ch]
+		delete(e.nodeUpdates, ch)
 		e.mu.Unlock()
 
 		if removed {
@@ -297,14 +279,14 @@ func (e *InMemoryElection) LeaderChanges(ctx context.Context) <-chan *Node {
 	ch := make(chan *Node, 10)
 
 	e.mu.Lock()
-	e.leaderChs = append(e.leaderChs, ch)
+	e.leaderChs[ch] = struct{}{}
 	e.mu.Unlock()
 
 	go func() {
 		<-ctx.Done()
 		e.mu.Lock()
-		var removed bool
-		e.leaderChs, removed = removeLeaderWatcherLocked(e.leaderChs, ch)
+		_, removed := e.leaderChs[ch]
+		delete(e.leaderChs, ch)
 		e.mu.Unlock()
 
 		if removed {
@@ -390,7 +372,7 @@ func (e *InMemoryElection) broadcastChange(change ClusterStateChange) {
 	if change.Node != nil {
 		change.Node = cloneNode(change.Node)
 	}
-	for _, ch := range e.nodeUpdates {
+	for ch := range e.nodeUpdates {
 		select {
 		case ch <- change:
 		default:
@@ -402,7 +384,7 @@ func (e *InMemoryElection) broadcastChange(change ClusterStateChange) {
 // broadcastLeaderChange sends a leader change notification to all watchers (requires holding mu lock).
 func (e *InMemoryElection) broadcastLeaderChange(leader *Node) {
 	leader = cloneNode(leader)
-	for _, ch := range e.leaderChs {
+	for ch := range e.leaderChs {
 		select {
 		case ch <- leader:
 		default:
