@@ -14,14 +14,20 @@ import (
 // InMemoryPolicySync implements distributed policy synchronization using in-memory storage.
 // It is NOT suitable for production distributed deployments; use etcd or Raft for production.
 type InMemoryPolicySync struct {
-	mu          sync.RWMutex
-	policies    map[PolicyKey]*PolicyState // (tenant,name) -> PolicyState
-	revisions   map[PolicyKey][]PolicyRevision
-	subscribers []chan PolicyUpdate // Channels for policy update notifications
-	election    LeaderElection      // Cluster coordination backend
-	nodeID      string              // This node's identifier
-	running     bool
-	stopCh      chan struct{}
+	mu              sync.RWMutex
+	policies        map[PolicyKey]*PolicyState // (tenant,name) -> PolicyState
+	revisions       map[PolicyKey][]PolicyRevision
+	parsedByVersion map[PolicyKey]parsedPolicyVersion
+	subscribers     map[chan PolicyUpdate]struct{} // Channels for policy update notifications
+	election        LeaderElection                 // Cluster coordination backend
+	nodeID          string                         // This node's identifier
+	running         bool
+	stopCh          chan struct{}
+}
+
+type parsedPolicyVersion struct {
+	version int64
+	parsed  []policy.NetworkPolicy
 }
 
 // PolicyState holds the state of a single policy in the cluster.
@@ -35,25 +41,17 @@ type PolicyState struct {
 	Deleted   bool      // True if the policy has been deleted
 }
 
-func removeInMemoryPolicySubscriberLocked(subscribers []chan PolicyUpdate, ch chan PolicyUpdate) ([]chan PolicyUpdate, bool) {
-	for i, subscriber := range subscribers {
-		if subscriber == ch {
-			return append(subscribers[:i], subscribers[i+1:]...), true
-		}
-	}
-	return subscribers, false
-}
-
 // NewInMemoryPolicySync creates a new in-memory policy synchronization backend.
 // It requires an active LeaderElection instance for cluster coordination.
 func NewInMemoryPolicySync(election LeaderElection, nodeID string) *InMemoryPolicySync {
 	return &InMemoryPolicySync{
-		policies:    make(map[PolicyKey]*PolicyState),
-		revisions:   make(map[PolicyKey][]PolicyRevision),
-		subscribers: make([]chan PolicyUpdate, 0),
-		election:    election,
-		nodeID:      nodeID,
-		stopCh:      make(chan struct{}),
+		policies:        make(map[PolicyKey]*PolicyState),
+		revisions:       make(map[PolicyKey][]PolicyRevision),
+		parsedByVersion: make(map[PolicyKey]parsedPolicyVersion),
+		subscribers:     make(map[chan PolicyUpdate]struct{}),
+		election:        election,
+		nodeID:          nodeID,
+		stopCh:          make(chan struct{}),
 	}
 }
 
@@ -91,11 +89,11 @@ func (ps *InMemoryPolicySync) Stop() error {
 	close(ps.stopCh)
 
 	// Close all subscriber channels
-	for _, ch := range ps.subscribers {
+	for ch := range ps.subscribers {
 		close(ch)
 		decrementPolicySubscribers()
 	}
-	ps.subscribers = make([]chan PolicyUpdate, 0)
+	ps.subscribers = make(map[chan PolicyUpdate]struct{})
 	ps.mu.Unlock()
 
 	return nil
@@ -197,6 +195,7 @@ func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string
 			Deleted:   false,
 		}
 		ps.policies[key] = policyState
+		ps.parsedByVersion[key] = parsedPolicyVersion{version: newVersion, parsed: nil}
 	} else {
 		policyState = &PolicyState{
 			Tenant:    key.Tenant,
@@ -208,6 +207,7 @@ func (ps *InMemoryPolicySync) applyPolicy(ctx context.Context, policyName string
 			Deleted:   true,
 		}
 		delete(ps.policies, key)
+		delete(ps.parsedByVersion, key)
 	}
 
 	rollbackPtr := copyRollbackVersion(rollbackFrom)
@@ -337,14 +337,14 @@ func (ps *InMemoryPolicySync) SubscribePolicies(ctx context.Context) <-chan Poli
 	incrementPolicySubscribers()
 
 	ps.mu.Lock()
-	ps.subscribers = append(ps.subscribers, ch)
+	ps.subscribers[ch] = struct{}{}
 	ps.mu.Unlock()
 
 	go func() {
 		<-ctx.Done()
 		ps.mu.Lock()
-		var removed bool
-		ps.subscribers, removed = removeInMemoryPolicySubscriberLocked(ps.subscribers, ch)
+		_, removed := ps.subscribers[ch]
+		delete(ps.subscribers, ch)
 		ps.mu.Unlock()
 
 		if removed {
@@ -382,7 +382,7 @@ func (ps *InMemoryPolicySync) watchClusterChanges(ctx context.Context) {
 
 // broadcastUpdate sends a policy update to all subscribers (requires holding mu lock).
 func (ps *InMemoryPolicySync) broadcastUpdate(update PolicyUpdate) {
-	for _, ch := range ps.subscribers {
+	for ch := range ps.subscribers {
 		select {
 		case ch <- update:
 		default:
@@ -445,8 +445,10 @@ func (ps *InMemoryPolicySync) ApplyRemoteUpdate(ctx context.Context, update Poli
 			Deleted:   false,
 		}
 		ps.policies[key] = policyState
+		ps.parsedByVersion[key] = parsedPolicyVersion{version: update.Version, parsed: nil}
 	} else {
 		delete(ps.policies, key)
+		delete(ps.parsedByVersion, key)
 	}
 	revision := PolicyRevision{
 		Tenant:     key.Tenant,
@@ -596,27 +598,56 @@ func (ps *InMemoryPolicySync) parseAndValidate(key PolicyKey, policyYAML []byte)
 func (ps *InMemoryPolicySync) currentPolicies() ([]policy.NamedPolicy, error) {
 	ps.mu.RLock()
 	items := make([]struct {
-		key  PolicyKey
-		yaml []byte
+		key     PolicyKey
+		yaml     []byte
+		version  int64
+		cached   []policy.NetworkPolicy
+		hasCache bool
 	}, 0, len(ps.policies))
 	for k, state := range ps.policies {
+		cache, ok := ps.parsedByVersion[k]
 		items = append(items, struct {
-			key  PolicyKey
-			yaml []byte
-		}{key: k, yaml: append([]byte(nil), state.YAML...)})
+			key     PolicyKey
+			yaml     []byte
+			version  int64
+			cached   []policy.NetworkPolicy
+			hasCache bool
+		}{
+			key:     k,
+			yaml:     append([]byte(nil), state.YAML...),
+			version:  state.Version,
+			cached:   append([]policy.NetworkPolicy(nil), cache.parsed...),
+			hasCache: ok && cache.version == state.Version && len(cache.parsed) > 0,
+		})
 	}
 	ps.mu.RUnlock()
 
 	policies := make([]policy.NamedPolicy, 0, len(items))
+	parsedUpdates := make(map[PolicyKey]parsedPolicyVersion)
 	for _, item := range items {
-		yamlBytes := item.yaml
-		loaded, err := policy.LoadFromBytes(yamlBytes)
-		if err != nil {
-			return nil, err
+		loaded := item.cached
+		if !item.hasCache {
+			yamlBytes := item.yaml
+			var err error
+			loaded, err = policy.LoadFromBytes(yamlBytes)
+			if err != nil {
+				return nil, err
+			}
+			parsedUpdates[item.key] = parsedPolicyVersion{
+				version: item.version,
+				parsed:  append([]policy.NetworkPolicy(nil), loaded...),
+			}
 		}
 		for _, p := range loaded {
 			policies = append(policies, policy.NamedPolicy{Tenant: item.key.Tenant, PolicyName: item.key.Name, Policy: p})
 		}
+	}
+	if len(parsedUpdates) > 0 {
+		ps.mu.Lock()
+		for k, v := range parsedUpdates {
+			ps.parsedByVersion[k] = v
+		}
+		ps.mu.Unlock()
 	}
 
 	return policies, nil

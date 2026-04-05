@@ -3,8 +3,10 @@ package enforcer
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -31,6 +33,32 @@ type PolicyEnforcer struct {
 	resolveLabels   bool
 	dryRun          bool
 	retriggerCh     chan struct{}
+	compileCache    map[string]compileCacheEntry
+	selectorCache   map[string]selectorCacheEntry
+	selectorRefs    map[string]selectorRef
+}
+
+type compileCacheEntry struct {
+	version    int64
+	yamlHash   uint64
+	normalized []policy.NetworkPolicy
+}
+
+type selectorWatch struct {
+	tenant string
+	labels map[string]string
+}
+
+type selectorCacheEntry struct {
+	version   int64
+	yamlHash  uint64
+	selectors map[string]selectorWatch
+}
+
+type selectorRef struct {
+	tenant string
+	labels map[string]string
+	refs   int
 }
 
 // PolicyEnforcerConfig holds configuration for the policy enforcer.
@@ -71,6 +99,9 @@ func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
 		alerts:          config.Alerts,
 		resolveLabels:   config.ResolveLabels,
 		dryRun:          config.DryRun,
+		compileCache:    make(map[string]compileCacheEntry),
+		selectorCache:   make(map[string]selectorCacheEntry),
+		selectorRefs:    make(map[string]selectorRef),
 	}
 }
 
@@ -147,10 +178,21 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 
 			policyKey := update.PolicyKeyString()
 			if update.Deleted {
+				pe.mu.RLock()
+				previous, hadPrevious := pe.activePolicies[policyKey]
+				pe.mu.RUnlock()
+				var oldSelectors map[string]selectorWatch
+				if hadPrevious {
+					oldSelectors, _ = pe.selectorsForUpdate(previous)
+				}
+
 				pe.mu.Lock()
 				delete(pe.activePolicies, policyKey)
 				delete(pe.enforcedVersion, policyKey)
+				delete(pe.compileCache, policyKey)
+				delete(pe.selectorCache, policyKey)
 				pe.mu.Unlock()
+				pe.adjustSelectorRefs(oldSelectors, nil)
 
 				if err := pe.reapplyAllPolicies(ctx); err != nil {
 					logging.Warnf("Failed to re-apply policies after delete %s v%d: %v",
@@ -285,6 +327,21 @@ func (pe *PolicyEnforcer) reapplyAllPolicies(ctx context.Context) error {
 
 func (pe *PolicyEnforcer) applyUpdate(ctx context.Context, update cluster.PolicyUpdate) error {
 	key := update.PolicyKeyString()
+	pe.mu.RLock()
+	previous, hadPrevious := pe.activePolicies[key]
+	pe.mu.RUnlock()
+
+	newSelectors, err := pe.selectorsForUpdate(update)
+	if err != nil {
+		return err
+	}
+	var oldSelectors map[string]selectorWatch
+	if hadPrevious {
+		oldSelectors, err = pe.selectorsForUpdate(previous)
+		if err != nil {
+			return err
+		}
+	}
 
 	pe.mu.RLock()
 	updates := make([]cluster.PolicyUpdate, 0, len(pe.activePolicies)+1)
@@ -297,7 +354,7 @@ func (pe *PolicyEnforcer) applyUpdate(ctx context.Context, update cluster.Policy
 	pe.mu.RUnlock()
 	updates = append(updates, update)
 
-	if err := pe.enforceUpdates(ctx, updates); err != nil {
+	if err = pe.enforceUpdates(ctx, updates); err != nil {
 		return err
 	}
 
@@ -305,6 +362,7 @@ func (pe *PolicyEnforcer) applyUpdate(ctx context.Context, update cluster.Policy
 	pe.enforcedVersion[key] = update.Version
 	pe.activePolicies[key] = update
 	pe.mu.Unlock()
+	pe.adjustSelectorRefs(oldSelectors, newSelectors)
 	return nil
 }
 
@@ -353,42 +411,59 @@ func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster
 
 	for _, update := range updates {
 		tenant := cluster.NormalizeTenant(update.Tenant)
-		policies, err := policy.LoadFromBytes(update.YAML)
-		if err != nil {
-			return nil, nil, false, err
-		}
-		if len(policies) == 0 {
-			continue
-		}
-
-		if pe.resolveLabels && pe.discovery != nil {
-			if discoveryScoped {
-				resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(tenant, policies)
-				if err != nil {
-					return nil, nil, false, fmt.Errorf("resolving pod selectors (tenant %s): %w", tenant, err)
-				}
-				policies = resolved
-			} else {
-				resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
-				if err != nil {
-					return nil, nil, false, fmt.Errorf("resolving pod selectors: %w", err)
-				}
-				policies = resolved
+		policyKey := update.PolicyKeyString()
+		cacheable := !pe.resolveLabels || pe.discovery == nil
+		var normalized []policy.NetworkPolicy
+		if cacheable {
+			if cached, ok := pe.getCompileCache(policyKey, update); ok {
+				normalized = cached
 			}
 		}
 
-		for _, p := range policies {
-			if err := p.Validate(); err != nil {
+		if len(normalized) == 0 {
+			policies, err := policy.LoadFromBytes(update.YAML)
+			if err != nil {
 				return nil, nil, false, err
 			}
+			if len(policies) == 0 {
+				continue
+			}
+
+			if pe.resolveLabels && pe.discovery != nil {
+				if discoveryScoped {
+					resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(tenant, policies)
+					if err != nil {
+						return nil, nil, false, fmt.Errorf("resolving pod selectors (tenant %s): %w", tenant, err)
+					}
+					policies = resolved
+				} else {
+					resolved, err := resolver.ResolvePodSelectorsToIPBlocks(policies)
+					if err != nil {
+						return nil, nil, false, fmt.Errorf("resolving pod selectors: %w", err)
+					}
+					policies = resolved
+				}
+			}
+
+			for _, p := range policies {
+				if err := p.Validate(); err != nil {
+					return nil, nil, false, err
+				}
+			}
+
+			normalized, err = policy.NormalizePolicies(policies)
+			if err != nil {
+				return nil, nil, false, err
+			}
+			if cacheable {
+				pe.setCompileCache(policyKey, update, normalized)
+			}
+		}
+
+		for _, p := range normalized {
 			if policyHasIngressNamedPorts(p) {
 				requiresSubject = true
 			}
-		}
-
-		normalized, err := policy.NormalizePolicies(policies)
-		if err != nil {
-			return nil, nil, false, err
 		}
 
 		if requiresSubject {
@@ -454,6 +529,148 @@ func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster
 	return flat, scopedOut, requiresSubject, nil
 }
 
+func (pe *PolicyEnforcer) getCompileCache(policyKey string, update cluster.PolicyUpdate) ([]policy.NetworkPolicy, bool) {
+	pe.mu.RLock()
+	entry, ok := pe.compileCache[policyKey]
+	pe.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	if entry.version != update.Version || entry.yamlHash != hashYAML(update.YAML) {
+		return nil, false
+	}
+	return append([]policy.NetworkPolicy(nil), entry.normalized...), true
+}
+
+func (pe *PolicyEnforcer) setCompileCache(policyKey string, update cluster.PolicyUpdate, normalized []policy.NetworkPolicy) {
+	pe.mu.Lock()
+	pe.compileCache[policyKey] = compileCacheEntry{
+		version:    update.Version,
+		yamlHash:   hashYAML(update.YAML),
+		normalized: append([]policy.NetworkPolicy(nil), normalized...),
+	}
+	pe.mu.Unlock()
+}
+
+func hashYAML(yaml []byte) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write(yaml)
+	return h.Sum64()
+}
+
+func copyLabels(labels map[string]string) map[string]string {
+	copied := make(map[string]string, len(labels))
+	for k, v := range labels {
+		copied[k] = v
+	}
+	return copied
+}
+
+func (pe *PolicyEnforcer) selectorsForUpdate(update cluster.PolicyUpdate) (map[string]selectorWatch, error) {
+	policyKey := update.PolicyKeyString()
+	yamlHash := hashYAML(update.YAML)
+
+	pe.mu.RLock()
+	cached, ok := pe.selectorCache[policyKey]
+	pe.mu.RUnlock()
+	if ok && cached.version == update.Version && cached.yamlHash == yamlHash {
+		out := make(map[string]selectorWatch, len(cached.selectors))
+		for k, v := range cached.selectors {
+			out[k] = selectorWatch{tenant: v.tenant, labels: copyLabels(v.labels)}
+		}
+		return out, nil
+	}
+
+	tenant := cluster.NormalizeTenant(update.Tenant)
+	policies, err := policy.LoadFromBytes(update.YAML)
+	if err != nil {
+		return nil, err
+	}
+	selectors := make(map[string]selectorWatch)
+	for _, p := range policies {
+		if len(p.Spec.PodSelector.MatchLabels) > 0 && len(p.Spec.PodSelector.MatchExpressions) == 0 {
+			key := fmt.Sprintf("%s|subject|%s", tenant, policy.SelectorKeySpec(p.Spec.PodSelector))
+			selectors[key] = selectorWatch{tenant: tenant, labels: copyLabels(p.Spec.PodSelector.MatchLabels)}
+		}
+		for _, egress := range p.Spec.Egress {
+			if len(egress.To.PodSelector.MatchLabels) > 0 && len(egress.To.PodSelector.MatchExpressions) == 0 {
+				key := fmt.Sprintf("%s|egress|%s", tenant, policy.SelectorKeySpec(egress.To.PodSelector))
+				selectors[key] = selectorWatch{tenant: tenant, labels: copyLabels(egress.To.PodSelector.MatchLabels)}
+			}
+		}
+		for _, ingress := range p.Spec.Ingress {
+			if len(ingress.From.PodSelector.MatchLabels) > 0 && len(ingress.From.PodSelector.MatchExpressions) == 0 {
+				key := fmt.Sprintf("%s|ingress|%s", tenant, policy.SelectorKeySpec(ingress.From.PodSelector))
+				selectors[key] = selectorWatch{tenant: tenant, labels: copyLabels(ingress.From.PodSelector.MatchLabels)}
+			}
+		}
+	}
+
+	pe.mu.Lock()
+	pe.selectorCache[policyKey] = selectorCacheEntry{
+		version:   update.Version,
+		yamlHash:  yamlHash,
+		selectors: selectors,
+	}
+	pe.mu.Unlock()
+
+	out := make(map[string]selectorWatch, len(selectors))
+	for k, v := range selectors {
+		out[k] = selectorWatch{tenant: v.tenant, labels: copyLabels(v.labels)}
+	}
+	return out, nil
+}
+
+func sortedSelectorKeys(selectors map[string]selectorWatch) []string {
+	keys := make([]string, 0, len(selectors))
+	for key := range selectors {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func (pe *PolicyEnforcer) adjustSelectorRefs(remove map[string]selectorWatch, add map[string]selectorWatch) {
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+	for key := range remove {
+		ref, ok := pe.selectorRefs[key]
+		if !ok {
+			continue
+		}
+		ref.refs--
+		if ref.refs <= 0 {
+			delete(pe.selectorRefs, key)
+			continue
+		}
+		pe.selectorRefs[key] = ref
+	}
+	for key, sel := range add {
+		ref, ok := pe.selectorRefs[key]
+		if !ok {
+			ref = selectorRef{tenant: sel.tenant, labels: copyLabels(sel.labels)}
+		}
+		ref.refs++
+		pe.selectorRefs[key] = ref
+	}
+}
+
+func (pe *PolicyEnforcer) snapshotSelectorRefs() map[string]selectorWatch {
+	pe.mu.RLock()
+	defer pe.mu.RUnlock()
+	selectors := make(map[string]selectorWatch, len(pe.selectorRefs))
+	for key, ref := range pe.selectorRefs {
+		if ref.refs <= 0 {
+			continue
+		}
+		selectors[key] = selectorWatch{
+			tenant: ref.tenant,
+			labels: copyLabels(ref.labels),
+		}
+	}
+	return selectors
+}
+
 func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 	activeWatches := make(map[string]context.CancelFunc)
 	watchEndedCh := make(chan string, 128)
@@ -465,6 +682,7 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	scopedDisc, isScoped := pe.discovery.(policy.ScopedServiceDiscovery)
 
 	for {
 		select {
@@ -478,80 +696,42 @@ func (pe *PolicyEnforcer) discoveryWatcher(ctx context.Context) {
 				delete(activeWatches, endedKey)
 			}
 		case <-ticker.C:
-			// Check for new selectors in active policies
-			pe.mu.RLock()
-			selectors := make(map[string]struct {
-				tenant string
-				labels map[string]string
-			})
-			for _, update := range pe.activePolicies {
-				tenant := cluster.NormalizeTenant(update.Tenant)
-				policies, _ := policy.LoadFromBytes(update.YAML)
-				for _, p := range policies {
-					if len(p.Spec.PodSelector.MatchLabels) > 0 && len(p.Spec.PodSelector.MatchExpressions) == 0 {
-						key := fmt.Sprintf("%s|subject|%s", tenant, policy.SelectorKeySpec(p.Spec.PodSelector))
-						selectors[key] = struct {
-							tenant string
-							labels map[string]string
-						}{tenant: tenant, labels: p.Spec.PodSelector.MatchLabels}
-					}
-					for _, egress := range p.Spec.Egress {
-						if len(egress.To.PodSelector.MatchLabels) > 0 && len(egress.To.PodSelector.MatchExpressions) == 0 {
-							key := fmt.Sprintf("%s|egress|%s", tenant, policy.SelectorKeySpec(egress.To.PodSelector))
-							selectors[key] = struct {
-								tenant string
-								labels map[string]string
-							}{tenant: tenant, labels: egress.To.PodSelector.MatchLabels}
-						}
-					}
-					for _, ingress := range p.Spec.Ingress {
-						if len(ingress.From.PodSelector.MatchLabels) > 0 && len(ingress.From.PodSelector.MatchExpressions) == 0 {
-							key := fmt.Sprintf("%s|ingress|%s", tenant, policy.SelectorKeySpec(ingress.From.PodSelector))
-							selectors[key] = struct {
-								tenant string
-								labels map[string]string
-							}{tenant: tenant, labels: ingress.From.PodSelector.MatchLabels}
-						}
-					}
+			selectors := pe.snapshotSelectorRefs()
+			selectorKeys := sortedSelectorKeys(selectors)
+			for _, key := range selectorKeys {
+				sel := selectors[key]
+				if _, ok := activeWatches[key]; ok {
+					continue
 				}
-			}
-			pe.mu.RUnlock()
-
-			// Start new watches
-			scopedDisc, isScoped := pe.discovery.(policy.ScopedServiceDiscovery)
-			for key, sel := range selectors {
-				if _, ok := activeWatches[key]; !ok {
-					watchCtx, cancel := context.WithCancel(ctx)
-					var ch <-chan []string
-					var err error
-					if isScoped {
-						ch, err = scopedDisc.WatchScoped(watchCtx, sel.tenant, sel.labels)
-					} else {
-						ch, err = pe.discovery.Watch(watchCtx, sel.labels)
-					}
-					if err != nil {
-						cancel()
-						logging.Warnf("failed to start watch for %s %v: %v", sel.tenant, sel.labels, err)
-						continue
-					}
-					activeWatches[key] = cancel
-					go func(key string, labels map[string]string, ch <-chan []string) {
-						for range ch {
-							// Trigger re-apply
-							select {
-							case pe.retriggerCh <- struct{}{}:
-							default:
-							}
-						}
+				watchCtx, cancel := context.WithCancel(ctx)
+				var ch <-chan []string
+				var err error
+				if isScoped {
+					ch, err = scopedDisc.WatchScoped(watchCtx, sel.tenant, sel.labels)
+				} else {
+					ch, err = pe.discovery.Watch(watchCtx, sel.labels)
+				}
+				if err != nil {
+					cancel()
+					logging.Warnf("failed to start watch for %s %v: %v", sel.tenant, sel.labels, err)
+					continue
+				}
+				activeWatches[key] = cancel
+				keyCopy := key
+				go func(ch <-chan []string) {
+					for range ch {
 						select {
-						case watchEndedCh <- key:
+						case pe.retriggerCh <- struct{}{}:
 						default:
 						}
-					}(key, sel.labels, ch)
-				}
+					}
+					select {
+					case watchEndedCh <- keyCopy:
+					default:
+					}
+				}(ch)
 			}
 
-			// Clean up old watches
 			for key, cancel := range activeWatches {
 				if _, ok := selectors[key]; !ok {
 					cancel()

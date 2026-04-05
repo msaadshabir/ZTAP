@@ -113,11 +113,15 @@ func (d *Dispatcher) worker(ctx context.Context) {
 			if a.Timestamp.IsZero() {
 				a.Timestamp = time.Now()
 			}
-			for _, sink := range d.sinks {
-				callCtx, cancel := context.WithTimeout(ctx, d.timeout)
-				_ = sink.Send(callCtx, a)
-				cancel()
+			callCtx := ctx
+			cancel := func() {}
+			if d.timeout > 0 {
+				callCtx, cancel = context.WithTimeout(ctx, d.timeout)
 			}
+			for _, sink := range d.sinks {
+				_ = sink.Send(callCtx, a)
+			}
+			cancel()
 		}
 	}
 }

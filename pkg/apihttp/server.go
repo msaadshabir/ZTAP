@@ -93,6 +93,12 @@ type Server struct {
 	enforcementMu   sync.Mutex
 	refreshCancelFn context.CancelFunc
 	runCtx          context.Context
+
+	flowMu       sync.Mutex
+	flowMonitor  *flow.Monitor
+	flowCtx      context.Context
+	flowCancel   context.CancelFunc
+	flowRefCount int
 }
 
 type ServerOptions struct {
@@ -186,6 +192,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Serve(ctx context.Context) error {
 	s.runCtx = ctx
 	defer s.stopEnforcementRefresh()
+	defer s.shutdownFlowMonitor()
 	defer func() {
 		if s.discovery != nil {
 			_ = s.discovery.Stop()
@@ -258,6 +265,62 @@ func (s *Server) Serve(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+func (s *Server) acquireFlowMonitor() (*flow.Monitor, error) {
+	s.flowMu.Lock()
+	defer s.flowMu.Unlock()
+	if s.flowMonitor == nil {
+		reader := s.flowReader()
+		base := s.runCtx
+		if base == nil {
+			base = context.Background()
+		}
+		s.flowCtx, s.flowCancel = context.WithCancel(base)
+		m := flow.NewMonitor(reader)
+		if err := m.Start(s.flowCtx); err != nil {
+			s.flowCancel()
+			s.flowCancel = nil
+			s.flowCtx = nil
+			return nil, err
+		}
+		s.flowMonitor = m
+	}
+	s.flowRefCount++
+	return s.flowMonitor, nil
+}
+
+func (s *Server) releaseFlowMonitor() {
+	s.flowMu.Lock()
+	defer s.flowMu.Unlock()
+	if s.flowRefCount > 0 {
+		s.flowRefCount--
+	}
+	if s.flowRefCount != 0 || s.flowMonitor == nil {
+		return
+	}
+	if s.flowCancel != nil {
+		s.flowCancel()
+	}
+	_ = s.flowMonitor.Stop()
+	s.flowMonitor = nil
+	s.flowCtx = nil
+	s.flowCancel = nil
+}
+
+func (s *Server) shutdownFlowMonitor() {
+	s.flowMu.Lock()
+	defer s.flowMu.Unlock()
+	if s.flowCancel != nil {
+		s.flowCancel()
+	}
+	if s.flowMonitor != nil {
+		_ = s.flowMonitor.Stop()
+	}
+	s.flowRefCount = 0
+	s.flowMonitor = nil
+	s.flowCtx = nil
+	s.flowCancel = nil
 }
 
 func (s *Server) stopEnforcementRefreshLocked() {

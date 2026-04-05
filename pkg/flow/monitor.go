@@ -10,6 +10,7 @@ import (
 
 // subscriber wraps a flow event channel with close-once semantics.
 type subscriber struct {
+	id     uint64
 	ch     chan FlowEvent
 	closed bool
 }
@@ -19,7 +20,8 @@ type Monitor struct {
 	mu          sync.RWMutex
 	running     bool
 	stopCh      chan struct{}
-	subscribers []*subscriber
+	subscribers map[uint64]*subscriber
+	nextSubID   uint64
 	stats       FlowStats
 	reader      FlowReader // Platform-specific reader
 }
@@ -38,7 +40,7 @@ type FlowReader interface {
 func NewMonitor(reader FlowReader) *Monitor {
 	return &Monitor{
 		stopCh:      make(chan struct{}),
-		subscribers: make([]*subscriber, 0),
+		subscribers: make(map[uint64]*subscriber),
 		reader:      reader,
 	}
 }
@@ -105,7 +107,7 @@ func (m *Monitor) Stop() error {
 			close(sub.ch)
 		}
 	}
-	m.subscribers = make([]*subscriber, 0)
+	m.subscribers = make(map[uint64]*subscriber)
 
 	// Recreate stopCh for potential restart
 	m.stopCh = make(chan struct{})
@@ -129,8 +131,9 @@ func (m *Monitor) Subscribe(ctx context.Context) <-chan FlowEvent {
 		close(ch)
 		return ch
 	}
-	sub := &subscriber{ch: ch}
-	m.subscribers = append(m.subscribers, sub)
+	m.nextSubID++
+	sub := &subscriber{id: m.nextSubID, ch: ch}
+	m.subscribers[sub.id] = sub
 	m.mu.Unlock()
 
 	// Handle context cancellation
@@ -140,14 +143,11 @@ func (m *Monitor) Subscribe(ctx context.Context) <-chan FlowEvent {
 		defer m.mu.Unlock()
 
 		// Remove this subscriber and close the channel if not already closed
-		for i, s := range m.subscribers {
-			if s == sub {
-				m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)
-				if !sub.closed {
-					sub.closed = true
-					close(sub.ch)
-				}
-				break
+		if tracked, ok := m.subscribers[sub.id]; ok {
+			delete(m.subscribers, sub.id)
+			if !tracked.closed {
+				tracked.closed = true
+				close(tracked.ch)
 			}
 		}
 	}()
@@ -192,7 +192,7 @@ func (m *Monitor) processEvents(ctx context.Context, rawEvents <-chan RawFlowEve
 
 			event := raw.ToFlowEvent(bootTime)
 
-			// Update stats
+			// Update stats under write lock.
 			m.mu.Lock()
 			m.stats.TotalEvents++
 			m.stats.LastEventTime = event.Timestamp
@@ -206,8 +206,10 @@ func (m *Monitor) processEvents(ctx context.Context, rawEvents <-chan RawFlowEve
 			} else {
 				m.stats.IngressEvents++
 			}
+			m.mu.Unlock()
 
-			// Broadcast to subscribers
+			// Broadcast under read lock to avoid writer contention.
+			m.mu.RLock()
 			for _, sub := range m.subscribers {
 				if !sub.closed {
 					select {
@@ -217,7 +219,7 @@ func (m *Monitor) processEvents(ctx context.Context, rawEvents <-chan RawFlowEve
 					}
 				}
 			}
-			m.mu.Unlock()
+			m.mu.RUnlock()
 		}
 	}
 }

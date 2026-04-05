@@ -37,6 +37,7 @@ func (r *SimulatedReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent
 	defer ticker.Stop()
 
 	idx := 0
+	start := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
@@ -48,11 +49,7 @@ func (r *SimulatedReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent
 				continue
 			}
 			event := r.events[idx%len(r.events)]
-			ns := uptimeNsFunc()
-			if ns < 0 {
-				ns = 0
-			}
-			event.TimestampNs = uint64(ns) // #nosec G115 -- ns is clamped to >=0 above
+			event.TimestampNs = uint64(time.Since(start).Nanoseconds()) // #nosec G115 -- monotonic duration is non-negative in this usage
 			select {
 			case eventCh <- event:
 			default:
