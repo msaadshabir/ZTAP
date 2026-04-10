@@ -1,6 +1,6 @@
 module ztap
 
-go 1.25.8
+go 1.25.9
 
 require (
 	cloud.google.com/go/compute v1.58.0
