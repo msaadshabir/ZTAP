@@ -72,7 +72,7 @@ jobs:
           fi
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ztap-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -126,7 +126,7 @@ jobs:
           fi
 
       - name: Create Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
         with:
           files: |
             artifacts/**/*.tar.gz
@@ -174,7 +174,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push ZTAP image
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
         with:
           context: .
           file: ./Dockerfile
@@ -188,7 +188,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push ZTAP Operator image
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
         with:
           context: .
           file: ./Dockerfile.operator
@@ -202,7 +202,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push Anomaly Detector image
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
         with:
           context: ./pkg/anomaly
           file: ./pkg/anomaly/Dockerfile
