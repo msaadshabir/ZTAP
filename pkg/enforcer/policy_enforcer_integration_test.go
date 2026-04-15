@@ -271,15 +271,33 @@ spec:
 		}
 	}
 
-	// Wait for enforcement
-	time.Sleep(1 * time.Second)
+	// Wait for all policies to be enforced
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		versions := enforcer.GetEnforcedVersions()
+		if len(versions) == numPolicies {
+			allExpected := true
+			for i := 0; i < numPolicies; i++ {
+				policyName := fmt.Sprintf("policy-%d", i)
+				if versions[policyName] != 1 {
+					allExpected = false
+					break
+				}
+			}
+			if allExpected {
+				break
+			}
+		}
+
+		if time.Now().After(deadline) {
+			versions := enforcer.GetEnforcedVersions()
+			t.Fatalf("expected %d enforced policies at version 1, got versions=%v", numPolicies, versions)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 
 	// Verify all policies were enforced
 	versions := enforcer.GetEnforcedVersions()
-	if len(versions) != numPolicies {
-		t.Errorf("Expected %d enforced policies, got %d", numPolicies, len(versions))
-	}
-
 	for i := 0; i < numPolicies; i++ {
 		policyName := fmt.Sprintf("policy-%d", i)
 		if versions[policyName] != 1 {
