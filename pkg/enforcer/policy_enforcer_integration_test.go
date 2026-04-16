@@ -271,20 +271,21 @@ spec:
 		}
 	}
 
-	// Wait for all policies to be enforced
+	// Wait for all policies to be enforced at version 1
 	deadline := time.Now().Add(5 * time.Second)
+	var versions map[string]int64
 	for {
-		versions := enforcer.GetEnforcedVersions()
+		versions = enforcer.GetEnforcedVersions()
 		if len(versions) == numPolicies {
-			allExpected := true
+			allAtVersionOne := true
 			for i := 0; i < numPolicies; i++ {
 				policyName := fmt.Sprintf("policy-%d", i)
 				if versions[policyName] != 1 {
-					allExpected = false
+					allAtVersionOne = false
 					break
 				}
 			}
-			if allExpected {
+			if allAtVersionOne {
 				break
 			}
 		}
@@ -294,15 +295,6 @@ spec:
 			t.Fatalf("expected %d enforced policies at version 1, got versions=%v", numPolicies, versions)
 		}
 		time.Sleep(25 * time.Millisecond)
-	}
-
-	// Verify all policies were enforced
-	versions := enforcer.GetEnforcedVersions()
-	for i := 0; i < numPolicies; i++ {
-		policyName := fmt.Sprintf("policy-%d", i)
-		if versions[policyName] != 1 {
-			t.Errorf("Policy %s: expected v1, got v%d", policyName, versions[policyName])
-		}
 	}
 	t.Logf("Successfully enforced %d concurrent policies", numPolicies)
 }
