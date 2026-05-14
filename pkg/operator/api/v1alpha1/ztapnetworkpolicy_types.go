@@ -163,10 +163,6 @@ type ZtapNetworkPolicyList struct {
 	Items           []ZtapNetworkPolicy `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ZtapNetworkPolicy{}, &ZtapNetworkPolicyList{})
-}
-
 // DeepCopyInto copies all properties of this object into another object of the
 // same type.
 func (in *ZtapNetworkPolicy) DeepCopyInto(out *ZtapNetworkPolicy) {
