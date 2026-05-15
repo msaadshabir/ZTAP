@@ -22,9 +22,15 @@ type K8sPolicySync struct {
 	namespaces  []string
 	allNS       bool
 	subscribers []chan PolicyUpdate
+	lastSeen    map[string]policySnapshot
 	mu          sync.RWMutex
 	stopCh      chan struct{}
 	running     bool
+}
+
+type policySnapshot struct {
+	version int64
+	yaml    string
 }
 
 // NewK8sPolicySync creates a new Kubernetes-backed policy synchronization backend.
@@ -92,6 +98,7 @@ func (s *K8sPolicySync) Start(ctx context.Context) error {
 	}
 	s.stopCh = make(chan struct{})
 	s.running = true
+	s.lastSeen = make(map[string]policySnapshot)
 	s.mu.Unlock()
 
 	if err := s.syncExisting(ctx); err != nil {
@@ -115,6 +122,7 @@ func (s *K8sPolicySync) Stop() error {
 		close(ch)
 	}
 	s.subscribers = nil
+	s.lastSeen = nil
 	s.running = false
 	s.mu.Unlock()
 	return nil
@@ -256,9 +264,22 @@ func (s *K8sPolicySync) handleUpdate(cm *corev1.ConfigMap) {
 		Deleted:    false,
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, ch := range s.subscribers {
+	key := update.PolicyKeyString()
+
+	s.mu.Lock()
+	if s.lastSeen == nil {
+		s.lastSeen = make(map[string]policySnapshot)
+	}
+	if prev, ok := s.lastSeen[key]; ok && prev.version == version && prev.yaml == policyYAML {
+		s.mu.Unlock()
+		return
+	}
+	s.lastSeen[key] = policySnapshot{version: version, yaml: policyYAML}
+	subscribers := make([]chan PolicyUpdate, len(s.subscribers))
+	copy(subscribers, s.subscribers)
+	s.mu.Unlock()
+
+	for _, ch := range subscribers {
 		select {
 		case ch <- update:
 		default:
