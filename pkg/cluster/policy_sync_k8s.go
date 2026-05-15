@@ -267,12 +267,16 @@ func (s *K8sPolicySync) handleUpdate(cm *corev1.ConfigMap) {
 	key := update.PolicyKeyString()
 
 	s.mu.Lock()
+	if s.lastSeen == nil {
+		s.lastSeen = make(map[string]policySnapshot)
+	}
 	if prev, ok := s.lastSeen[key]; ok && prev.version == version && prev.yaml == policyYAML {
 		s.mu.Unlock()
 		return
 	}
 	s.lastSeen[key] = policySnapshot{version: version, yaml: policyYAML}
-	subscribers := append([]chan PolicyUpdate(nil), s.subscribers...)
+	subscribers := make([]chan PolicyUpdate, len(s.subscribers))
+	copy(subscribers, s.subscribers)
 	s.mu.Unlock()
 
 	for _, ch := range subscribers {
