@@ -1,5 +1,5 @@
 # Build stage for Go application
-FROM golang:1.26.3-alpine AS go-builder
+FROM golang:1.26.4-alpine AS go-builder
 
 # Install build dependencies
 RUN apk add --no-cache git make clang llvm
