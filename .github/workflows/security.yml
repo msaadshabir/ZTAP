@@ -46,10 +46,10 @@ jobs:
           cache: true
 
       - name: Cache security tools
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/go/bin
-          key: security-tools-${{ runner.os }}-govulncheck-v1.1.4-gosec-v2.22.11-${{ hashFiles('go.mod') }}
+          key: security-tools-${{ runner.os }}-${{ hashFiles('scripts/security_check.sh') }}
 
       - name: Run scripted security checks
         run: |

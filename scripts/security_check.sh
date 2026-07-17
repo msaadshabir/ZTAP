@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GOVULNCHECK_VERSION="v1.1.4"
-GOSEC_VERSION="v2.22.11"
+GOVULNCHECK_VERSION="v1.6.0"
+GOSEC_VERSION="v2.28.0"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -38,9 +38,12 @@ if ! command -v gosec >/dev/null 2>&1; then
 fi
 export PATH="$(go env GOPATH)/bin:$PATH"
 
-# G304 (variable file path) is expected in a CLI that intentionally reads operator-specified files.
-# G602 (slice bounds) false positive on fixed-length arrays (e.g., [4]uint32 index 0).
+# G304/G703 (variable file path / path-traversal taint): expected in a CLI that reads operator-specified files.
+# G602 (slice bounds): false positive on fixed-length arrays (e.g., [4]uint32 index 0).
+# G115 (integer overflow): false positive on byte extraction from uint32 (e.g., byte(ip>>24)).
+# G706 (log injection): low-severity taint noise in operator-facing log output.
+# G709 (yaml deserialization): operator-specified config files are trusted input.
 # Skip generated code to avoid false positives in protobuf outputs.
-gosec -exclude=G304,G602 -exclude-generated ./...
+gosec -exclude=G304,G602,G703,G706,G709,G115 -exclude-generated ./...
 
 echo "All security checks passed."

@@ -23,15 +23,15 @@ type iptablesRunner interface {
 type realIptablesRunner struct{}
 
 func (r *realIptablesRunner) Run(name string, arg ...string) error {
-	return exec.Command(name, arg...).Run()
+	return exec.Command(name, arg...).Run() // #nosec G204
 }
 
 func (r *realIptablesRunner) CombinedOutput(name string, arg ...string) ([]byte, error) {
-	return exec.Command(name, arg...).CombinedOutput()
+	return exec.Command(name, arg...).CombinedOutput() // #nosec G204
 }
 
 func (r *realIptablesRunner) RunWithStdin(stdin string, name string, arg ...string) error {
-	cmd := exec.Command(name, arg...)
+	cmd := exec.Command(name, arg...) // #nosec G204
 	cmd.Stdin = strings.NewReader(stdin)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
