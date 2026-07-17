@@ -454,7 +454,7 @@ Dashboard auto-provisioned from `deployments/grafana/dashboards/ztap-dashboard.j
 | **Privileges** | Root or CAP_BPF + CAP_NET_ADMIN  | Linux eBPF enforcement              |
 | **AWS**        | EC2/VPC access (optional)        | For cloud integration               |
 | **Docker**     | Latest (optional)                | For Prometheus/Grafana stack        |
-| **Python**     | 3.11+ (optional)                 | For anomaly detection service       |
+| **Python**     | 3.13+ (optional)                 | For anomaly detection service       |
 
 **[Full eBPF Setup Guide](docs/concepts/ebpf.md)**
 

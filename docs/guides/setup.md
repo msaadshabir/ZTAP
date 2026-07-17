@@ -18,7 +18,7 @@ Installation, configuration, and first-steps walkthrough for all supported platf
 - **AWS Account**: For cloud integration and Security Group sync
 - **Azure Subscription**: For cloud integration and NSG sync
 - **Docker**: For full stack deployment (Prometheus + Grafana + Anomaly Detector)
-- **Python 3.11+**: For anomaly detection service development
+- **Python 3.13+**: For anomaly detection service development
 - **Kubernetes Cluster**: For the Kubernetes operator + node agent workflow (Linux nodes)
 
 ## Installation

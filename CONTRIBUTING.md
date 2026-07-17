@@ -17,7 +17,7 @@ Thanks for contributing to ZTAP.
 - Go (use the version declared in `go.mod`)
 - Optional (Linux/eBPF development): `clang`, `llvm`, `make`
 - Optional (proto changes): `buf` (the script installs it via `go install`)
-- Optional (anomaly service): Python 3.11+
+- Optional (anomaly service): Python 3.13+
 
 ### Local Build
 
