@@ -2,14 +2,6 @@
 
 > Open-source zero-trust microsegmentation with eBPF enforcement, policy-as-code, and hybrid cloud support
 
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![eBPF](https://img.shields.io/badge/eBPF-Enabled-orange?logo=linux&logoColor=white)](docs/concepts/ebpf.md)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-Compatible-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![AWS](https://img.shields.io/badge/AWS-Integration-FF9900?logo=amazon-aws&logoColor=white)](docs/guides/setup.md)
-[![Test Coverage](https://img.shields.io/badge/coverage-check%20locally-orange.svg)](docs/guides/testing.md)
-[![NIST SP 800-207](https://img.shields.io/badge/NIST-SP%20800--207-blue.svg)](https://csrc.nist.gov/publications/detail/sp/800-207/final)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
 ---
 
 ## Quick Start
