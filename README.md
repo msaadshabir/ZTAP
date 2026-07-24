@@ -1,7 +1,5 @@
 # ZTAP: Zero Trust Access Platform
 
----
-
 ## Quick Start
 
 ### Installation
