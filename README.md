@@ -1,7 +1,5 @@
 # ZTAP: Zero Trust Access Platform
 
-> Open-source zero-trust microsegmentation with eBPF enforcement, policy-as-code, and hybrid cloud support
-
 ---
 
 ## Quick Start
