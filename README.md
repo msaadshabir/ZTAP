@@ -377,7 +377,7 @@ On Linux, if `ztap enforce` is active, `ztap flows --follow` streams real events
 
 On Windows, `ztap flows --follow` streams WFP NetEvents (requires an elevated terminal). By default it emits only ZTAP-attributable decisions (`ztap-only`), so run `ztap enforce` first.
 
-On macOS, flow output remains simulated.
+On macOS, flow output remains simulated. (No real outflow options in the future).
 
 </details>
 
