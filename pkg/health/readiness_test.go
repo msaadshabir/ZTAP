@@ -20,7 +20,7 @@ func TestCheckerAuthDisabledSkipsAuth(t *testing.T) {
 	t.Cleanup(func() { _ = al.Close() })
 
 	c := &Checker{AuthEnabled: false, Audit: al}
-	res := c.Check(context.Background())
+	res := c.Check(t.Context())
 	if !res.Ready {
 		t.Fatalf("expected ready, got error: %s", res.Error)
 	}
@@ -41,7 +41,7 @@ func TestCheckerFailsWhenAuthEnabledAndNil(t *testing.T) {
 	t.Cleanup(func() { _ = al.Close() })
 
 	c := &Checker{AuthEnabled: true, Auth: nil, Audit: al}
-	res := c.Check(context.Background())
+	res := c.Check(t.Context())
 	if res.Ready {
 		t.Fatalf("expected not ready")
 	}
@@ -55,7 +55,7 @@ func TestCheckerFailsWhenAuthEnabledAndNil(t *testing.T) {
 
 func TestCheckerFailsWhenAuditNil(t *testing.T) {
 	c := &Checker{AuthEnabled: false, Audit: nil}
-	res := c.Check(context.Background())
+	res := c.Check(t.Context())
 	if res.Ready {
 		t.Fatalf("expected not ready")
 	}
@@ -73,7 +73,7 @@ func TestCheckerAuditNilFailsAfterAuthOK(t *testing.T) {
 	t.Cleanup(func() { _ = am.Close() })
 
 	c := &Checker{AuthEnabled: true, Auth: am, Audit: nil}
-	res := c.Check(context.Background())
+	res := c.Check(t.Context())
 	if res.Ready {
 		t.Fatalf("expected not ready")
 	}
@@ -134,7 +134,7 @@ func TestCheckerAuthReadyError(t *testing.T) {
 	t.Cleanup(func() { _ = am.Close() })
 
 	c := &Checker{AuthEnabled: true, Auth: am, Audit: al}
-	res := c.Check(context.Background())
+	res := c.Check(t.Context())
 	if res.Ready {
 		t.Fatalf("expected not ready")
 	}

@@ -47,7 +47,7 @@ func TestEtcdIntegration_SingleNode(t *testing.T) {
 	}
 
 	// Start election
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {
@@ -164,7 +164,7 @@ func TestEtcdIntegration_MultiNode(t *testing.T) {
 	}
 
 	// Start all elections
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	for i, election := range elections {
@@ -262,7 +262,7 @@ func TestEtcdIntegration_LeaderFailover(t *testing.T) {
 	}
 
 	// Start all elections
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 
 	for i, election := range elections {

@@ -68,7 +68,7 @@ func TestGRPCRateLimit_UnaryBlocksSecond(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	authClient := apiv1.NewAuthServiceClient(conn)
-	loginResp, err := authClient.Login(context.Background(), &apiv1.LoginRequest{Username: "alice", Password: "pw"})
+	loginResp, err := authClient.Login(t.Context(), &apiv1.LoginRequest{Username: "alice", Password: "pw"})
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestGRPCRateLimit_UnaryBlocksSecond(t *testing.T) {
 		t.Fatalf("expected token")
 	}
 
-	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tok))
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+tok))
 	// First WhoAmI (allowed)
 	if _, err := authClient.WhoAmI(ctx, &emptypb.Empty{}); err != nil {
 		t.Fatalf("WhoAmI first: %v", err)

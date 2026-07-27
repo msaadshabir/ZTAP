@@ -38,7 +38,7 @@ func newPolicyServer(t *testing.T) (*Server, *auth.AuthManager) {
 		InitialLeadership: 10 * time.Millisecond,
 		ElectionTimeout:   100 * time.Millisecond,
 	})
-	runCtx, runCancel := context.WithCancel(context.Background())
+	runCtx, runCancel := context.WithCancel(t.Context())
 	t.Cleanup(runCancel)
 	if err := election.Start(runCtx); err != nil {
 		t.Fatalf("Start election: %v", err)

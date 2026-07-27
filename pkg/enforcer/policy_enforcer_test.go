@@ -64,7 +64,7 @@ func TestPolicyEnforcerStartStop(t *testing.T) {
 		PolicySync: mockSync,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	// Start should succeed
@@ -103,7 +103,7 @@ func TestPolicyEnforcerAppliesUpdates(t *testing.T) {
 		PolicySync: mockSync,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := enforcer.Start(ctx); err != nil {
@@ -156,7 +156,7 @@ func TestPolicyEnforcerSkipsOldVersions(t *testing.T) {
 		PolicySync: mockSync,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := enforcer.Start(ctx); err != nil {
@@ -220,7 +220,7 @@ func TestPolicyEnforcerVersionsAreTenantScoped(t *testing.T) {
 		PolicySync: mockSync,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := enforcer.Start(ctx); err != nil {
@@ -284,7 +284,7 @@ func TestPolicyEnforcerGetEnforcedVersions(t *testing.T) {
 		PolicySync: mockSync,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := enforcer.Start(ctx); err != nil {
@@ -341,7 +341,7 @@ func TestPolicyEnforcerInvalidYAML(t *testing.T) {
 		PolicySync: mockSync,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := enforcer.Start(ctx); err != nil {
@@ -375,7 +375,7 @@ func TestPolicyEnforcerDryRun(t *testing.T) {
 		DryRun:     true,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := enforcer.Start(ctx); err != nil {
@@ -430,7 +430,7 @@ func TestPolicyEnforcerDeleteUpdate(t *testing.T) {
 		PolicySync: mockSync,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := enforcer.Start(ctx); err != nil {

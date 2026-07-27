@@ -66,7 +66,7 @@ func newGRPCTestEnv(t *testing.T, cfg Config, withPolicy bool, withCluster bool)
 			ElectionTimeout:   100 * time.Millisecond,
 			InitialLeadership: 10 * time.Millisecond,
 		})
-		ctx, cancel = context.WithCancel(context.Background())
+		ctx, cancel = context.WithCancel(t.Context())
 		if err := election.Start(ctx); err != nil {
 			cancel()
 			t.Fatalf("Start election: %v", err)
@@ -82,7 +82,7 @@ func newGRPCTestEnv(t *testing.T, cfg Config, withPolicy bool, withCluster bool)
 			pm = pmSync
 		}
 	} else {
-		ctx = context.Background()
+		ctx = t.Context()
 	}
 
 	if cfg.Listen == "" {
@@ -145,7 +145,7 @@ func newGRPCTestEnv(t *testing.T, cfg Config, withPolicy bool, withCluster bool)
 	token := ""
 	if cfg.AuthEnabled {
 		authClient := apiv1.NewAuthServiceClient(conn)
-		resp, err := authClient.Login(context.Background(), &apiv1.LoginRequest{Username: "admin", Password: "password123"})
+		resp, err := authClient.Login(t.Context(), &apiv1.LoginRequest{Username: "admin", Password: "password123"})
 		if err != nil {
 			_ = conn.Close()
 			gs.Stop()
@@ -267,7 +267,7 @@ func TestGRPCUsersPermissionDenied(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	authClient := apiv1.NewAuthServiceClient(env.conn)
-	resp, err := authClient.Login(context.Background(), &apiv1.LoginRequest{Username: "viewer", Password: "pw"})
+	resp, err := authClient.Login(t.Context(), &apiv1.LoginRequest{Username: "viewer", Password: "pw"})
 	if err != nil {
 		t.Fatalf("Login viewer: %v", err)
 	}
@@ -382,13 +382,13 @@ func TestGRPCAuthErrors(t *testing.T) {
 
 	client := apiv1.NewAuthServiceClient(env.conn)
 
-	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Basic token"))
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Basic token"))
 	_, err := client.WhoAmI(ctx, &emptypb.Empty{})
 	if st, _ := status.FromError(err); st.Code() != codes.Unauthenticated {
 		t.Fatalf("expected unauthenticated for invalid scheme")
 	}
 
-	_, err = client.WhoAmI(context.Background(), &emptypb.Empty{})
+	_, err = client.WhoAmI(t.Context(), &emptypb.Empty{})
 	if st, _ := status.FromError(err); st.Code() != codes.Unauthenticated {
 		t.Fatalf("expected unauthenticated for missing metadata")
 	}
@@ -559,11 +559,11 @@ func TestGRPCAuthLoginErrors(t *testing.T) {
 	t.Cleanup(env.cleanup)
 
 	client := apiv1.NewAuthServiceClient(env.conn)
-	_, err := client.Login(context.Background(), &apiv1.LoginRequest{})
+	_, err := client.Login(t.Context(), &apiv1.LoginRequest{})
 	if st, _ := status.FromError(err); st.Code() != codes.InvalidArgument {
 		t.Fatalf("expected invalid argument, got %v", st.Code())
 	}
-	_, err = client.Login(context.Background(), &apiv1.LoginRequest{Username: "admin", Password: "wrong"})
+	_, err = client.Login(t.Context(), &apiv1.LoginRequest{Username: "admin", Password: "wrong"})
 	if st, _ := status.FromError(err); st.Code() != codes.Unauthenticated {
 		t.Fatalf("expected unauthenticated, got %v", st.Code())
 	}
@@ -589,7 +589,7 @@ func TestGRPCPeerIP(t *testing.T) {
 		t.Fatalf("expected peer ip, got %s", got)
 	}
 
-	if got := peerIP(context.Background()); got != "0.0.0.0" {
+	if got := peerIP(t.Context()); got != "0.0.0.0" {
 		t.Fatalf("expected default ip, got %s", got)
 	}
 }
@@ -603,7 +603,7 @@ func TestGRPCDecisionForGRPCDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
-	dec := srv.decisionForGRPC(context.Background())
+	dec := srv.decisionForGRPC(t.Context())
 	if !dec.Allowed || dec.Bucket == "" {
 		t.Fatalf("expected allowed decision when disabled")
 	}
@@ -621,7 +621,7 @@ func TestGRPCRateLimitStatusDetails(t *testing.T) {
 }
 
 func TestGRPCSessionFromContextMissing(t *testing.T) {
-	if sess, ok := sessionFromContext(context.Background()); ok || sess != nil {
+	if sess, ok := sessionFromContext(t.Context()); ok || sess != nil {
 		t.Fatalf("expected no session")
 	}
 }

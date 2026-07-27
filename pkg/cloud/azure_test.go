@@ -105,7 +105,7 @@ func TestAzureSyncPolicyReconcilesRules(t *testing.T) {
 		},
 	}
 
-	err := client.SyncPolicy(context.Background(), np, "rg", "nsg")
+	err := client.SyncPolicy(t.Context(), np, "rg", "nsg")
 	if err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestAzureSyncPolicyInvalidPort(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "rg", "nsg"); err == nil {
+	if err := client.SyncPolicy(t.Context(), np, "rg", "nsg"); err == nil {
 		t.Fatal("expected error for invalid port")
 	}
 	if len(mock.upserts) != 0 {
@@ -199,7 +199,7 @@ func TestAzureSyncPolicyPortRange(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "rg", "nsg"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "rg", "nsg"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 	if len(mock.upserts) != 1 {
@@ -247,7 +247,7 @@ func TestAzureDiscoverResources(t *testing.T) {
 	}}
 
 	client := &AzureClient{interfaces: interfaces, publicIPs: publicIPs, rulePrefix: defaultAzureRulePrefix, priorityBase: defaultPriorityBase}
-	resources, err := client.DiscoverResources(context.Background(), "rg")
+	resources, err := client.DiscoverResources(t.Context(), "rg")
 	if err != nil {
 		t.Fatalf("DiscoverResources returned error: %v", err)
 	}

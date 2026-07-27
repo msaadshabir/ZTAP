@@ -1,7 +1,6 @@
 package alert
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -30,7 +29,7 @@ func TestSlackSinkSend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSlackSink: %v", err)
 	}
-	if err := sink.Send(context.Background(), Alert{Severity: SeverityError, Title: "t", Message: "m"}); err != nil {
+	if err := sink.Send(t.Context(), Alert{Severity: SeverityError, Title: "t", Message: "m"}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if got["text"] == "" {

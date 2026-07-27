@@ -279,7 +279,7 @@ func TestMonitorSubscription(t *testing.T) {
 	reader := &delayedReader{events: events, delay: 100 * time.Millisecond}
 	monitor := NewMonitor(reader)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	// Start monitor first
@@ -370,7 +370,7 @@ func TestMonitorStats(t *testing.T) {
 	}}
 	monitor := NewMonitor(reader)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	_ = monitor.Start(ctx)
@@ -458,7 +458,7 @@ func TestMonitor_SubscriberLifecycle_NoPanic(t *testing.T) {
 	}, delay: 50 * time.Millisecond}
 	monitor := NewMonitor(reader)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	if err := monitor.Start(ctx); err != nil {
@@ -513,7 +513,7 @@ func TestMonitor_SubscribeAfterStop(t *testing.T) {
 	reader := &testReader{events: nil}
 	monitor := NewMonitor(reader)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_ = monitor.Start(ctx)
 	_ = monitor.Stop()
 
@@ -536,7 +536,7 @@ func TestMonitor_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 	}, delay: 50 * time.Millisecond}
 
 	monitor := NewMonitor(reader)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	if err := monitor.Start(ctx); err != nil {

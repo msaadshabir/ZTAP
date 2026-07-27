@@ -53,7 +53,7 @@ func TestUnaryAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 					called := false
 
 					_, err := srv.unaryAuthInterceptor(
-						context.Background(),
+						t.Context(),
 						nil,
 						&grpc.UnaryServerInfo{FullMethod: tc.fullMethod},
 						func(ctx context.Context, req any) (any, error) {
@@ -113,7 +113,7 @@ func TestStreamAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 
 					err := srv.streamAuthInterceptor(
 						nil,
-						&noopServerStream{ctx: context.Background()},
+						&noopServerStream{ctx: t.Context()},
 						&grpc.StreamServerInfo{FullMethod: tc.fullMethod},
 						func(srv any, ss grpc.ServerStream) error {
 							called = true

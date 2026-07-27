@@ -20,7 +20,7 @@ func TestPolicyEnforcerSimple(t *testing.T) {
 	}
 	election := cluster.NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {
@@ -124,7 +124,7 @@ func TestPolicyEnforcerMultiplePolicies(t *testing.T) {
 	}
 	election := cluster.NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {
@@ -214,7 +214,7 @@ func TestPolicyEnforcerConcurrentUpdates(t *testing.T) {
 	}
 	election := cluster.NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {

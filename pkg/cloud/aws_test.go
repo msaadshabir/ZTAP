@@ -96,7 +96,7 @@ func TestDiscoverResources(t *testing.T) {
 	}
 
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
-	resources, err := client.DiscoverResources(context.Background())
+	resources, err := client.DiscoverResources(t.Context())
 	if err != nil {
 		t.Fatalf("DiscoverResources returned error: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestDiscoverResourcesError(t *testing.T) {
 	mock := &mockEC2Client{describeInstancesErr: errors.New("boom")}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
-	_, err := client.DiscoverResources(context.Background())
+	_, err := client.DiscoverResources(t.Context())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -144,7 +144,7 @@ func TestSyncPolicyWithIPBlock(t *testing.T) {
 
 	np.Spec.Egress = append(np.Spec.Egress, egress)
 
-	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "sg-123"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 
@@ -188,7 +188,7 @@ func TestSyncPolicyAuthorizeError(t *testing.T) {
 	}
 	np.Spec.Egress = append(np.Spec.Egress, egress)
 
-	err := client.SyncPolicy(context.Background(), np, "sg-456")
+	err := client.SyncPolicy(t.Context(), np, "sg-456")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -207,7 +207,7 @@ func TestSyncPolicyWithPortRange(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "sg-123"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 	if len(mock.authorizeInputs) != 1 {
@@ -266,7 +266,7 @@ func TestSyncPolicyWithSelectorResolution(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "sg-123"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 
@@ -313,7 +313,7 @@ func TestSyncPolicyRevokesStaleManagedRules(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "sg-123"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 
@@ -344,7 +344,7 @@ func TestSyncPolicyReplaceEgress(t *testing.T) {
 		},
 	}
 
-	_, err := client.SyncPolicyWithOptions(context.Background(), np, "sg-123", AWSPolicySyncOptions{ReplaceEgress: true})
+	_, err := client.SyncPolicyWithOptions(t.Context(), np, "sg-123", AWSPolicySyncOptions{ReplaceEgress: true})
 	if err != nil {
 		t.Fatalf("SyncPolicyWithOptions returned error: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestSyncPolicyReplaceEgressReauthorizesExistingDesiredRule(t *testing.T) {
 		},
 	}
 
-	_, err := client.SyncPolicyWithOptions(context.Background(), np, "sg-123", AWSPolicySyncOptions{ReplaceEgress: true})
+	_, err := client.SyncPolicyWithOptions(t.Context(), np, "sg-123", AWSPolicySyncOptions{ReplaceEgress: true})
 	if err != nil {
 		t.Fatalf("SyncPolicyWithOptions returned error: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestSyncPolicyDryRun(t *testing.T) {
 		},
 	}
 
-	_, err := client.SyncPolicyWithOptions(context.Background(), np, "sg-123", AWSPolicySyncOptions{DryRun: true})
+	_, err := client.SyncPolicyWithOptions(t.Context(), np, "sg-123", AWSPolicySyncOptions{DryRun: true})
 	if err != nil {
 		t.Fatalf("SyncPolicyWithOptions returned error: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestAuthorizeEgressDuplicate(t *testing.T) {
 	mock := &mockEC2Client{authorizeErr: errors.New("rule already exists"), describeSGOutput: &ec2.DescribeSecurityGroupsOutput{SecurityGroups: []types.SecurityGroup{{GroupId: aws.String("sg-789")}}}}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
-	if err := client.authorizeEgress(context.Background(), "sg-789", "10.0.0.0/24", "TCP", 80, 80); err != nil {
+	if err := client.authorizeEgress(t.Context(), "sg-789", "10.0.0.0/24", "TCP", 80, 80); err != nil {
 		t.Fatalf("expected duplicate error to be ignored, got %v", err)
 	}
 }
@@ -461,7 +461,7 @@ func TestSyncPolicyWithSelectorExpressions(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "sg-123"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "sg-123"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 
@@ -493,7 +493,7 @@ func TestRevokeAllEgress(t *testing.T) {
 	}
 
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
-	if err := client.RevokeAllEgress(context.Background(), "sg-123"); err != nil {
+	if err := client.RevokeAllEgress(t.Context(), "sg-123"); err != nil {
 		t.Fatalf("RevokeAllEgress returned error: %v", err)
 	}
 
@@ -516,7 +516,7 @@ func TestRevokeAllEgressNoRules(t *testing.T) {
 	}
 
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
-	if err := client.RevokeAllEgress(context.Background(), "sg-000"); err != nil {
+	if err := client.RevokeAllEgress(t.Context(), "sg-000"); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 
@@ -529,7 +529,7 @@ func TestRevokeAllEgressNotFound(t *testing.T) {
 	mock := &mockEC2Client{describeSGOutput: &ec2.DescribeSecurityGroupsOutput{}}
 	client := &AWSClient{ec2API: mock, region: "us-east-1"}
 
-	if err := client.RevokeAllEgress(context.Background(), "sg-missing"); err == nil {
+	if err := client.RevokeAllEgress(t.Context(), "sg-missing"); err == nil {
 		t.Fatal("expected error for missing security group, got nil")
 	}
 }

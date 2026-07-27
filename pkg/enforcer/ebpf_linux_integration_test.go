@@ -549,10 +549,7 @@ func compileTestBPF(t *testing.T) {
 	}
 
 	// Set override so the enforcer uses the fresh build instead of embedded bytecode
-	os.Setenv("ZTAP_BPF_OBJECT", filepath.Join(repoRoot, "bpf", "filter.o"))
-	t.Cleanup(func() {
-		os.Unsetenv("ZTAP_BPF_OBJECT")
-	})
+	t.Setenv("ZTAP_BPF_OBJECT", filepath.Join(repoRoot, "bpf", "filter.o"))
 }
 
 func createTestCgroup(t *testing.T) string {

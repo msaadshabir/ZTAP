@@ -295,7 +295,7 @@ func TestConfigBackupIncludesPolicyCurrentWhenProvided(t *testing.T) {
 	bundle := backupRR.Body.Bytes()
 
 	validator := configbackup.NewService(&configbackup.APIProvider{})
-	manifest, err := validator.Validate(context.Background(), bytes.NewReader(bundle))
+	manifest, err := validator.Validate(t.Context(), bytes.NewReader(bundle))
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
