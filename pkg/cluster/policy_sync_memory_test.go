@@ -665,7 +665,7 @@ func TestConcurrentPolicySync(t *testing.T) {
 	done := make(chan bool)
 	numGoroutines := 10
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(id int) {
 			policyName := fmt.Sprintf("concurrent-policy-%d", id)
 			policyYAML := makePolicyYAML(policyName, fmt.Sprintf("10.0.%d.0/24", id+10), 80)
@@ -677,7 +677,7 @@ func TestConcurrentPolicySync(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 

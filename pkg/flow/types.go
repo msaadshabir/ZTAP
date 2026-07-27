@@ -147,7 +147,7 @@ func uint32ToIP(ip uint32) net.IP {
 func uint32ArrayToIP(ip [4]uint32, family uint8) net.IP {
 	if family == 6 {
 		res := make(net.IP, 16)
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			res[i*4] = byte(ip[i])
 			res[i*4+1] = byte(ip[i] >> 8)
 			res[i*4+2] = byte(ip[i] >> 16)

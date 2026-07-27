@@ -112,8 +112,7 @@ func TestTLSServer(t *testing.T) {
 
 	srv.cfg.Listen = addr
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	errCh := make(chan error, 1)
 	go func() {

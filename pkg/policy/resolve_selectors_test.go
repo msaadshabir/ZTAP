@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -474,7 +474,7 @@ func TestResolvePodSelectorsToIPBlocks_NamespaceSelector(t *testing.T) {
 		t.Fatalf("expected 2 egress rules, got %d", len(resolved[0].Spec.Egress))
 	}
 	got := []string{resolved[0].Spec.Egress[0].To.IPBlock.CIDR, resolved[0].Spec.Egress[1].To.IPBlock.CIDR}
-	sort.Strings(got)
+	slices.Sort(got)
 	expected := []string{"10.0.0.10/32", "10.0.0.11/32"}
 	if !reflect.DeepEqual(expected, got) {
 		t.Fatalf("expected %v, got %v", expected, got)

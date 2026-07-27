@@ -401,8 +401,8 @@ func (s *Server) isExemptMethod(fullMethod string) bool {
 		if m == fullMethod {
 			return true
 		}
-		if strings.HasSuffix(m, "*") {
-			prefix := strings.TrimSuffix(m, "*")
+		if before, ok := strings.CutSuffix(m, "*"); ok {
+			prefix := before
 			if strings.HasPrefix(fullMethod, prefix) {
 				return true
 			}
@@ -458,10 +458,7 @@ func (s *Server) streamRateLimitInterceptor(srv any, ss grpc.ServerStream, info 
 func rateLimitStatus(dec ratelimit.Decision) error {
 	st := status.New(codes.ResourceExhausted, "rate limited")
 	if dec.RetryAfter > 0 {
-		d := dec.RetryAfter
-		if d < 0 {
-			d = 0
-		}
+		d := max(dec.RetryAfter, 0)
 		stWith, err := st.WithDetails(&errdetails.RetryInfo{RetryDelay: durationpb.New(d)})
 		if err == nil {
 			return stWith.Err()
@@ -1613,11 +1610,7 @@ func toClusterNode(node *cluster.Node) *apiv1.ClusterNode {
 }
 
 func safeNodesCount(nodes []*cluster.Node) int32 {
-	count := len(nodes)
-	if count > int(math.MaxInt32) {
-		return math.MaxInt32
-	}
-	return int32(count)
+	return int32(min(len(nodes), int(math.MaxInt32)))
 }
 
 func flowEventToPB(ev flow.FlowEvent) *apiv1.FlowEvent {

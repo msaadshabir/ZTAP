@@ -104,8 +104,7 @@ func TestGRPCTLS(t *testing.T) {
 		t.Fatalf("failed to create server: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go func() {
 		_ = srv.Serve(ctx)

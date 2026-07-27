@@ -43,11 +43,9 @@ func TestUnaryAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 	}
 
 	for _, mode := range authModes {
-		mode := mode
 		t.Run(mode.name, func(t *testing.T) {
 			t.Parallel()
 			for _, tc := range cases {
-				tc := tc
 				t.Run(tc.name, func(t *testing.T) {
 					t.Parallel()
 
@@ -104,11 +102,9 @@ func TestStreamAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 	}
 
 	for _, mode := range authModes {
-		mode := mode
 		t.Run(mode.name, func(t *testing.T) {
 			t.Parallel()
 			for _, tc := range cases {
-				tc := tc
 				t.Run(tc.name, func(t *testing.T) {
 					t.Parallel()
 

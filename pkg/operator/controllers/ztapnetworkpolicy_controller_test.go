@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -297,12 +298,7 @@ func TestZtapNetworkPolicyReconcileDeleteRemovesConfigMap(t *testing.T) {
 }
 
 func containsFinalizer(finalizers []string, finalizer string) bool {
-	for _, f := range finalizers {
-		if f == finalizer {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(finalizers, finalizer)
 }
 
 func findCondition(conditions []metav1.Condition, conditionType string) *metav1.Condition {

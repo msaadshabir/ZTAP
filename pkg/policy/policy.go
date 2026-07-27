@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -317,10 +318,7 @@ const (
 func LoadFromBytes(data []byte) ([]NetworkPolicy, error) {
 	// Pre-allocate with estimated capacity
 	// This is a conservative estimate to reduce reallocations while not over-allocating
-	estimatedPolicies := len(data)/estimatedBytesPerPolicy + 1
-	if estimatedPolicies < 1 {
-		estimatedPolicies = 1
-	}
+	estimatedPolicies := max(len(data)/estimatedBytesPerPolicy+1, 1)
 	policies := make([]NetworkPolicy, 0, estimatedPolicies)
 
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
@@ -513,12 +511,7 @@ func MatchesSelector(labels map[string]string, selector PodSelectorSpec) bool {
 }
 
 func stringInSlice(value string, values []string) bool {
-	for _, v := range values {
-		if v == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, value)
 }
 
 func (p *NetworkPolicy) validateLabelSelector(field string, selector PodSelectorSpec) error {
@@ -1446,7 +1439,7 @@ func dedupeAndSortStrings(values []string) []string {
 		seen[trimmed] = struct{}{}
 		out = append(out, trimmed)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -1485,7 +1478,7 @@ func ipsToHostCIDRs(ips []string) ([]string, error) {
 		}
 		return nil, fmt.Errorf("%q is not a valid IP address", raw)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out, nil
 }
 

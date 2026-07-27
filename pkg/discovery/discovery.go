@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -69,7 +70,7 @@ func (d *InMemoryDiscovery) ResolveLabels(labels map[string]string) ([]string, e
 	if len(ips) == 0 {
 		return nil, &NoMatchesError{Resource: "services", Labels: copyLabelMap(labels)}
 	}
-	sort.Strings(ips)
+	slices.Sort(ips)
 	return ips, nil
 }
 
@@ -114,7 +115,7 @@ func (d *InMemoryDiscovery) ResolveSelector(selector policy.PodSelectorSpec) ([]
 	if len(ips) == 0 {
 		return nil, &NoMatchesError{Resource: "services", Labels: copyLabelMap(selector.MatchLabels)}
 	}
-	sort.Strings(ips)
+	slices.Sort(ips)
 	return ips, nil
 }
 
@@ -215,7 +216,7 @@ func (d *InMemoryDiscovery) notifyWatchers() {
 				ips = append(ips, service.IP)
 			}
 		}
-		sort.Strings(ips)
+		slices.Sort(ips)
 
 		if !equalStrings(ips, w.lastIPs) {
 			w.lastIPs = ips
@@ -260,9 +261,7 @@ func copyLabelMap(in map[string]string) map[string]string {
 		return map[string]string{}
 	}
 	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }
 
@@ -306,7 +305,7 @@ func (d *DNSDiscovery) ResolveLabels(labels map[string]string) ([]string, error)
 	for k := range labels {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
 		parts = append(parts, fmt.Sprintf("%s-%s", key, labels[key]))

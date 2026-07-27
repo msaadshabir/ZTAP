@@ -659,10 +659,7 @@ const (
 func MatchResourcesByLabels(resources []Resource, labels map[string]string) []Resource {
 	// Pre-allocate with conservative capacity estimate
 	// Start with 10% of resources or minimum of 4 items
-	estimatedMatches := len(resources) / defaultResourceMatchFraction
-	if estimatedMatches < minResourceMatchCapacity {
-		estimatedMatches = minResourceMatchCapacity
-	}
+	estimatedMatches := max(len(resources)/defaultResourceMatchFraction, minResourceMatchCapacity)
 	if estimatedMatches > len(resources) {
 		estimatedMatches = len(resources)
 	}

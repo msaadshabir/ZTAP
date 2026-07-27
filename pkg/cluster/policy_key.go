@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -44,7 +45,7 @@ func NormalizeTenant(tenant string) string {
 func ParsePolicyKey(s string) (PolicyKey, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return PolicyKey{}, fmt.Errorf("policy key is empty")
+		return PolicyKey{}, errors.New("policy key is empty")
 	}
 
 	parts := strings.SplitN(s, "/", 2)
@@ -61,13 +62,13 @@ func NewPolicyKey(tenant, name string) (PolicyKey, error) {
 		tenant = DefaultTenant
 	}
 	if name == "" {
-		return PolicyKey{}, fmt.Errorf("policy name is empty")
+		return PolicyKey{}, errors.New("policy name is empty")
 	}
 	if strings.Contains(name, "/") {
-		return PolicyKey{}, fmt.Errorf("policy name must not contain '/'")
+		return PolicyKey{}, errors.New("policy name must not contain '/'")
 	}
 	if strings.Contains(tenant, "/") {
-		return PolicyKey{}, fmt.Errorf("tenant must not contain '/'")
+		return PolicyKey{}, errors.New("tenant must not contain '/'")
 	}
 	return PolicyKey{Tenant: tenant, Name: name}, nil
 }

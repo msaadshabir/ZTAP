@@ -100,8 +100,7 @@ func (s *Server) handleConfigRestore(w http.ResponseWriter, r *http.Request) {
 	body := http.MaxBytesReader(w, r.Body, s.cfg.MaxRestoreBytes)
 	manifest, plan, report, err := svc.Restore(r.Context(), body, tmpDir, configbackup.RestoreOptions{DryRun: dryRun, Force: force})
 	if err != nil {
-		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			writeError(w, http.StatusRequestEntityTooLarge, errors.New("bundle too large"))
 			return
 		}

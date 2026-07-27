@@ -64,8 +64,8 @@ func TestGCPSyncPolicyReconcilesRules(t *testing.T) {
 	networkURL := networkSelfLink("demo", "default")
 	mock := &mockFirewalls{
 		listRules: []*computepb.Firewall{
-			{Name: proto.String("ztap-egress-tcp-5432-10-0-0-0-24")},
-			{Name: proto.String("ztap-stale-rule")},
+			{Name: new("ztap-egress-tcp-5432-10-0-0-0-24")},
+			{Name: new("ztap-stale-rule")},
 		},
 	}
 
@@ -167,11 +167,11 @@ func TestGCPSyncPolicyWithPodSelector(t *testing.T) {
 	instances := &mockInstances{
 		instances: []*computepb.Instance{
 			{
-				Name:   proto.String("vm1"),
+				Name:   new("vm1"),
 				Id:     proto.Uint64(1),
 				Labels: map[string]string{"app": "web", "tier": "frontend"},
 				NetworkInterfaces: []*computepb.NetworkInterface{
-					{Network: proto.String(networkURL), NetworkIP: proto.String("10.10.0.5")},
+					{Network: new(networkURL), NetworkIP: new("10.10.0.5")},
 				},
 			},
 		},
@@ -271,11 +271,11 @@ func TestGCPDiscoverResources(t *testing.T) {
 	instances := &mockInstances{
 		instances: []*computepb.Instance{
 			{
-				Name:   proto.String("vm1"),
+				Name:   new("vm1"),
 				Id:     proto.Uint64(1),
 				Labels: map[string]string{"app": "web"},
 				NetworkInterfaces: []*computepb.NetworkInterface{
-					{Network: proto.String(networkURL), NetworkIP: proto.String("10.10.0.5")},
+					{Network: new(networkURL), NetworkIP: new("10.10.0.5")},
 				},
 			},
 		},

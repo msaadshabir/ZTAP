@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -356,7 +357,7 @@ func (c *AzureClient) ListManagedRules(ctx context.Context, resourceGroup, nsgNa
 		}
 	}
 
-	sort.Strings(managed)
+	slices.Sort(managed)
 	return managed, nil
 }
 
@@ -424,11 +425,11 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 						Access:                   ptrAccess(armnetwork.SecurityRuleAccessAllow),
 						Direction:                ptrDirection(armnetwork.SecurityRuleDirectionOutbound),
 						Protocol:                 ptrProtocol(proto),
-						SourceAddressPrefix:      ptrString(azureProtocolAsterisk),
-						DestinationAddressPrefix: ptrString(cidr),
-						SourcePortRange:          ptrString(azureProtocolAsterisk),
-						DestinationPortRange:     ptrString(azurePortRange(start, end)),
-						Description:              ptrString(managedRuleDescription),
+						SourceAddressPrefix:      new(azureProtocolAsterisk),
+						DestinationAddressPrefix: new(cidr),
+						SourcePortRange:          new(azureProtocolAsterisk),
+						DestinationPortRange:     new(azurePortRange(start, end)),
+						Description:              new(managedRuleDescription),
 					},
 				},
 			})
@@ -464,11 +465,11 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 						Access:                   ptrAccess(armnetwork.SecurityRuleAccessAllow),
 						Direction:                ptrDirection(armnetwork.SecurityRuleDirectionInbound),
 						Protocol:                 ptrProtocol(proto),
-						SourceAddressPrefix:      ptrString(cidr),
-						DestinationAddressPrefix: ptrString(azureProtocolAsterisk),
-						SourcePortRange:          ptrString(azureProtocolAsterisk),
-						DestinationPortRange:     ptrString(azurePortRange(start, end)),
-						Description:              ptrString(managedRuleDescription),
+						SourceAddressPrefix:      new(cidr),
+						DestinationAddressPrefix: new(azureProtocolAsterisk),
+						SourcePortRange:          new(azureProtocolAsterisk),
+						DestinationPortRange:     new(azurePortRange(start, end)),
+						Description:              new(managedRuleDescription),
 					},
 				},
 			})
@@ -550,7 +551,8 @@ func compactCIDR(cidr string) string {
 	return r.Replace(cidr)
 }
 
-func ptrString(v string) *string { return &v }
+//go:fix inline
+func ptrString(v string) *string { return new(v) }
 func ptrProtocol(proto string) *armnetwork.SecurityRuleProtocol {
 	switch strings.ToUpper(proto) {
 	case "TCP":
@@ -568,5 +570,10 @@ func ptrProtocol(proto string) *armnetwork.SecurityRuleProtocol {
 	}
 }
 
-func ptrAccess(a armnetwork.SecurityRuleAccess) *armnetwork.SecurityRuleAccess          { return &a }
-func ptrDirection(d armnetwork.SecurityRuleDirection) *armnetwork.SecurityRuleDirection { return &d }
+//go:fix inline
+func ptrAccess(a armnetwork.SecurityRuleAccess) *armnetwork.SecurityRuleAccess { return new(a) }
+
+//go:fix inline
+func ptrDirection(d armnetwork.SecurityRuleDirection) *armnetwork.SecurityRuleDirection {
+	return new(d)
+}

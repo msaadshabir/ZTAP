@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
+//go:fix inline
 func intPtr(v int) *int {
-	return &v
+	return new(v)
 }
 
 func TestLoadFromFile(t *testing.T) {
@@ -518,7 +519,7 @@ func TestValidate(t *testing.T) {
 					Egress: []EgressRule{
 						{
 							To:    EgressTarget{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
-							Ports: []PortSpec{{Protocol: "TCP", Port: 8080, EndPort: intPtr(8070)}},
+							Ports: []PortSpec{{Protocol: "TCP", Port: 8080, EndPort: new(8070)}},
 						},
 					},
 				},
@@ -593,7 +594,7 @@ func TestValidate(t *testing.T) {
 					Ingress: []IngressRule{
 						{
 							From:  IngressSource{IPBlock: IPBlockSpec{CIDR: "10.0.0.0/8"}},
-							Ports: []PortSpec{{Protocol: "ICMP", Port: 8, EndPort: intPtr(9)}},
+							Ports: []PortSpec{{Protocol: "ICMP", Port: 8, EndPort: new(9)}},
 						},
 					},
 				},
@@ -612,7 +613,7 @@ func TestValidate(t *testing.T) {
 					Egress: []EgressRule{
 						{
 							To:    EgressTarget{PodSelector: PodSelectorSpec{MatchLabels: map[string]string{"app": "api"}}},
-							Ports: []PortSpec{{Protocol: "TCP", PortName: "http", EndPort: intPtr(8080)}},
+							Ports: []PortSpec{{Protocol: "TCP", PortName: "http", EndPort: new(8080)}},
 						},
 					},
 				},

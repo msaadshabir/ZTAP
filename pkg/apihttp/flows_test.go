@@ -92,8 +92,8 @@ type responseStreamConn struct {
 }
 
 func (c *responseStreamConn) Write(p []byte) (int, error) {
-	lines := strings.Split(string(p), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(p), "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

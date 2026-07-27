@@ -1,7 +1,6 @@
 package alert
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -23,8 +22,7 @@ func TestManagerStartAndEmit(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	m.Start(ctx)
 
 	if ok := m.Emit(Alert{Source: "test", Severity: SeverityInfo, Title: "t", Message: "m"}); !ok {
@@ -44,8 +42,7 @@ func TestManagerDedupeDrops(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	m.Start(ctx)
 
 	alert := Alert{Source: "test", Severity: SeverityInfo, Title: "t", Message: "m", DedupKey: "dup"}
@@ -68,8 +65,7 @@ func TestManagerDedupeExpires(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	m.Start(ctx)
 
 	alert := Alert{Source: "test", Severity: SeverityInfo, Title: "t", Message: "m", DedupKey: "dup"}

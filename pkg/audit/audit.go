@@ -43,23 +43,23 @@ const (
 
 // AuditEntry represents a single audit log entry with cryptographic integrity.
 type AuditEntry struct {
-	ID           string                 `json:"id"`
-	Timestamp    time.Time              `json:"timestamp"`
-	EventType    EventType              `json:"event_type"`
-	Actor        string                 `json:"actor"`         // Username or system identifier
-	Resource     string                 `json:"resource"`      // Policy name, service ID, etc.
-	Action       string                 `json:"action"`        // Created, updated, deleted, etc.
-	Details      map[string]interface{} `json:"details"`       // Additional context
-	PreviousHash string                 `json:"previous_hash"` // Hash of previous entry
-	Hash         string                 `json:"hash"`          // SHA-256 hash of this entry
-	Outcome      string                 `json:"outcome"`       // Success, failure, error
-	ErrorMessage string                 `json:"error_message,omitempty"`
-	IPAddress    string                 `json:"ip_address,omitempty"`
-	NodeID       string                 `json:"node_id,omitempty"` // For distributed deployments
-	Seq          int64                  `json:"seq,omitempty"`
-	IntegrityAlg string                 `json:"integrity_alg,omitempty"`
-	KeyID        string                 `json:"key_id,omitempty"`
-	Sig          string                 `json:"sig,omitempty"`
+	ID           string         `json:"id"`
+	Timestamp    time.Time      `json:"timestamp"`
+	EventType    EventType      `json:"event_type"`
+	Actor        string         `json:"actor"`         // Username or system identifier
+	Resource     string         `json:"resource"`      // Policy name, service ID, etc.
+	Action       string         `json:"action"`        // Created, updated, deleted, etc.
+	Details      map[string]any `json:"details"`       // Additional context
+	PreviousHash string         `json:"previous_hash"` // Hash of previous entry
+	Hash         string         `json:"hash"`          // SHA-256 hash of this entry
+	Outcome      string         `json:"outcome"`       // Success, failure, error
+	ErrorMessage string         `json:"error_message,omitempty"`
+	IPAddress    string         `json:"ip_address,omitempty"`
+	NodeID       string         `json:"node_id,omitempty"` // For distributed deployments
+	Seq          int64          `json:"seq,omitempty"`
+	IntegrityAlg string         `json:"integrity_alg,omitempty"`
+	KeyID        string         `json:"key_id,omitempty"`
+	Sig          string         `json:"sig,omitempty"`
 }
 
 // AuditLogger provides tamper-proof audit logging with cryptographic hash chaining.
@@ -155,12 +155,12 @@ func NewAuditLoggerWithOptions(opts AuditLoggerOptions) (*AuditLogger, error) {
 }
 
 // Log creates a new audit entry with the given parameters.
-func (al *AuditLogger) Log(eventType EventType, actor, resource, action string, details map[string]interface{}) error {
+func (al *AuditLogger) Log(eventType EventType, actor, resource, action string, details map[string]any) error {
 	return al.LogWithOutcome(eventType, actor, resource, action, "success", "", details)
 }
 
 // LogWithOutcome creates a new audit entry with a specific outcome.
-func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, action, outcome, errorMsg string, details map[string]interface{}) error {
+func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, action, outcome, errorMsg string, details map[string]any) error {
 	al.mu.Lock()
 	defer al.mu.Unlock()
 
@@ -230,7 +230,7 @@ func (al *AuditLogger) LogWithOutcome(eventType EventType, actor, resource, acti
 }
 
 // LogFailure creates an audit entry for a failed operation.
-func (al *AuditLogger) LogFailure(eventType EventType, actor, resource, action, errorMsg string, details map[string]interface{}) error {
+func (al *AuditLogger) LogFailure(eventType EventType, actor, resource, action, errorMsg string, details map[string]any) error {
 	return al.LogWithOutcome(eventType, actor, resource, action, "failure", errorMsg, details)
 }
 
@@ -597,7 +597,7 @@ func (al *AuditLogger) Close() error {
 }
 
 // GetStats returns statistics about the audit log.
-func (al *AuditLogger) GetStats() (map[string]interface{}, error) {
+func (al *AuditLogger) GetStats() (map[string]any, error) {
 	al.mu.RLock()
 	defer al.mu.RUnlock()
 
@@ -606,7 +606,7 @@ func (al *AuditLogger) GetStats() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to stat audit log: %w", err)
 	}
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"path":        al.logPath,
 		"size_bytes":  fileInfo.Size(),
 		"entry_count": al.entryCount,

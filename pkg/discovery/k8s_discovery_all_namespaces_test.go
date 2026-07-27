@@ -20,8 +20,7 @@ func TestK8sDiscoveryAllNamespaces_ResolveLabelsScoped(t *testing.T) {
 		t.Fatalf("Failed to create discovery: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	if err := disc.Start(ctx); err != nil {
 		t.Fatalf("Failed to start discovery: %v", err)
 	}
@@ -54,8 +53,7 @@ func TestK8sDiscoveryAllNamespaces_WatchScopedIsNamespaceScoped(t *testing.T) {
 		t.Fatalf("Failed to create discovery: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	if err := disc.Start(ctx); err != nil {
 		t.Fatalf("Failed to start discovery: %v", err)
 	}
@@ -128,8 +126,7 @@ func TestK8sDiscoveryAllNamespaces_ResolveNamespaces(t *testing.T) {
 		t.Fatalf("Failed to create discovery: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	if err := disc.Start(ctx); err != nil {
 		t.Fatalf("Failed to start discovery: %v", err)
 	}

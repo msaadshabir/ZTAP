@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"time"
 
 	"ztap/pkg/policy"
@@ -89,7 +89,7 @@ func (inv *Inventory) ResolveIPs(selector policy.PodSelectorSpec, mode IPMode) (
 		}
 	}
 
-	sort.Strings(ips)
+	slices.Sort(ips)
 	return ips, nil
 }
 

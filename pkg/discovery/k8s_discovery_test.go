@@ -2,7 +2,7 @@ package discovery
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -20,8 +20,7 @@ func TestK8sDiscovery(t *testing.T) {
 		t.Fatalf("Failed to create discovery: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	if err := disc.Start(ctx); err != nil {
 		t.Fatalf("Failed to start discovery: %v", err)
@@ -90,7 +89,7 @@ func TestK8sDiscovery(t *testing.T) {
 
 	select {
 	case updatedIPs := <-ch:
-		sort.Strings(updatedIPs)
+		slices.Sort(updatedIPs)
 		if len(updatedIPs) != 2 || updatedIPs[0] != "10.0.0.1" || updatedIPs[1] != "10.0.0.2" {
 			t.Errorf("Expected updated [10.0.0.1 10.0.0.2], got %v", updatedIPs)
 		}
@@ -134,8 +133,7 @@ func TestK8sDiscovery_WatchNoMatchInitialState(t *testing.T) {
 		t.Fatalf("Failed to create discovery: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	if err := disc.Start(ctx); err != nil {
 		t.Fatalf("Failed to start discovery: %v", err)

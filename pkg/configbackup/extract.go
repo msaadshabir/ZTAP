@@ -194,8 +194,8 @@ func sanitizeManifestPath(p string) (string, error) {
 	}
 
 	sep := string(os.PathSeparator)
-	parts := strings.Split(relPath, sep)
-	for _, part := range parts {
+	parts := strings.SplitSeq(relPath, sep)
+	for part := range parts {
 		if part == "" {
 			return "", fmt.Errorf("empty path component")
 		}

@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -35,12 +34,10 @@ func TestK8sPolicySyncSyncExistingAllNamespaces(t *testing.T) {
 
 	ps := NewK8sPolicySyncAllNamespaces(client)
 
-	subCtx, subCancel := context.WithCancel(context.Background())
-	defer subCancel()
+	subCtx := t.Context()
 	updates := ps.SubscribePolicies(subCtx)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
@@ -88,12 +85,10 @@ func TestK8sPolicySyncNamespaceAllowList(t *testing.T) {
 
 	ps := NewK8sPolicySyncNamespaces(client, []string{"ns-a"})
 
-	subCtx, subCancel := context.WithCancel(context.Background())
-	defer subCancel()
+	subCtx := t.Context()
 	updates := ps.SubscribePolicies(subCtx)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
@@ -141,12 +136,10 @@ func TestK8sPolicySyncMultiNamespaceWatch(t *testing.T) {
 
 	ps := NewK8sPolicySyncNamespaces(client, []string{"ns-a", "ns-b"})
 
-	subCtx, subCancel := context.WithCancel(context.Background())
-	defer subCancel()
+	subCtx := t.Context()
 	updates := ps.SubscribePolicies(subCtx)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	if err := ps.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}

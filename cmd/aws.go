@@ -191,7 +191,7 @@ var awsSGSyncCmd = &cobra.Command{
 			}
 
 			if strings.ToLower(outputFormat) == "json" {
-				output := map[string]interface{}{
+				output := map[string]any{
 					"sync_type":        "aws_security_group",
 					"target":           sgID,
 					"policies_synced":  len(normalized),

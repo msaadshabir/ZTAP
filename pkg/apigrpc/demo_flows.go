@@ -7,10 +7,7 @@ import (
 )
 
 func demoRawFlows() []flow.RawFlowEvent {
-	nowNs := time.Now().UnixNano()
-	if nowNs < 0 {
-		nowNs = 0
-	}
+	nowNs := max(time.Now().UnixNano(), 0)
 	now := uint64(nowNs) // #nosec G115 -- nowNs is clamped to >=0 above
 	return []flow.RawFlowEvent{
 		{

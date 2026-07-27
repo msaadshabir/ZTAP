@@ -141,9 +141,7 @@ var enforceCmd = &cobra.Command{
 
 			var wg sync.WaitGroup
 			if needsResolution && resolveLabelsInterval > 0 {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					enforcer.RunSelectorRefresh(ctx, disc, basePolicies, enforcer.SelectorRefreshOptions{PollInterval: resolveLabelsInterval}, func(next []policy.NetworkPolicy) error {
 						if err := enforcer.ValidatePoliciesForLinux(next); err != nil {
 							return err
@@ -152,7 +150,7 @@ var enforceCmd = &cobra.Command{
 						nextOpts.Policies = next
 						return enforcer.EnforceWithEBPFIfAvailable(nextOpts)
 					})
-				}()
+				})
 			}
 
 			fmt.Println("Enforcement active. Press Ctrl+C to stop.")
@@ -183,15 +181,13 @@ var enforceCmd = &cobra.Command{
 
 			var wg sync.WaitGroup
 			if needsResolution && resolveLabelsInterval > 0 {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					enforcer.RunSelectorRefresh(ctx, disc, basePolicies, enforcer.SelectorRefreshOptions{PollInterval: resolveLabelsInterval}, func(next []policy.NetworkPolicy) error {
 						nextOpts := opts
 						nextOpts.Policies = next
 						return enforcer.EnforceWithWFP(nextOpts)
 					})
-				}()
+				})
 			}
 
 			fmt.Println("Enforcement active. Press Ctrl+C to stop.")

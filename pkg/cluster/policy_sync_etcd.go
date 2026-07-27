@@ -34,7 +34,7 @@ type etcdPolicySyncClient interface {
 // NewEtcdPolicySync creates a new etcd-backed policy sync.
 func NewEtcdPolicySync(config *EtcdConfig, nodeID string) (*EtcdPolicySync, error) {
 	if config == nil {
-		return nil, fmt.Errorf("etcd config cannot be nil")
+		return nil, errors.New("etcd config cannot be nil")
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -50,13 +50,13 @@ func NewEtcdPolicySync(config *EtcdConfig, nodeID string) (*EtcdPolicySync, erro
 // This is intended for unit tests with in-memory fakes.
 func NewEtcdPolicySyncWithClient(config *EtcdConfig, nodeID string, client etcdPolicySyncClient) (*EtcdPolicySync, error) {
 	if config == nil {
-		return nil, fmt.Errorf("etcd config cannot be nil")
+		return nil, errors.New("etcd config cannot be nil")
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 	if client == nil {
-		return nil, fmt.Errorf("etcd client cannot be nil")
+		return nil, errors.New("etcd client cannot be nil")
 	}
 	return &EtcdPolicySync{client: client, config: config, nodeID: nodeID}, nil
 }
@@ -78,7 +78,7 @@ func (ps *EtcdPolicySync) Stop() error {
 // SyncPolicy broadcasts a policy update to the cluster (leader-only enforced by caller).
 func (ps *EtcdPolicySync) SyncPolicy(ctx context.Context, policyName string, policyYAML []byte) error {
 	if ps.client == nil {
-		return fmt.Errorf("etcd client not initialized")
+		return errors.New("etcd client not initialized")
 	}
 	_, err := ps.applyPolicy(ctx, policyName, policyYAML, nil, "", false)
 	return err
@@ -92,7 +92,7 @@ func (ps *EtcdPolicySync) UpsertPolicy(ctx context.Context, policyName string, p
 // DeletePolicy creates a tombstone revision and removes current state.
 func (ps *EtcdPolicySync) DeletePolicy(ctx context.Context, policyName string, reason string) (*PolicyRevision, error) {
 	if strings.TrimSpace(policyName) == "" {
-		return nil, fmt.Errorf("policy name cannot be empty")
+		return nil, errors.New("policy name cannot be empty")
 	}
 	key, err := ParsePolicyKey(policyName)
 	if err != nil {
@@ -113,7 +113,7 @@ func (ps *EtcdPolicySync) DeletePolicy(ctx context.Context, policyName string, r
 // GetPolicyVersion returns the current version or 0 if missing.
 func (ps *EtcdPolicySync) GetPolicyVersion(policyName string) (int64, error) {
 	if strings.TrimSpace(policyName) == "" {
-		return 0, fmt.Errorf("policy name cannot be empty")
+		return 0, errors.New("policy name cannot be empty")
 	}
 	key, err := ParsePolicyKey(policyName)
 	if err != nil {
@@ -187,7 +187,7 @@ func (ps *EtcdPolicySync) ListPolicies() []*PolicyState {
 // GetPolicy returns the current policy state.
 func (ps *EtcdPolicySync) GetPolicy(policyName string) (*PolicyState, error) {
 	if strings.TrimSpace(policyName) == "" {
-		return nil, fmt.Errorf("policy name cannot be empty")
+		return nil, errors.New("policy name cannot be empty")
 	}
 	key, err := ParsePolicyKey(policyName)
 	if err != nil {
@@ -212,7 +212,7 @@ func (ps *EtcdPolicySync) GetPolicy(policyName string) (*PolicyState, error) {
 // ListPolicyRevisions returns revisions in descending order.
 func (ps *EtcdPolicySync) ListPolicyRevisions(policyName string, limit int) ([]PolicyRevision, error) {
 	if strings.TrimSpace(policyName) == "" {
-		return nil, fmt.Errorf("policy name cannot be empty")
+		return nil, errors.New("policy name cannot be empty")
 	}
 	key, err := ParsePolicyKey(policyName)
 	if err != nil {
@@ -244,10 +244,10 @@ func (ps *EtcdPolicySync) ListPolicyRevisions(policyName string, limit int) ([]P
 // GetPolicyRevision fetches a specific revision.
 func (ps *EtcdPolicySync) GetPolicyRevision(policyName string, version int64) (*PolicyRevision, error) {
 	if strings.TrimSpace(policyName) == "" {
-		return nil, fmt.Errorf("policy name cannot be empty")
+		return nil, errors.New("policy name cannot be empty")
 	}
 	if version <= 0 {
-		return nil, fmt.Errorf("version must be positive")
+		return nil, errors.New("version must be positive")
 	}
 	key, err := ParsePolicyKey(policyName)
 	if err != nil {
@@ -273,10 +273,10 @@ func (ps *EtcdPolicySync) GetPolicyRevision(policyName string, version int64) (*
 // RollbackPolicy creates a new revision from a prior version.
 func (ps *EtcdPolicySync) RollbackPolicy(ctx context.Context, policyName string, targetVersion int64, reason string) (*PolicyRevision, error) {
 	if strings.TrimSpace(policyName) == "" {
-		return nil, fmt.Errorf("policy name cannot be empty")
+		return nil, errors.New("policy name cannot be empty")
 	}
 	if targetVersion <= 0 {
-		return nil, fmt.Errorf("target version must be positive")
+		return nil, errors.New("target version must be positive")
 	}
 	key, err := ParsePolicyKey(policyName)
 	if err != nil {
@@ -298,7 +298,7 @@ func (ps *EtcdPolicySync) applyPolicy(ctx context.Context, policyName string, po
 	startTime := time.Now()
 	if strings.TrimSpace(policyName) == "" {
 		recordPolicySyncError("empty_name", "")
-		return nil, fmt.Errorf("policy name cannot be empty")
+		return nil, errors.New("policy name cannot be empty")
 	}
 	key, err := ParsePolicyKey(policyName)
 	if err != nil {
@@ -310,7 +310,7 @@ func (ps *EtcdPolicySync) applyPolicy(ctx context.Context, policyName string, po
 	if !deleted {
 		if len(policyYAML) == 0 {
 			recordPolicySyncError("empty_yaml", policyKeyLabel)
-			return nil, fmt.Errorf("policy YAML cannot be empty")
+			return nil, errors.New("policy YAML cannot be empty")
 		}
 		if _, err := parseAndValidateEtcdPolicy(key, policyYAML); err != nil {
 			recordPolicySyncError("invalid_policy", policyKeyLabel)
@@ -458,7 +458,7 @@ func parseAndValidateEtcdPolicy(key PolicyKey, policyYAML []byte) ([]policy.Netw
 		return nil, err
 	}
 	if len(policies) == 0 {
-		return nil, fmt.Errorf("policy YAML contains no NetworkPolicy objects")
+		return nil, errors.New("policy YAML contains no NetworkPolicy objects")
 	}
 	for _, p := range policies {
 		if err := p.Validate(); err != nil {

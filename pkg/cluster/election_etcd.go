@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -51,7 +52,7 @@ type etcdLeaderElection interface {
 func NewEtcdElection(config LeaderElectionConfig, etcdConfig *EtcdConfig) (*EtcdElection, error) {
 	// Check for nil etcd config
 	if etcdConfig == nil {
-		return nil, fmt.Errorf("invalid etcd config: etcd config cannot be nil")
+		return nil, errors.New("invalid etcd config: etcd config cannot be nil")
 	}
 
 	// Validate etcd config
@@ -86,7 +87,7 @@ func NewEtcdElectionWithClient(config LeaderElectionConfig, etcdConfig *EtcdConf
 		return nil, err
 	}
 	if client == nil {
-		return nil, fmt.Errorf("etcd client cannot be nil")
+		return nil, errors.New("etcd client cannot be nil")
 	}
 	election.client = client
 	return election, nil
@@ -97,7 +98,7 @@ func (e *EtcdElection) Start(ctx context.Context) error {
 	e.mu.Lock()
 	if e.running {
 		e.mu.Unlock()
-		return fmt.Errorf("etcd election already running")
+		return errors.New("etcd election already running")
 	}
 	e.running = true
 	e.mu.Unlock()
@@ -155,7 +156,7 @@ func (e *EtcdElection) Stop() error {
 	e.mu.Lock()
 	if !e.running {
 		e.mu.Unlock()
-		return fmt.Errorf("etcd election not running")
+		return errors.New("etcd election not running")
 	}
 	e.running = false
 	e.mu.Unlock()
@@ -265,10 +266,10 @@ func (e *EtcdElection) GetState() ClusterState {
 // RegisterNode adds or updates a node in the cluster.
 func (e *EtcdElection) RegisterNode(node *Node) error {
 	if node == nil {
-		return fmt.Errorf("node cannot be nil")
+		return errors.New("node cannot be nil")
 	}
 	if e.client == nil {
-		return fmt.Errorf("etcd client not initialized")
+		return errors.New("etcd client not initialized")
 	}
 
 	nodeData, err := json.Marshal(node)
@@ -297,7 +298,7 @@ func (e *EtcdElection) RegisterNode(node *Node) error {
 // DeregisterNode removes a node from the cluster.
 func (e *EtcdElection) DeregisterNode(nodeID string) error {
 	if e.client == nil {
-		return fmt.Errorf("etcd client not initialized")
+		return errors.New("etcd client not initialized")
 	}
 	key := fmt.Sprintf("%s/nodes/%s", e.etcdConfig.KeyPrefix, nodeID)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -481,7 +482,7 @@ func (e *EtcdElection) runElectionLoop() {
 // registerNode registers this node in etcd.
 func (e *EtcdElection) registerNode() error {
 	if e.client == nil {
-		return fmt.Errorf("etcd client not initialized")
+		return errors.New("etcd client not initialized")
 	}
 	node := &Node{
 		ID:       e.config.NodeID,
@@ -523,7 +524,7 @@ func (e *EtcdElection) registerNode() error {
 // deregisterNode removes this node from etcd.
 func (e *EtcdElection) deregisterNode() error {
 	if e.client == nil {
-		return fmt.Errorf("etcd client not initialized")
+		return errors.New("etcd client not initialized")
 	}
 	key := fmt.Sprintf("%s/nodes/%s", e.etcdConfig.KeyPrefix, e.config.NodeID)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -5,7 +5,6 @@ package cluster
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 	"time"

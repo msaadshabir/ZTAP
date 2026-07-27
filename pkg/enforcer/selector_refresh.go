@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -214,7 +214,7 @@ func uniqueTargetSelectors(policies []policy.NetworkPolicy) []selectorSpec {
 	for k := range seen {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	out := make([]selectorSpec, 0, len(keys))
 	for _, k := range keys {

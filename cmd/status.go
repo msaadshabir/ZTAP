@@ -249,15 +249,15 @@ func printCloudResources(resources []cloud.Resource) {
 	_, _ = fmt.Fprintln(w, "  --\t----\t----\t----------\t---------\t------")
 
 	for _, r := range resources {
-		labels := ""
+		var labels strings.Builder
 		for k, v := range r.Labels {
 			if k == "Name" {
 				continue
 			}
-			labels += fmt.Sprintf("%s=%s ", k, v)
+			labels.WriteString(fmt.Sprintf("%s=%s ", k, v))
 		}
 		_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
-			r.ID, r.Name, r.Type, r.PrivateIP, r.PublicIP, labels)
+			r.ID, r.Name, r.Type, r.PrivateIP, r.PublicIP, labels.String())
 	}
 	_ = w.Flush()
 	fmt.Printf("\nTotal: %d resource(s)\n", len(resources))

@@ -20,18 +20,18 @@ func EntryHash(entry *AuditEntry) (string, error) {
 	}
 
 	data := struct {
-		ID           string                 `json:"id"`
-		Timestamp    time.Time              `json:"timestamp"`
-		EventType    EventType              `json:"event_type"`
-		Actor        string                 `json:"actor"`
-		Resource     string                 `json:"resource"`
-		Action       string                 `json:"action"`
-		Details      map[string]interface{} `json:"details"`
-		PreviousHash string                 `json:"previous_hash"`
-		Outcome      string                 `json:"outcome"`
-		ErrorMessage string                 `json:"error_message,omitempty"`
-		IPAddress    string                 `json:"ip_address,omitempty"`
-		NodeID       string                 `json:"node_id,omitempty"`
+		ID           string         `json:"id"`
+		Timestamp    time.Time      `json:"timestamp"`
+		EventType    EventType      `json:"event_type"`
+		Actor        string         `json:"actor"`
+		Resource     string         `json:"resource"`
+		Action       string         `json:"action"`
+		Details      map[string]any `json:"details"`
+		PreviousHash string         `json:"previous_hash"`
+		Outcome      string         `json:"outcome"`
+		ErrorMessage string         `json:"error_message,omitempty"`
+		IPAddress    string         `json:"ip_address,omitempty"`
+		NodeID       string         `json:"node_id,omitempty"`
 	}{
 		ID:           entry.ID,
 		Timestamp:    entry.Timestamp,
