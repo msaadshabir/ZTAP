@@ -475,6 +475,3 @@ var _ PolicySync = (*EtcdPolicySync)(nil)
 var _ PolicyRevisionStore = (*EtcdPolicySync)(nil)
 var _ interface{ Start(context.Context) error } = (*EtcdPolicySync)(nil)
 var _ interface{ Stop() error } = (*EtcdPolicySync)(nil)
-
-// sentinel to avoid unused errors import when built without etcd (should not happen).
-var _ = errors.New

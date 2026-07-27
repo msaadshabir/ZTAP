@@ -78,7 +78,10 @@ type PolicyEnforcerConfig struct {
 func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
 	auditLogger := config.AuditLogger
 	if auditLogger == nil {
-		homeDir, _ := os.UserHomeDir()
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			homeDir = os.TempDir()
+		}
 		logPath := filepath.Join(homeDir, ".ztap", "audit.log")
 		al, err := audit.NewAuditLogger(logPath)
 		if err != nil {

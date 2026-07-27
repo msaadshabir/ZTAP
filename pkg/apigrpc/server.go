@@ -860,7 +860,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 
 	basePolicies, err := policy.LoadFromBytes([]byte(policyYAML))
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to parse policy yaml: %w", err).Error())
+		return nil, status.Errorf(codes.InvalidArgument, "failed to parse policy yaml: %v", err)
 	}
 	if len(basePolicies) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "no policies found")
@@ -884,13 +884,13 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 		resolver := policy.NewPolicyResolver(e.srv.discovery)
 		resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(policyTenant, basePolicies)
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to resolve pod selectors: %w", err).Error())
+			return nil, status.Errorf(codes.InvalidArgument, "failed to resolve pod selectors: %v", err)
 		}
 		policies = resolved
 	}
 	normalized, err := policy.NormalizePolicies(policies)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to normalize ipBlocks: %w", err).Error())
+		return nil, status.Errorf(codes.InvalidArgument, "failed to normalize ipBlocks: %v", err)
 	}
 	policies = normalized
 
@@ -903,7 +903,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 	}
 	for i, np := range named {
 		if err := policy.CheckConflicts(named[:i], np); err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy conflict: %w", err).Error())
+			return nil, status.Errorf(codes.InvalidArgument, "policy conflict: %v", err)
 		}
 	}
 
@@ -938,7 +938,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			resolvedCgroupPath = absCgroupPath
 		}
 		if _, err := statFn(resolvedCgroupPath); err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s: %w", resolvedCgroupPath, err).Error())
+			return nil, status.Errorf(codes.InvalidArgument, "invalid cgroup path %s: %v", resolvedCgroupPath, err)
 		}
 
 		bpfObjectPath := ""
@@ -957,7 +957,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			if !filepath.IsAbs(cleaned) {
 				absPath, err = filepath.Abs(filepath.Join(baseDirAbs, cleaned))
 				if err != nil {
-					return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid bpf_object %s: %w", bpfObject, err).Error())
+					return nil, status.Errorf(codes.InvalidArgument, "invalid bpf_object %s: %v", bpfObject, err)
 				}
 			}
 			rel, err := filepath.Rel(baseDirAbs, absPath)
@@ -965,13 +965,13 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("bpf_object must be within %s", baseDirAbs).Error())
 			}
 			if _, err := statFn(absPath); err != nil {
-				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid bpf_object %s: %w", bpfObject, err).Error())
+				return nil, status.Errorf(codes.InvalidArgument, "invalid bpf_object %s: %v", bpfObject, err)
 			}
 			bpfObjectPath = absPath
 		}
 
 		if err := validateEBPFPolicies(policies); err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy is not supported by eBPF enforcer yet: %w", err).Error())
+			return nil, status.Errorf(codes.InvalidArgument, "policy is not supported by eBPF enforcer yet: %v", err)
 		}
 		srvCtx := e.srv.runCtx
 		if srvCtx == nil {
