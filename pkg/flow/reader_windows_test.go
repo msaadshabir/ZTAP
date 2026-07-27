@@ -6,7 +6,6 @@ import (
 	"context"
 	"net"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -277,8 +276,8 @@ func TestEnqueueWfpEvent_DropsWhenQueueFull(t *testing.T) {
 
 	// Next enqueue should drop.
 	r.enqueueWfpEvent(wfpEvent{typ: fwpmNetEventTypeClassifyDrop})
-	if atomic.LoadUint64(&r.droppedInCh) != 1 {
-		t.Fatalf("droppedInCh=%d want 1", atomic.LoadUint64(&r.droppedInCh))
+	if r.droppedInCh.Load() != 1 {
+		t.Fatalf("droppedInCh=%d want 1", r.droppedInCh.Load())
 	}
 }
 
