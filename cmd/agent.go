@@ -31,8 +31,8 @@ var agentCmd = &cobra.Command{
 
 		var namespaces []string
 		if namespacesCSV != "" {
-			split := strings.Split(namespacesCSV, ",")
-			for _, s := range split {
+			split := strings.SplitSeq(namespacesCSV, ",")
+			for s := range split {
 				s = strings.TrimSpace(s)
 				if s != "" {
 					namespaces = append(namespaces, s)

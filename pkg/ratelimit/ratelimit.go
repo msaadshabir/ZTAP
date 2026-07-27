@@ -218,10 +218,7 @@ func (s *Store) allow(bucket, key string, bc BucketConfig) Decision {
 	}
 	defer res.Cancel()
 
-	delay := res.Delay()
-	if delay < 0 {
-		delay = 0
-	}
+	delay := max(res.Delay(), 0)
 
 	return Decision{Allowed: false, Bucket: bucket, RetryAfter: delay, Limit: bc.RPS, Burst: bc.Burst}
 }
@@ -266,8 +263,8 @@ func isExemptPath(path string, exempt []string) bool {
 		if p == path {
 			return true
 		}
-		if strings.HasSuffix(p, "*") {
-			prefix := strings.TrimSuffix(p, "*")
+		if before, ok := strings.CutSuffix(p, "*"); ok {
+			prefix := before
 			if strings.HasPrefix(path, prefix) {
 				return true
 			}

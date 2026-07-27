@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"ztap/pkg/paths"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -132,8 +133,8 @@ func applyEnvOverrides(cfg AuditConfig) AuditConfig {
 
 func buildOptions(cfg AuditConfig) (AuditLoggerOptions, Verifier, error) {
 	opts := AuditLoggerOptions{
-		LogPath:            normalizePath(cfg.LogPath),
-		CheckpointPath:     normalizePath(cfg.CheckpointPath),
+		LogPath:            paths.Expand(cfg.LogPath),
+		CheckpointPath:     paths.Expand(cfg.CheckpointPath),
 		CheckpointInterval: cfg.CheckpointInterval,
 	}
 
@@ -146,7 +147,7 @@ func buildOptions(cfg AuditConfig) (AuditLoggerOptions, Verifier, error) {
 		if strings.TrimSpace(cfg.HMACKeyFile) == "" {
 			return AuditLoggerOptions{}, nil, fmt.Errorf("hmac-sha256 integrity mode requires hmac_key_file")
 		}
-		keyFile := normalizePath(cfg.HMACKeyFile)
+		keyFile := paths.Expand(cfg.HMACKeyFile)
 		keyBytes, err := os.ReadFile(keyFile)
 		if err != nil {
 			return AuditLoggerOptions{}, nil, fmt.Errorf("reading hmac key file: %w", err)
@@ -170,7 +171,7 @@ func buildOptions(cfg AuditConfig) (AuditLoggerOptions, Verifier, error) {
 		if strings.TrimSpace(cfg.Ed25519PrivateKey) == "" {
 			return AuditLoggerOptions{}, nil, fmt.Errorf("ed25519 integrity mode requires ed25519_private_key_file")
 		}
-		keyFile := normalizePath(cfg.Ed25519PrivateKey)
+		keyFile := paths.Expand(cfg.Ed25519PrivateKey)
 		priv, err := os.ReadFile(keyFile)
 		if err != nil {
 			return AuditLoggerOptions{}, nil, fmt.Errorf("reading ed25519 private key: %w", err)
@@ -228,25 +229,4 @@ func normalizeKeyFile(raw []byte) ([]byte, error) {
 		return decoded, nil
 	}
 	return []byte(trimmed), nil
-}
-
-func normalizePath(p string) string {
-	trimmed := strings.TrimSpace(p)
-	if trimmed == "" {
-		return trimmed
-	}
-	if trimmed == "~" {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			return home
-		}
-		return trimmed
-	}
-	if strings.HasPrefix(trimmed, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			return filepath.Join(home, trimmed[2:])
-		}
-	}
-	return trimmed
 }

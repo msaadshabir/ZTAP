@@ -64,12 +64,12 @@ type WindowsReader struct {
 	subscribeVersion int
 
 	// Telemetry.
-	droppedInCh        uint64
-	filterLookupErrors uint64
-	unknownDirection   uint64
-	allowSeen          uint64
-	dropSeen           uint64
-	warnedNoAllow      uint32
+	droppedInCh        atomic.Uint64
+	filterLookupErrors atomic.Uint64
+	unknownDirection   atomic.Uint64
+	allowSeen          atomic.Uint64
+	dropSeen           atomic.Uint64
+	warnedNoAllow      atomic.Uint32
 
 	engineHandle uintptr
 	eventCh      chan<- RawFlowEvent
@@ -129,12 +129,12 @@ func (r *WindowsReader) Start(ctx context.Context, eventCh chan<- RawFlowEvent) 
 	r.callback1 = 0
 	r.callback2 = 0
 	r.subscribeVersion = -1
-	atomic.StoreUint64(&r.droppedInCh, 0)
-	atomic.StoreUint64(&r.filterLookupErrors, 0)
-	atomic.StoreUint64(&r.unknownDirection, 0)
-	atomic.StoreUint64(&r.allowSeen, 0)
-	atomic.StoreUint64(&r.dropSeen, 0)
-	atomic.StoreUint32(&r.warnedNoAllow, 0)
+	r.droppedInCh.Store(0)
+	r.filterLookupErrors.Store(0)
+	r.unknownDirection.Store(0)
+	r.allowSeen.Store(0)
+	r.dropSeen.Store(0)
+	r.warnedNoAllow.Store(0)
 	r.ztapOnlyEffective = r.ztapOnly
 	stopCh := r.stopCh
 	doneCh := r.doneCh
@@ -222,7 +222,7 @@ func (r *WindowsReader) runWorker(ctx context.Context, stopCh <-chan struct{}, i
 			if ztapOnly {
 				isZTAP, err := r.isZTAPFilter(ev.filterID)
 				if err != nil {
-					n := atomic.AddUint64(&r.filterLookupErrors, 1)
+					n := r.filterLookupErrors.Add(1)
 					if n == 1 || n%10000 == 0 {
 						logging.Warnf("WFP filter correlation failed; dropping events in ztap-only mode: errors=%d last_error=%v", n, err)
 					}
@@ -240,9 +240,9 @@ func (r *WindowsReader) runWorker(ctx context.Context, stopCh <-chan struct{}, i
 
 			switch raw.Action {
 			case ActionAllowed:
-				atomic.AddUint64(&r.allowSeen, 1)
+				r.allowSeen.Add(1)
 			case ActionBlocked:
-				atomic.AddUint64(&r.dropSeen, 1)
+				r.dropSeen.Add(1)
 			}
 
 			// Use uptime (ns since boot) as timestamp.
@@ -299,10 +299,10 @@ func (r *WindowsReader) warnIfNoAllow(ctx context.Context, stopCh <-chan struct{
 	case <-time.After(2 * time.Second):
 	}
 
-	allows := atomic.LoadUint64(&r.allowSeen)
-	drops := atomic.LoadUint64(&r.dropSeen)
+	allows := r.allowSeen.Load()
+	drops := r.dropSeen.Load()
 	if allows == 0 && drops > 0 {
-		if atomic.CompareAndSwapUint32(&r.warnedNoAllow, 0, 1) {
+		if r.warnedNoAllow.CompareAndSwap(0, 1) {
 			logging.Warn("WFP allow events not observed (drops seen); if you expect allowed-flow visibility, verify WFP net event logging/auditing is enabled", nil)
 		}
 	}
@@ -339,7 +339,7 @@ func (r *WindowsReader) wfpEventToRawFlowEvent(ev wfpEvent) (RawFlowEvent, bool)
 	}
 	if !ok {
 		if r != nil {
-			n := atomic.AddUint64(&r.unknownDirection, 1)
+			n := r.unknownDirection.Add(1)
 			if n == 1 || n%10000 == 0 {
 				logging.Warnf("unable to determine WFP event direction; defaulting to egress: count=%d ms_dir=0x%x layer_id=%d", n, ev.msDir, ev.layerID)
 			}
@@ -920,7 +920,7 @@ func (r *WindowsReader) enqueueWfpEvent(ev wfpEvent) {
 	select {
 	case ch <- ev:
 	default:
-		dropped := atomic.AddUint64(&r.droppedInCh, 1)
+		dropped := r.droppedInCh.Add(1)
 		if dropped == 1 || dropped%10000 == 0 {
 			logging.Warnf("dropping WFP net events (queue full): dropped=%d", dropped)
 		}

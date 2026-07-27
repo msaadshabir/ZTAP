@@ -141,7 +141,7 @@ func TestEntryHash_NonSerializableDetails(t *testing.T) {
 		Resource:     "policy-1",
 		Action:       "created",
 		PreviousHash: "0000000000000000000000000000000000000000000000000000000000000000",
-		Details: map[string]interface{}{
+		Details: map[string]any{
 			"bad_value": make(chan int), // channels are not JSON-serializable
 		},
 	}

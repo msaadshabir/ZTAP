@@ -1,7 +1,6 @@
 package compliance
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,7 +39,7 @@ func TestBuildReportFromAnnotationsWithEvidence(t *testing.T) {
 		},
 	}
 
-	report, err := BuildReport(context.Background(), []policy.NetworkPolicy{p}, BuildOptions{
+	report, err := BuildReport(t.Context(), []policy.NetworkPolicy{p}, BuildOptions{
 		PolicyName:     "test-policy",
 		AuditLogPath:   auditPath,
 		EvidenceWindow: 24 * time.Hour,
@@ -177,7 +176,7 @@ func TestAuditIntegrityFailureIsReported(t *testing.T) {
 		},
 	}
 
-	report, err := BuildReport(context.Background(), []policy.NetworkPolicy{p}, BuildOptions{AuditLogPath: auditPath, EvidenceWindow: 24 * time.Hour})
+	report, err := BuildReport(t.Context(), []policy.NetworkPolicy{p}, BuildOptions{AuditLogPath: auditPath, EvidenceWindow: 24 * time.Hour})
 	if err != nil {
 		t.Fatalf("BuildReport: %v", err)
 	}
@@ -221,7 +220,7 @@ spec:
         pci-dss: ["1.2.1"]
 `)
 
-	report, err := BuildReport(context.Background(), []policy.NetworkPolicy{p}, BuildOptions{MappingFileYAML: mappingYAML})
+	report, err := BuildReport(t.Context(), []policy.NetworkPolicy{p}, BuildOptions{MappingFileYAML: mappingYAML})
 	if err != nil {
 		t.Fatalf("BuildReport: %v", err)
 	}
@@ -265,7 +264,7 @@ func TestEnforcementEvidenceRespectsWindow(t *testing.T) {
 		},
 	}
 
-	report, err := BuildReport(context.Background(), []policy.NetworkPolicy{p}, BuildOptions{AuditLogPath: auditPath, EvidenceWindow: 1 * time.Millisecond})
+	report, err := BuildReport(t.Context(), []policy.NetworkPolicy{p}, BuildOptions{AuditLogPath: auditPath, EvidenceWindow: 1 * time.Millisecond})
 	if err != nil {
 		t.Fatalf("BuildReport: %v", err)
 	}

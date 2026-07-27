@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"context"
+	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -52,7 +52,7 @@ func TestZtapNetworkPolicyReconcileCreatesConfigMapAndStatus(t *testing.T) {
 
 	reconciler := &ZtapNetworkPolicyReconciler{Client: fakeClient, Scheme: scheme}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "web-to-db", Namespace: "default"}})
 	if err != nil {
 		t.Fatalf("reconcile failed: %v", err)
@@ -131,7 +131,7 @@ func TestZtapNetworkPolicyReconcileValidationFailure(t *testing.T) {
 
 	reconciler := &ZtapNetworkPolicyReconciler{Client: fakeClient, Scheme: scheme}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "invalid", Namespace: "default"}})
 	if err != nil {
 		t.Fatalf("reconcile failed: %v", err)
@@ -211,7 +211,7 @@ func TestZtapNetworkPolicyReconcileUpdatesConfigMap(t *testing.T) {
 
 	reconciler := &ZtapNetworkPolicyReconciler{Client: fakeClient, Scheme: scheme}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "web-to-db", Namespace: "default"}})
 	if err != nil {
 		t.Fatalf("reconcile failed: %v", err)
@@ -276,7 +276,7 @@ func TestZtapNetworkPolicyReconcileDeleteRemovesConfigMap(t *testing.T) {
 
 	reconciler := &ZtapNetworkPolicyReconciler{Client: fakeClient, Scheme: scheme}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "to-delete", Namespace: "default"}})
 	if err != nil {
 		t.Fatalf("reconcile failed: %v", err)
@@ -297,12 +297,7 @@ func TestZtapNetworkPolicyReconcileDeleteRemovesConfigMap(t *testing.T) {
 }
 
 func containsFinalizer(finalizers []string, finalizer string) bool {
-	for _, f := range finalizers {
-		if f == finalizer {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(finalizers, finalizer)
 }
 
 func findCondition(conditions []metav1.Condition, conditionType string) *metav1.Condition {

@@ -3,7 +3,7 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -54,14 +54,14 @@ func NewK8sDiscoveryAllNamespaces(client kubernetes.Interface) (*K8sDiscoveryAll
 	}
 
 	_, err := podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
+		AddFunc: func(obj any) {
 			if p, ok := obj.(*corev1.Pod); ok {
 				d.notifyWatchersNamespace(p.Namespace)
 				return
 			}
 			d.notifyWatchersAll()
 		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj any) {
 			oldPod, okOld := oldObj.(*corev1.Pod)
 			newPod, okNew := newObj.(*corev1.Pod)
 			if okOld && okNew {
@@ -72,7 +72,7 @@ func NewK8sDiscoveryAllNamespaces(client kubernetes.Interface) (*K8sDiscoveryAll
 			}
 			d.notifyWatchersAll()
 		},
-		DeleteFunc: func(obj interface{}) {
+		DeleteFunc: func(obj any) {
 			// Delete events may arrive as a tombstone.
 			pod, ok := obj.(*corev1.Pod)
 			if !ok {
@@ -92,10 +92,10 @@ func NewK8sDiscoveryAllNamespaces(client kubernetes.Interface) (*K8sDiscoveryAll
 	}
 
 	_, err = namespaceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
+		AddFunc: func(obj any) {
 			d.notifyWatchersAll()
 		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj any) {
 			oldNs, okOld := oldObj.(*corev1.Namespace)
 			newNs, okNew := newObj.(*corev1.Namespace)
 			if okOld && okNew {
@@ -106,7 +106,7 @@ func NewK8sDiscoveryAllNamespaces(client kubernetes.Interface) (*K8sDiscoveryAll
 			}
 			d.notifyWatchersAll()
 		},
-		DeleteFunc: func(obj interface{}) {
+		DeleteFunc: func(obj any) {
 			d.notifyWatchersAll()
 		},
 	})
@@ -164,7 +164,7 @@ func (d *K8sDiscoveryAllNamespaces) ResolveLabelsScoped(scope string, selector m
 		return nil, &NoMatchesError{Resource: "pods", Scope: scope, Labels: copyLabelMap(selector)}
 	}
 
-	sort.Strings(ips)
+	slices.Sort(ips)
 	return ips, nil
 }
 
@@ -236,7 +236,7 @@ func (d *K8sDiscoveryAllNamespaces) ResolveSelectorScoped(scope string, selector
 		return nil, &NoMatchesError{Resource: "pods", Scope: scope, Labels: copyLabelMap(selector.MatchLabels)}
 	}
 
-	sort.Strings(ips)
+	slices.Sort(ips)
 	return ips, nil
 }
 
@@ -258,7 +258,7 @@ func (d *K8sDiscoveryAllNamespaces) ResolveNamespaces(selector policy.PodSelecto
 	for _, ns := range namespaces {
 		out = append(out, ns.Name)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out, nil
 }
 
@@ -400,7 +400,7 @@ func (d *K8sDiscoveryAllNamespaces) notifyWatcher(w *k8sScopedWatcher) {
 			ips = append(ips, pod.Status.PodIP)
 		}
 	}
-	sort.Strings(ips)
+	slices.Sort(ips)
 
 	if !equalStrings(ips, w.lastIPs) {
 		w.lastIPs = ips

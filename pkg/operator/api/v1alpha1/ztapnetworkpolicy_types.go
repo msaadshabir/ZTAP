@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -236,9 +237,7 @@ func (in *ZtapNetworkPolicySpec) DeepCopy() *ZtapNetworkPolicySpec {
 
 	if in.PodSelector.MatchLabels != nil {
 		out.PodSelector.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
-		for k, v := range in.PodSelector.MatchLabels {
-			out.PodSelector.MatchLabels[k] = v
-		}
+		maps.Copy(out.PodSelector.MatchLabels, in.PodSelector.MatchLabels)
 	}
 	if in.PodSelector.MatchExpressions != nil {
 		out.PodSelector.MatchExpressions = make([]LabelSelectorRequirement, len(in.PodSelector.MatchExpressions))
@@ -313,9 +312,7 @@ func (in *EgressTarget) DeepCopy() EgressTarget {
 		ps := PodSelectorSpec{}
 		if in.PodSelector.MatchLabels != nil {
 			ps.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
-			for k, v := range in.PodSelector.MatchLabels {
-				ps.MatchLabels[k] = v
-			}
+			maps.Copy(ps.MatchLabels, in.PodSelector.MatchLabels)
 		}
 		if in.PodSelector.MatchExpressions != nil {
 			ps.MatchExpressions = make([]LabelSelectorRequirement, len(in.PodSelector.MatchExpressions))
@@ -327,9 +324,7 @@ func (in *EgressTarget) DeepCopy() EgressTarget {
 		ns := PodSelectorSpec{}
 		if in.NamespaceSelector.MatchLabels != nil {
 			ns.MatchLabels = make(map[string]string, len(in.NamespaceSelector.MatchLabels))
-			for k, v := range in.NamespaceSelector.MatchLabels {
-				ns.MatchLabels[k] = v
-			}
+			maps.Copy(ns.MatchLabels, in.NamespaceSelector.MatchLabels)
 		}
 		if in.NamespaceSelector.MatchExpressions != nil {
 			ns.MatchExpressions = make([]LabelSelectorRequirement, len(in.NamespaceSelector.MatchExpressions))
@@ -354,9 +349,7 @@ func (in *IngressSource) DeepCopy() IngressSource {
 		ps := PodSelectorSpec{}
 		if in.PodSelector.MatchLabels != nil {
 			ps.MatchLabels = make(map[string]string, len(in.PodSelector.MatchLabels))
-			for k, v := range in.PodSelector.MatchLabels {
-				ps.MatchLabels[k] = v
-			}
+			maps.Copy(ps.MatchLabels, in.PodSelector.MatchLabels)
 		}
 		if in.PodSelector.MatchExpressions != nil {
 			ps.MatchExpressions = make([]LabelSelectorRequirement, len(in.PodSelector.MatchExpressions))
@@ -368,9 +361,7 @@ func (in *IngressSource) DeepCopy() IngressSource {
 		ns := PodSelectorSpec{}
 		if in.NamespaceSelector.MatchLabels != nil {
 			ns.MatchLabels = make(map[string]string, len(in.NamespaceSelector.MatchLabels))
-			for k, v := range in.NamespaceSelector.MatchLabels {
-				ns.MatchLabels[k] = v
-			}
+			maps.Copy(ns.MatchLabels, in.NamespaceSelector.MatchLabels)
 		}
 		if in.NamespaceSelector.MatchExpressions != nil {
 			ns.MatchExpressions = make([]LabelSelectorRequirement, len(in.NamespaceSelector.MatchExpressions))

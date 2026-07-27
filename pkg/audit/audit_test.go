@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -39,7 +40,7 @@ func TestAuditLogger_Log(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	details := map[string]interface{}{
+	details := map[string]any{
 		"policy_name": "web-policy",
 		"version":     1,
 	}
@@ -64,7 +65,7 @@ func TestAuditLogger_LogFailure(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	details := map[string]interface{}{
+	details := map[string]any{
 		"policy_name": "invalid-policy",
 	}
 
@@ -150,8 +151,8 @@ func TestAuditLogger_VerifyIntegrity(t *testing.T) {
 	}
 
 	// Log multiple entries
-	for i := 0; i < 5; i++ {
-		details := map[string]interface{}{"index": i}
+	for i := range 5 {
+		details := map[string]any{"index": i}
 		err = logger.Log(EventPolicyCreated, "admin", "policy", "created", details)
 		if err != nil {
 			t.Fatalf("failed to log entry %d: %v", i, err)
@@ -187,7 +188,7 @@ func TestAuditLogger_VerifyIntegrityDetectsTampering(t *testing.T) {
 	}
 
 	// Log entries
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		err = logger.Log(EventPolicyCreated, "admin", "policy", "created", nil)
 		if err != nil {
 			t.Fatalf("failed to log entry %d: %v", i, err)
@@ -331,7 +332,7 @@ func TestAuditLogger_TruncationDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create logger: %v", err)
 	}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if err := logger.Log(EventPolicyCreated, "admin", "policy", "created", map[string]any{"index": i}); err != nil {
 			t.Fatalf("failed to log entry: %v", err)
 		}
@@ -352,8 +353,8 @@ func TestAuditLogger_TruncationDetection(t *testing.T) {
 		trimmed = trimmed[:len(trimmed)-1]
 	}
 	lastNL := -1
-	for i := len(trimmed) - 1; i >= 0; i-- {
-		if trimmed[i] == '\n' {
+	for i, t := range slices.Backward(trimmed) {
+		if t == '\n' {
 			lastNL = i
 			break
 		}
@@ -394,7 +395,7 @@ func TestAuditLogger_TamperAndRecompute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create logger: %v", err)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if err := logger.Log(EventPolicyCreated, "admin", "policy", "created", map[string]any{"index": i}); err != nil {
 			t.Fatalf("failed to log entry: %v", err)
 		}
@@ -560,7 +561,7 @@ func TestAuditLogger_GetStats(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 
 	// Log some entries
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_ = logger.Log(EventPolicyCreated, "admin", "policy", "created", nil)
 	}
 
@@ -647,16 +648,16 @@ func TestAuditLogger_ConcurrentWrites(t *testing.T) {
 
 	// Write entries concurrently
 	done := make(chan bool)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		go func(index int) {
-			details := map[string]interface{}{"index": index}
+			details := map[string]any{"index": index}
 			_ = logger.Log(EventPolicyCreated, "admin", "policy", "created", details)
 			done <- true
 		}(i)
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 
@@ -686,8 +687,8 @@ func TestVerifyIntegrityDetailed_EntryCount(t *testing.T) {
 	}
 
 	// Log exactly 5 entries
-	for i := 0; i < 5; i++ {
-		err := logger.Log(EventPolicyCreated, "admin", "policy", "created", map[string]interface{}{"i": i})
+	for i := range 5 {
+		err := logger.Log(EventPolicyCreated, "admin", "policy", "created", map[string]any{"i": i})
 		if err != nil {
 			t.Fatalf("failed to log entry %d: %v", i, err)
 		}
@@ -728,7 +729,7 @@ func TestLoadLastHash_ResetsCounterOnReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit logger: %v", err)
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_ = logger.Log(EventPolicyCreated, "admin", "policy", "created", nil)
 	}
 	if logger.entryCount != 3 {

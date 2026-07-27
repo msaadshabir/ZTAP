@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"time"
 
@@ -41,7 +42,7 @@ type EtcdConfig struct {
 // Validate checks if the configuration is valid.
 func (c *EtcdConfig) Validate() error {
 	if len(c.Endpoints) == 0 {
-		return fmt.Errorf("etcd endpoints cannot be empty")
+		return errors.New("etcd endpoints cannot be empty")
 	}
 
 	if c.DialTimeout <= 0 {

@@ -171,8 +171,8 @@ func readModulePath(goModPath string) (string, error) {
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module ")), nil
+		if after, ok := strings.CutPrefix(line, "module "); ok {
+			return strings.TrimSpace(after), nil
 		}
 	}
 	if err := s.Err(); err != nil {
@@ -239,8 +239,8 @@ func normalizeCoverPath(rawFile, repoSlash, modulePath string) string {
 
 	if modulePath != "" {
 		modPrefix := strings.TrimSuffix(modulePath, "/") + "/"
-		if strings.HasPrefix(p, modPrefix) {
-			return path.Clean(strings.TrimPrefix(p, modPrefix))
+		if after, ok := strings.CutPrefix(p, modPrefix); ok {
+			return path.Clean(after)
 		}
 	}
 

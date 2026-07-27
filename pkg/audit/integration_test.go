@@ -23,7 +23,7 @@ func TestFullWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create logger: %v", err)
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := logger.Log(EventPolicyCreated, "admin", "policy", "created", map[string]any{"index": i}); err != nil {
 			t.Fatalf("failed to log entry: %v", err)
 		}

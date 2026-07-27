@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"ztap/pkg/policy"
@@ -159,55 +160,57 @@ func TestInMemoryDiscovery_ListServices(t *testing.T) {
 }
 
 func TestInMemoryDiscovery_Watch(t *testing.T) {
-	disc := NewInMemoryDiscovery()
+	synctest.Test(t, func(t *testing.T) {
+		disc := NewInMemoryDiscovery()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
 
-	// Register initial service
-	_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+		// Register initial service
+		_ = disc.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
 
-	// Start watching
-	ch, err := disc.Watch(ctx, map[string]string{"app": "web"})
-	if err != nil {
-		t.Fatalf("Failed to start watch: %v", err)
-	}
-
-	// Get initial state
-	select {
-	case ips := <-ch:
-		if len(ips) != 1 {
-			t.Errorf("Expected 1 IP in initial state, got %d", len(ips))
+		// Start watching
+		ch, err := disc.Watch(ctx, map[string]string{"app": "web"})
+		if err != nil {
+			t.Fatalf("Failed to start watch: %v", err)
 		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for initial state")
-	}
 
-	// Register another service
-	_ = disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
-
-	// Wait for update
-	select {
-	case ips := <-ch:
-		if len(ips) != 2 {
-			t.Errorf("Expected 2 IPs after registration, got %d", len(ips))
+		// Get initial state
+		select {
+		case ips := <-ch:
+			if len(ips) != 1 {
+				t.Errorf("Expected 1 IP in initial state, got %d", len(ips))
+			}
+		case <-time.After(1 * time.Second):
+			t.Fatal("Timeout waiting for initial state")
 		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for update")
-	}
 
-	// Cancel context and verify channel closes
-	cancel()
-	time.Sleep(100 * time.Millisecond)
+		// Register another service
+		_ = disc.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
 
-	select {
-	case _, ok := <-ch:
-		if ok {
+		// Wait for update
+		select {
+		case ips := <-ch:
+			if len(ips) != 2 {
+				t.Errorf("Expected 2 IPs after registration, got %d", len(ips))
+			}
+		case <-time.After(1 * time.Second):
+			t.Fatal("Timeout waiting for update")
+		}
+
+		// Cancel context and verify channel closes
+		cancel()
+		time.Sleep(100 * time.Millisecond)
+
+		select {
+		case _, ok := <-ch:
+			if ok {
+				t.Error("Expected channel to be closed")
+			}
+		default:
 			t.Error("Expected channel to be closed")
 		}
-	default:
-		t.Error("Expected channel to be closed")
-	}
+	})
 }
 
 func TestDNSDiscovery(t *testing.T) {
@@ -226,52 +229,54 @@ func TestDNSDiscovery(t *testing.T) {
 }
 
 func TestCacheDiscovery(t *testing.T) {
-	backend := NewInMemoryDiscovery()
-	_ = backend.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
+	synctest.Test(t, func(t *testing.T) {
+		backend := NewInMemoryDiscovery()
+		_ = backend.RegisterService("web-1", "10.0.1.1", map[string]string{"app": "web"})
 
-	cache := NewCacheDiscovery(backend, 1*time.Second)
+		cache := NewCacheDiscovery(backend, 1*time.Second)
 
-	// First resolution (cache miss)
-	ips1, err := cache.ResolveLabels(map[string]string{"app": "web"})
-	if err != nil {
-		t.Fatalf("Failed to resolve: %v", err)
-	}
+		// First resolution (cache miss)
+		ips1, err := cache.ResolveLabels(map[string]string{"app": "web"})
+		if err != nil {
+			t.Fatalf("Failed to resolve: %v", err)
+		}
 
-	// Second resolution (cache hit)
-	ips2, err := cache.ResolveLabels(map[string]string{"app": "web"})
-	if err != nil {
-		t.Fatalf("Failed to resolve: %v", err)
-	}
+		// Second resolution (cache hit)
+		ips2, err := cache.ResolveLabels(map[string]string{"app": "web"})
+		if err != nil {
+			t.Fatalf("Failed to resolve: %v", err)
+		}
 
-	if len(ips1) != len(ips2) {
-		t.Error("Cached result differs from original")
-	}
+		if len(ips1) != len(ips2) {
+			t.Error("Cached result differs from original")
+		}
 
-	// Register new service
-	_ = backend.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
+		// Register new service
+		_ = backend.RegisterService("web-2", "10.0.1.2", map[string]string{"app": "web"})
 
-	// Still gets cached result (1 IP)
-	ips3, err := cache.ResolveLabels(map[string]string{"app": "web"})
-	if err != nil {
-		t.Fatalf("Failed to resolve: %v", err)
-	}
+		// Still gets cached result (1 IP)
+		ips3, err := cache.ResolveLabels(map[string]string{"app": "web"})
+		if err != nil {
+			t.Fatalf("Failed to resolve: %v", err)
+		}
 
-	if len(ips3) != 1 {
-		t.Errorf("Expected cached result with 1 IP, got %d", len(ips3))
-	}
+		if len(ips3) != 1 {
+			t.Errorf("Expected cached result with 1 IP, got %d", len(ips3))
+		}
 
-	// Wait for cache to expire
-	time.Sleep(1100 * time.Millisecond)
+		// Wait for cache to expire
+		time.Sleep(1100 * time.Millisecond)
 
-	// Now gets fresh result (2 IPs)
-	ips4, err := cache.ResolveLabels(map[string]string{"app": "web"})
-	if err != nil {
-		t.Fatalf("Failed to resolve: %v", err)
-	}
+		// Now gets fresh result (2 IPs)
+		ips4, err := cache.ResolveLabels(map[string]string{"app": "web"})
+		if err != nil {
+			t.Fatalf("Failed to resolve: %v", err)
+		}
 
-	if len(ips4) != 2 {
-		t.Errorf("Expected fresh result with 2 IPs, got %d", len(ips4))
-	}
+		if len(ips4) != 2 {
+			t.Errorf("Expected fresh result with 2 IPs, got %d", len(ips4))
+		}
+	})
 }
 
 func TestCacheDiscovery_ClearCache(t *testing.T) {

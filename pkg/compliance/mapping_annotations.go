@@ -1,7 +1,7 @@
 package compliance
 
 import (
-	"sort"
+	"slices"
 	"strings"
 
 	"ztap/pkg/policy"
@@ -100,6 +100,6 @@ func uniqueSorted(in []string) []string {
 		set[s] = struct{}{}
 		out = append(out, s)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"ztap/pkg/paths"
 )
 
 type level int
@@ -41,13 +42,7 @@ type Logger struct {
 func New(cfg Config) (*Logger, error) {
 	out := io.Writer(os.Stdout)
 	if strings.TrimSpace(cfg.File) != "" {
-		clean := os.ExpandEnv(cfg.File)
-		if strings.HasPrefix(clean, "~") {
-			home, err := os.UserHomeDir()
-			if err == nil {
-				clean = filepath.Join(home, strings.TrimPrefix(clean, "~"))
-			}
-		}
+		clean := paths.Expand(cfg.File)
 		dir := filepath.Dir(clean)
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, fmt.Errorf("creating log directory: %w", err)

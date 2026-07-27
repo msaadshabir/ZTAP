@@ -92,8 +92,8 @@ type responseStreamConn struct {
 }
 
 func (c *responseStreamConn) Write(p []byte) (int, error) {
-	lines := strings.Split(string(p), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(p), "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -152,7 +152,7 @@ func TestFlowsStream_RequiresFlusher(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 	req := httptest.NewRequest(http.MethodGet, "/v1/flows/stream", nil).WithContext(ctx)
 	rr := &noFlusherWriter{}
@@ -182,7 +182,7 @@ func TestFlowsStream_EmitsEvents(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	req := httptest.NewRequest(http.MethodGet, "/v1/flows/stream", nil).WithContext(ctx)
 
@@ -233,7 +233,7 @@ func TestFlowsStream_ReaderError(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer cancel()
 	req := httptest.NewRequest(http.MethodGet, "/v1/flows/stream", nil).WithContext(ctx)
 	rr := httptest.NewRecorder()
@@ -264,7 +264,7 @@ func TestFlowsStream_KeepAlive(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 17*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 17*time.Second)
 	defer cancel()
 	req := httptest.NewRequest(http.MethodGet, "/v1/flows/stream", nil).WithContext(ctx)
 	conn := &responseStreamConn{readCh: make(chan string, 16)}

@@ -133,17 +133,18 @@ func EnforceWithPF(opts EnforcementOptions) error {
 	}
 
 	// Create anchor file content
-	anchorContent := "# ZTAP Managed Rules\n"
+	var anchorContent strings.Builder
+	anchorContent.WriteString("# ZTAP Managed Rules\n")
 
 	for _, p := range opts.Policies {
-		anchorContent += fmt.Sprintf("# Policy: %s\n", sanitizeForLogPlain(p.Metadata.Name))
+		_, _ = fmt.Fprintf(&anchorContent, "# Policy: %s\n", sanitizeForLogPlain(p.Metadata.Name))
 
 		// Process egress rules (outbound traffic)
 		for _, egress := range p.Spec.Egress {
 			if len(egress.To.PodSelector.MatchLabels) > 0 {
 				// In real world: resolve labels to IPs (via DNS or inventory)
-				anchorContent += "# Note: Label-based egress rules require inventory resolution\n"
-				anchorContent += "block out quick from any to 192.168.0.0/16\n"
+				anchorContent.WriteString("# Note: Label-based egress rules require inventory resolution\n")
+				anchorContent.WriteString("block out quick from any to 192.168.0.0/16\n")
 			}
 			if egress.To.IPBlock.CIDR != "" {
 				for _, port := range egress.Ports {
@@ -154,7 +155,7 @@ func EnforceWithPF(opts EnforcementOptions) error {
 					if port.EndPort != nil {
 						portExpr = fmt.Sprintf("%d:%d", port.Port, *port.EndPort)
 					}
-					anchorContent += fmt.Sprintf("pass out quick proto %s from any to %s port = %s\n",
+					_, _ = fmt.Fprintf(&anchorContent, "pass out quick proto %s from any to %s port = %s\n",
 						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(egress.To.IPBlock.CIDR), portExpr)
 				}
 			}
@@ -164,8 +165,8 @@ func EnforceWithPF(opts EnforcementOptions) error {
 		for _, ingress := range p.Spec.Ingress {
 			if len(ingress.From.PodSelector.MatchLabels) > 0 {
 				// In real world: resolve labels to IPs (via DNS or inventory)
-				anchorContent += "# Note: Label-based ingress rules require inventory resolution\n"
-				anchorContent += "block in quick from 192.168.0.0/16 to any\n"
+				anchorContent.WriteString("# Note: Label-based ingress rules require inventory resolution\n")
+				anchorContent.WriteString("block in quick from 192.168.0.0/16 to any\n")
 			}
 			if ingress.From.IPBlock.CIDR != "" {
 				for _, port := range ingress.Ports {
@@ -176,7 +177,7 @@ func EnforceWithPF(opts EnforcementOptions) error {
 					if port.EndPort != nil {
 						portExpr = fmt.Sprintf("%d:%d", port.Port, *port.EndPort)
 					}
-					anchorContent += fmt.Sprintf("pass in quick proto %s from %s to any port = %s\n",
+					_, _ = fmt.Fprintf(&anchorContent, "pass in quick proto %s from %s to any port = %s\n",
 						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(ingress.From.IPBlock.CIDR), portExpr)
 				}
 			}
@@ -184,7 +185,7 @@ func EnforceWithPF(opts EnforcementOptions) error {
 	}
 
 	if opts.DryRun {
-		safeAnchorContent := sanitizeForLogPlain(anchorContent)
+		safeAnchorContent := sanitizeForLogPlain(anchorContent.String())
 		fmt.Printf("[DRY-RUN] Would have written the following to /etc/pf.anchors/ztap:\n%s\n", safeAnchorContent)
 		return nil
 	}
@@ -194,7 +195,7 @@ func EnforceWithPF(opts EnforcementOptions) error {
 		logging.Warnf("failed to create pf anchors directory: %v", err)
 		return err
 	}
-	if err := os.WriteFile(anchorFile, []byte(anchorContent), 0o600); err != nil {
+	if err := os.WriteFile(anchorFile, []byte(anchorContent.String()), 0o600); err != nil {
 		logging.Warnf("failed to write pf anchor file: %v", err)
 		return err
 	}

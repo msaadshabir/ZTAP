@@ -90,7 +90,7 @@ func TestPolicySyncStartStop(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	// Start should succeed
@@ -126,7 +126,7 @@ func TestSyncPolicyAsLeader(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -194,7 +194,7 @@ func TestSyncPolicyAsFollower(t *testing.T) {
 	}
 	ps := NewInMemoryPolicySync(election, "node-2")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -218,7 +218,7 @@ func TestSyncPolicyVersionIncrement(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -264,7 +264,7 @@ func TestSyncPolicyValidation(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -308,7 +308,7 @@ func TestListPolicies(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -346,7 +346,7 @@ func TestSubscribePolicies(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -388,7 +388,7 @@ func TestSubscribePoliciesMultipleSubscribers(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -442,7 +442,7 @@ func TestApplyRemoteUpdate(t *testing.T) {
 	election := newMockElection("node-2", false)
 	ps := NewInMemoryPolicySync(election, "node-2")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -482,7 +482,7 @@ func TestApplyRemoteDeleteRemovesPolicy(t *testing.T) {
 	election := newMockElection("node-2", false)
 	ps := NewInMemoryPolicySync(election, "node-2")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -522,7 +522,7 @@ func TestApplyRemoteUpdateVersionConflict(t *testing.T) {
 	election := newMockElection("node-2", false)
 	ps := NewInMemoryPolicySync(election, "node-2")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -566,7 +566,7 @@ func TestDeletePolicyRequiresExisting(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -583,7 +583,7 @@ func TestDeletePolicyCreatesRevisionAndRemovesState(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -614,7 +614,7 @@ func TestApplyRemoteUpdateValidation(t *testing.T) {
 	election := newMockElection("node-2", false)
 	ps := NewInMemoryPolicySync(election, "node-2")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	// Empty policy name
@@ -653,7 +653,7 @@ func TestConcurrentPolicySync(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -665,7 +665,7 @@ func TestConcurrentPolicySync(t *testing.T) {
 	done := make(chan bool)
 	numGoroutines := 10
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(id int) {
 			policyName := fmt.Sprintf("concurrent-policy-%d", id)
 			policyYAML := makePolicyYAML(policyName, fmt.Sprintf("10.0.%d.0/24", id+10), 80)
@@ -677,7 +677,7 @@ func TestConcurrentPolicySync(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 
@@ -692,7 +692,7 @@ func TestListPolicyRevisionsDescendingWithLimit(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -721,7 +721,7 @@ func TestRollbackPolicyCreatesNewVersion(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -767,7 +767,7 @@ func TestTenantScopedVersioning(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {
@@ -822,7 +822,7 @@ func TestInMemoryPolicySync_DefaultTenantBackwardCompat(t *testing.T) {
 	election := newMockElection("node-1", true)
 	ps := NewInMemoryPolicySync(election, "node-1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := ps.Start(ctx); err != nil {

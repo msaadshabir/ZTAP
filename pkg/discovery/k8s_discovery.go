@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -48,17 +48,17 @@ func NewK8sDiscovery(client kubernetes.Interface, namespace string) (*K8sDiscove
 	}
 
 	_, err := podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
+		AddFunc: func(obj any) {
 			d.notifyWatchers()
 		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj any) {
 			oldPod := oldObj.(*corev1.Pod)
 			newPod := newObj.(*corev1.Pod)
 			if oldPod.Status.PodIP != newPod.Status.PodIP || !labels.Equals(oldPod.Labels, newPod.Labels) {
 				d.notifyWatchers()
 			}
 		},
-		DeleteFunc: func(obj interface{}) {
+		DeleteFunc: func(obj any) {
 			d.notifyWatchers()
 		},
 	})
@@ -103,7 +103,7 @@ func (d *K8sDiscovery) ResolveLabels(selector map[string]string) ([]string, erro
 		return nil, &NoMatchesError{Resource: "pods", Labels: copyLabelMap(selector)}
 	}
 
-	sort.Strings(ips)
+	slices.Sort(ips)
 	return ips, nil
 }
 
@@ -129,7 +129,7 @@ func (d *K8sDiscovery) ResolveSelector(selector policy.PodSelectorSpec) ([]strin
 		return nil, &NoMatchesError{Resource: "pods", Labels: copyLabelMap(selector.MatchLabels)}
 	}
 
-	sort.Strings(ips)
+	slices.Sort(ips)
 	return ips, nil
 }
 
@@ -201,8 +201,7 @@ func (d *K8sDiscovery) Watch(ctx context.Context, selector map[string]string) (<
 	ips, err := d.ResolveLabels(selector)
 	if err != nil {
 		// NoMatchesError is expected when no pods match yet; treat as empty
-		var noMatch *NoMatchesError
-		if !errors.As(err, &noMatch) {
+		if _, ok := errors.AsType[*NoMatchesError](err); !ok {
 			d.mu.Lock()
 			for i, w := range d.watchers {
 				if w == watcher {
@@ -256,8 +255,7 @@ func (d *K8sDiscovery) WatchSelector(ctx context.Context, selector policy.PodSel
 	ips, err := d.ResolveSelector(selector)
 	if err != nil {
 		// NoMatchesError is expected when no pods match yet; treat as empty
-		var noMatch *NoMatchesError
-		if !errors.As(err, &noMatch) {
+		if _, ok := errors.AsType[*NoMatchesError](err); !ok {
 			d.mu.Lock()
 			for i, w := range d.watchers {
 				if w == watcher {
@@ -349,7 +347,7 @@ func (d *K8sDiscovery) notifyWatchers() {
 				ips = append(ips, pod.Status.PodIP)
 			}
 		}
-		sort.Strings(ips)
+		slices.Sort(ips)
 
 		// Only send if changed
 		if !equalStrings(ips, w.lastIPs) {

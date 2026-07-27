@@ -60,24 +60,11 @@ func TestComplianceReportOK(t *testing.T) {
 	}
 
 	// Login.
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin2", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin2", "pw")
 
 	body := []byte(`{"policy_yaml":"apiVersion: ztap/v1\nkind: NetworkPolicy\nmetadata:\n  name: p\n  annotations:\n    ztap.io/compliance.pci-dss: '10.2.1'\nspec:\n  podSelector:\n    matchLabels:\n      app: a\n  egress:\n  - to:\n      ipBlock:\n        cidr: 10.0.0.0/8\n    ports:\n    - protocol: TCP\n      port: 443\n"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/compliance/report", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -105,24 +92,11 @@ func TestComplianceReportForbiddenForViewer(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "viewer1", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "viewer1", "pw")
 
 	body := []byte(`{"policy_yaml":"apiVersion: ztap/v1\nkind: NetworkPolicy\nmetadata:\n  name: p\nspec:\n  podSelector:\n    matchLabels:\n      app: a\n  egress:\n  - to:\n      ipBlock:\n        cidr: 10.0.0.0/8\n    ports:\n    - protocol: TCP\n      port: 443\n"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/compliance/report", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
@@ -150,24 +124,11 @@ func TestComplianceExportCSVContentType(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin2", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin2", "pw")
 
 	body := []byte(`{"format":"csv","policy_yaml":"apiVersion: ztap/v1\nkind: NetworkPolicy\nmetadata:\n  name: p\n  annotations:\n    ztap.io/compliance.pci-dss: '10.2.1'\nspec:\n  podSelector:\n    matchLabels:\n      app: a\n  egress:\n  - to:\n      ipBlock:\n        cidr: 10.0.0.0/8\n    ports:\n    - protocol: TCP\n      port: 443\n"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/compliance/export", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -201,24 +162,11 @@ func TestComplianceReportInvalidYAMLReturns400(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin2", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin2", "pw")
 
 	body := []byte(`{"policy_yaml":"not: [valid: yaml"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/compliance/report", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -246,24 +194,11 @@ func TestComplianceReportResponseHasMetadata(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin2", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin2", "pw")
 
 	body := []byte(`{"policy_yaml":"apiVersion: ztap/v1\nkind: NetworkPolicy\nmetadata:\n  name: p\n  annotations:\n    ztap.io/compliance.pci-dss: '10.2.1'\nspec:\n  podSelector:\n    matchLabels:\n      app: a\n  egress:\n  - to:\n      ipBlock:\n        cidr: 10.0.0.0/8\n    ports:\n    - protocol: TCP\n      port: 443\n"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/compliance/report", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {

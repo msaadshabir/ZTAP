@@ -36,7 +36,7 @@ func (r *realIptablesRunner) RunWithStdin(stdin string, name string, arg ...stri
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%v: %s", err, stderr.String())
+		return fmt.Errorf("%w: %s", err, stderr.String())
 	}
 	return nil
 }

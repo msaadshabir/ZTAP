@@ -43,11 +43,9 @@ func TestUnaryAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 	}
 
 	for _, mode := range authModes {
-		mode := mode
 		t.Run(mode.name, func(t *testing.T) {
 			t.Parallel()
 			for _, tc := range cases {
-				tc := tc
 				t.Run(tc.name, func(t *testing.T) {
 					t.Parallel()
 
@@ -55,7 +53,7 @@ func TestUnaryAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 					called := false
 
 					_, err := srv.unaryAuthInterceptor(
-						context.Background(),
+						t.Context(),
 						nil,
 						&grpc.UnaryServerInfo{FullMethod: tc.fullMethod},
 						func(ctx context.Context, req any) (any, error) {
@@ -104,11 +102,9 @@ func TestStreamAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 	}
 
 	for _, mode := range authModes {
-		mode := mode
 		t.Run(mode.name, func(t *testing.T) {
 			t.Parallel()
 			for _, tc := range cases {
-				tc := tc
 				t.Run(tc.name, func(t *testing.T) {
 					t.Parallel()
 
@@ -117,7 +113,7 @@ func TestStreamAuthInterceptor_RejectsBadMethodPaths(t *testing.T) {
 
 					err := srv.streamAuthInterceptor(
 						nil,
-						&noopServerStream{ctx: context.Background()},
+						&noopServerStream{ctx: t.Context()},
 						&grpc.StreamServerInfo{FullMethod: tc.fullMethod},
 						func(srv any, ss grpc.ServerStream) error {
 							called = true

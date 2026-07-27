@@ -1,7 +1,7 @@
 package enforcer
 
 import (
-	"sort"
+	"slices"
 	"strings"
 
 	"ztap/pkg/policy"
@@ -45,6 +45,6 @@ func resolveIngressNamedPorts(p policy.NetworkPolicy, portMap map[string]int) (p
 	for name := range missingSet {
 		missing = append(missing, name)
 	}
-	sort.Strings(missing)
+	slices.Sort(missing)
 	return resolved, missing
 }

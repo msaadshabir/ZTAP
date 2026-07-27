@@ -6,7 +6,6 @@ import (
 	"context"
 	"net"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -277,8 +276,8 @@ func TestEnqueueWfpEvent_DropsWhenQueueFull(t *testing.T) {
 
 	// Next enqueue should drop.
 	r.enqueueWfpEvent(wfpEvent{typ: fwpmNetEventTypeClassifyDrop})
-	if atomic.LoadUint64(&r.droppedInCh) != 1 {
-		t.Fatalf("droppedInCh=%d want 1", atomic.LoadUint64(&r.droppedInCh))
+	if r.droppedInCh.Load() != 1 {
+		t.Fatalf("droppedInCh=%d want 1", r.droppedInCh.Load())
 	}
 }
 
@@ -293,7 +292,7 @@ func TestRunWorker_EmitsTimestamp(t *testing.T) {
 
 	in := make(chan wfpEvent, 1)
 	stopCh := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	go r.runWorker(ctx, stopCh, in, false)
@@ -325,7 +324,7 @@ func TestRunWorker_DeduperDropsDuplicate(t *testing.T) {
 
 	in := make(chan wfpEvent, 2)
 	stopCh := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	go r.runWorker(ctx, stopCh, in, false)
@@ -411,7 +410,7 @@ func TestInferDirectionFromLayerKey(t *testing.T) {
 // Ensure WindowsReader methods used in tests can be called without full initialization.
 func TestWindowsReader_ZeroValueDoesNotPanic(t *testing.T) {
 	r := &WindowsReader{}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	stopCh := make(chan struct{})
 	close(stopCh)

@@ -2,7 +2,7 @@ package policy
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -17,7 +17,7 @@ func SelectorKey(labels map[string]string) string {
 	for k := range labels {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	var b strings.Builder
 	for i, k := range keys {
@@ -41,10 +41,10 @@ func SelectorKeySpec(selector PodSelectorSpec) string {
 	exprs := make([]string, 0, len(selector.MatchExpressions))
 	for _, expr := range selector.MatchExpressions {
 		values := append([]string(nil), expr.Values...)
-		sort.Strings(values)
+		slices.Sort(values)
 		exprs = append(exprs, fmt.Sprintf("%s:%s:%s", expr.Key, expr.Operator, strings.Join(values, ",")))
 	}
-	sort.Strings(exprs)
+	slices.Sort(exprs)
 
 	var b strings.Builder
 	if labelKey != "" {

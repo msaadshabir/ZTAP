@@ -1,7 +1,6 @@
 package alert
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -35,7 +34,7 @@ func TestPagerDutySinkSend(t *testing.T) {
 	sink.Endpoint = ts.URL
 
 	a := Alert{Timestamp: time.Unix(0, 0), Severity: SeverityWarning, Title: "t", Message: "m", DedupKey: "k", Details: map[string]any{"x": "y"}}
-	if err := sink.Send(context.Background(), a); err != nil {
+	if err := sink.Send(t.Context(), a); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if got["routing_key"] != "rk" {

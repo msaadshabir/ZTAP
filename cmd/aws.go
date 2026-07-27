@@ -15,7 +15,7 @@ import (
 	"ztap/pkg/policy"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // awsConfig holds AWS-specific settings loaded from config.yaml.
@@ -191,7 +191,7 @@ var awsSGSyncCmd = &cobra.Command{
 			}
 
 			if strings.ToLower(outputFormat) == "json" {
-				output := map[string]interface{}{
+				output := map[string]any{
 					"sync_type":        "aws_security_group",
 					"target":           sgID,
 					"policies_synced":  len(normalized),

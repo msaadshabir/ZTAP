@@ -2,7 +2,9 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -32,9 +34,7 @@ func cloneNode(n *Node) *Node {
 	copyNode := *n
 	if n.Metadata != nil {
 		m := make(map[string]string, len(n.Metadata))
-		for k, v := range n.Metadata {
-			m[k] = v
-		}
+		maps.Copy(m, n.Metadata)
 		copyNode.Metadata = m
 	}
 	return &copyNode
@@ -70,7 +70,7 @@ func (e *InMemoryElection) Start(ctx context.Context) error {
 	e.mu.Lock()
 	if e.running {
 		e.mu.Unlock()
-		return fmt.Errorf("leader election already running")
+		return errors.New("leader election already running")
 	}
 	e.stopCh = make(chan struct{})
 	e.running = true
@@ -101,7 +101,7 @@ func (e *InMemoryElection) Stop() error {
 	e.mu.Lock()
 	if !e.running {
 		e.mu.Unlock()
-		return fmt.Errorf("leader election not running")
+		return errors.New("leader election not running")
 	}
 	e.running = false
 
@@ -142,14 +142,14 @@ func (e *InMemoryElection) GetLeader() *Node {
 // RegisterNode adds or updates a node in the cluster.
 func (e *InMemoryElection) RegisterNode(node *Node) error {
 	if node == nil {
-		return fmt.Errorf("node cannot be nil")
+		return errors.New("node cannot be nil")
 	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if node.ID == "" {
-		return fmt.Errorf("node ID cannot be empty")
+		return errors.New("node ID cannot be empty")
 	}
 
 	existing := e.state.Nodes[node.ID]

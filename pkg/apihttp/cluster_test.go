@@ -21,7 +21,7 @@ func TestClusterStatusRequiresAuth(t *testing.T) {
 	}
 
 	election := cluster.NewInMemoryElection(cluster.LeaderElectionConfig{NodeID: "node-1", NodeAddress: "127.0.0.1:0"})
-	ctx, cancel := contextWithTimeout(t, 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	if err := election.Start(ctx); err != nil {
 		t.Fatalf("Start election: %v", err)
@@ -42,7 +42,7 @@ func TestClusterStatusRequiresAuth(t *testing.T) {
 }
 
 func TestClusterNodesLifecycle(t *testing.T) {
-	ctx, cancel := contextWithTimeout(t, 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	election := cluster.NewInMemoryElection(cluster.LeaderElectionConfig{NodeID: "node-1", NodeAddress: "127.0.0.1:0"})
@@ -80,10 +80,4 @@ func TestClusterNodesLifecycle(t *testing.T) {
 	if delRR.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", delRR.Code)
 	}
-}
-
-func contextWithTimeout(t *testing.T, d time.Duration) (context.Context, context.CancelFunc) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	return ctx, cancel
 }

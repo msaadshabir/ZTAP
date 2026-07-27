@@ -46,24 +46,11 @@ func TestUsersLifecycle(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin1", "password": "password123"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin1", "password123")
 
 	createBody, _ := json.Marshal(map[string]string{"username": "user1", "password": "password123", "role": "viewer"})
 	createReq := httptest.NewRequest(http.MethodPost, "/v1/users", bytes.NewReader(createBody))
-	createReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	createReq.Header.Set("Authorization", "Bearer "+token)
 	createRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(createRR, createReq)
 	if createRR.Code != http.StatusCreated {
@@ -71,7 +58,7 @@ func TestUsersLifecycle(t *testing.T) {
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
-	listReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	listReq.Header.Set("Authorization", "Bearer "+token)
 	listRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(listRR, listReq)
 	if listRR.Code != http.StatusOK {
@@ -80,7 +67,7 @@ func TestUsersLifecycle(t *testing.T) {
 
 	patchBody, _ := json.Marshal(map[string]any{"enabled": false})
 	patchReq := httptest.NewRequest(http.MethodPatch, "/v1/users/user1", bytes.NewReader(patchBody))
-	patchReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	patchReq.Header.Set("Authorization", "Bearer "+token)
 	patchRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(patchRR, patchReq)
 	if patchRR.Code != http.StatusOK {
@@ -89,7 +76,7 @@ func TestUsersLifecycle(t *testing.T) {
 
 	passBody, _ := json.Marshal(map[string]string{"new_password": "newpassword123"})
 	passReq := httptest.NewRequest(http.MethodPost, "/v1/users/user1/password", bytes.NewReader(passBody))
-	passReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	passReq.Header.Set("Authorization", "Bearer "+token)
 	passRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(passRR, passReq)
 	if passRR.Code != http.StatusOK {
@@ -97,7 +84,7 @@ func TestUsersLifecycle(t *testing.T) {
 	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/users/user1", nil)
-	deleteReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	deleteReq.Header.Set("Authorization", "Bearer "+token)
 	deleteRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(deleteRR, deleteReq)
 	if deleteRR.Code != http.StatusOK {

@@ -23,8 +23,8 @@ type Dispatcher struct {
 	startOnce sync.Once
 	closeOnce sync.Once
 	wg        sync.WaitGroup
-	dropped   uint64
-	closed    uint32
+	dropped   atomic.Uint64
+	closed    atomic.Uint32
 }
 
 func NewDispatcher(opts DispatcherOptions) (*Dispatcher, error) {
@@ -62,15 +62,12 @@ func (d *Dispatcher) Start(ctx context.Context) {
 			go d.worker(ctx)
 		}
 
-		go func() {
-			<-ctx.Done()
-			d.Close()
-		}()
+		context.AfterFunc(ctx, d.Close)
 	})
 }
 
 func (d *Dispatcher) Emit(a Alert) bool {
-	if atomic.LoadUint32(&d.closed) == 1 {
+	if d.closed.Load() == 1 {
 		return false
 	}
 
@@ -82,18 +79,18 @@ func (d *Dispatcher) Emit(a Alert) bool {
 	case d.queue <- a:
 		return true
 	default:
-		atomic.AddUint64(&d.dropped, 1)
+		d.dropped.Add(1)
 		return false
 	}
 }
 
 func (d *Dispatcher) Dropped() uint64 {
-	return atomic.LoadUint64(&d.dropped)
+	return d.dropped.Load()
 }
 
 func (d *Dispatcher) Close() {
 	d.closeOnce.Do(func() {
-		atomic.StoreUint32(&d.closed, 1)
+		d.closed.Store(1)
 		close(d.queue)
 		d.wg.Wait()
 	})

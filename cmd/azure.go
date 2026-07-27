@@ -13,7 +13,7 @@ import (
 	"ztap/pkg/policy"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // azureConfig holds Azure-specific settings loaded from config.yaml.

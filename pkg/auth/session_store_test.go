@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -26,11 +25,10 @@ func TestSessionStoresContract(t *testing.T) {
 	}
 
 	for name, store := range mkStores(t) {
-		store := store
 		t.Run(name, func(t *testing.T) {
 			defer func() { _ = store.Close() }()
 
-			ctx := context.Background()
+			ctx := t.Context()
 			now := time.Now()
 
 			sess := &Session{Token: "t", Username: "alice", Role: RoleAdmin, CreatedAt: now, ExpiresAt: now.Add(1 * time.Hour)}
@@ -66,7 +64,7 @@ func TestSessionStoresContract(t *testing.T) {
 
 			// Concurrency smoke test.
 			var wg sync.WaitGroup
-			for i := 0; i < 20; i++ {
+			for i := range 20 {
 				wg.Add(1)
 				go func(i int) {
 					defer wg.Done()

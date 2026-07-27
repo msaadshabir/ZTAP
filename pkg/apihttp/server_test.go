@@ -8,33 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ztap/pkg/audit"
 	"ztap/pkg/auth"
 	"ztap/pkg/health"
 )
-
-func newTestServer(t *testing.T, authEnabled bool) *Server {
-	t.Helper()
-
-	dir := t.TempDir()
-	am, err := auth.NewAuthManager(filepath.Join(dir, "users.json"))
-	if err != nil {
-		t.Fatalf("NewAuthManager: %v", err)
-	}
-	al, err := audit.NewAuditLogger(filepath.Join(dir, "audit.log"))
-	if err != nil {
-		t.Fatalf("NewAuditLogger: %v", err)
-	}
-	server, err := NewServer(ServerOptions{Config: Config{Listen: "127.0.0.1:0", AuthEnabled: authEnabled}, AuthManager: am, AuditLogger: al})
-	if err != nil {
-		t.Fatalf("NewServer: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = am.Close()
-		_ = al.Close()
-	})
-	return server
-}
 
 func TestAuthLoginAndWhoAmI(t *testing.T) {
 	dir := t.TempDir()

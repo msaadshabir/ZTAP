@@ -27,7 +27,7 @@ func TestDispatcherEmitDropsWhenFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDispatcher: %v", err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	d.Start(ctx)
 

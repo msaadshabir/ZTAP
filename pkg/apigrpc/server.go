@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"ztap/pkg/alert"
+	"ztap/pkg/apiutil"
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
 	"ztap/pkg/cluster"
@@ -136,14 +137,14 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		opts.Config.Listen = "127.0.0.1:9092"
 	}
 	if opts.AuthManager == nil {
-		am, err := defaultAuthManager()
+		am, err := apiutil.DefaultAuthManager()
 		if err != nil {
 			return nil, err
 		}
 		opts.AuthManager = am
 	}
 	if opts.AuditLogger == nil {
-		al, err := defaultAuditLogger()
+		al, err := apiutil.DefaultAuditLogger()
 		if err != nil {
 			return nil, err
 		}
@@ -315,26 +316,6 @@ func auditActor(ctx context.Context) string {
 	return "system"
 }
 
-func defaultAuthManager() (*auth.AuthManager, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-	return auth.NewAuthManager(filepath.Join(homeDir, ".ztap", "users.json"))
-}
-
-func defaultAuditLogger() (*audit.AuditLogger, error) {
-	if opts, _, err := loadAuditOptions(); err == nil {
-		return audit.NewAuditLoggerWithOptions(opts)
-	}
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-	logPath := filepath.Join(homeDir, ".ztap", "audit.log")
-	return audit.NewAuditLogger(logPath)
-}
-
 func (s *Server) emitAlert(a alert.Alert) {
 	if s.alerts == nil {
 		return
@@ -401,8 +382,8 @@ func (s *Server) isExemptMethod(fullMethod string) bool {
 		if m == fullMethod {
 			return true
 		}
-		if strings.HasSuffix(m, "*") {
-			prefix := strings.TrimSuffix(m, "*")
+		if before, ok := strings.CutSuffix(m, "*"); ok {
+			prefix := before
 			if strings.HasPrefix(fullMethod, prefix) {
 				return true
 			}
@@ -458,10 +439,7 @@ func (s *Server) streamRateLimitInterceptor(srv any, ss grpc.ServerStream, info 
 func rateLimitStatus(dec ratelimit.Decision) error {
 	st := status.New(codes.ResourceExhausted, "rate limited")
 	if dec.RetryAfter > 0 {
-		d := dec.RetryAfter
-		if d < 0 {
-			d = 0
-		}
+		d := max(dec.RetryAfter, 0)
 		stWith, err := st.WithDetails(&errdetails.RetryInfo{RetryDelay: durationpb.New(d)})
 		if err == nil {
 			return stWith.Err()
@@ -863,7 +841,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 
 	basePolicies, err := policy.LoadFromBytes([]byte(policyYAML))
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to parse policy yaml: %w", err).Error())
+		return nil, status.Errorf(codes.InvalidArgument, "failed to parse policy yaml: %v", err)
 	}
 	if len(basePolicies) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "no policies found")
@@ -887,13 +865,13 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 		resolver := policy.NewPolicyResolver(e.srv.discovery)
 		resolved, err := resolver.ResolvePodSelectorsToIPBlocksScoped(policyTenant, basePolicies)
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to resolve pod selectors: %w", err).Error())
+			return nil, status.Errorf(codes.InvalidArgument, "failed to resolve pod selectors: %v", err)
 		}
 		policies = resolved
 	}
 	normalized, err := policy.NormalizePolicies(policies)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Errorf("failed to normalize ipBlocks: %w", err).Error())
+		return nil, status.Errorf(codes.InvalidArgument, "failed to normalize ipBlocks: %v", err)
 	}
 	policies = normalized
 
@@ -906,7 +884,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 	}
 	for i, np := range named {
 		if err := policy.CheckConflicts(named[:i], np); err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy conflict: %w", err).Error())
+			return nil, status.Errorf(codes.InvalidArgument, "policy conflict: %v", err)
 		}
 	}
 
@@ -941,7 +919,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			resolvedCgroupPath = absCgroupPath
 		}
 		if _, err := statFn(resolvedCgroupPath); err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s: %w", resolvedCgroupPath, err).Error())
+			return nil, status.Errorf(codes.InvalidArgument, "invalid cgroup path %s: %v", resolvedCgroupPath, err)
 		}
 
 		bpfObjectPath := ""
@@ -960,7 +938,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			if !filepath.IsAbs(cleaned) {
 				absPath, err = filepath.Abs(filepath.Join(baseDirAbs, cleaned))
 				if err != nil {
-					return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid bpf_object %s: %w", bpfObject, err).Error())
+					return nil, status.Errorf(codes.InvalidArgument, "invalid bpf_object %s: %v", bpfObject, err)
 				}
 			}
 			rel, err := filepath.Rel(baseDirAbs, absPath)
@@ -968,13 +946,13 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("bpf_object must be within %s", baseDirAbs).Error())
 			}
 			if _, err := statFn(absPath); err != nil {
-				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid bpf_object %s: %w", bpfObject, err).Error())
+				return nil, status.Errorf(codes.InvalidArgument, "invalid bpf_object %s: %v", bpfObject, err)
 			}
 			bpfObjectPath = absPath
 		}
 
 		if err := validateEBPFPolicies(policies); err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Errorf("policy is not supported by eBPF enforcer yet: %w", err).Error())
+			return nil, status.Errorf(codes.InvalidArgument, "policy is not supported by eBPF enforcer yet: %v", err)
 		}
 		srvCtx := e.srv.runCtx
 		if srvCtx == nil {
@@ -1613,11 +1591,7 @@ func toClusterNode(node *cluster.Node) *apiv1.ClusterNode {
 }
 
 func safeNodesCount(nodes []*cluster.Node) int32 {
-	count := len(nodes)
-	if count > int(math.MaxInt32) {
-		return math.MaxInt32
-	}
-	return int32(count)
+	return int32(min(len(nodes), int(math.MaxInt32)))
 }
 
 func flowEventToPB(ev flow.FlowEvent) *apiv1.FlowEvent {

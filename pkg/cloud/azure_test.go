@@ -74,7 +74,7 @@ func (m *mockSecurityRulesClient) Delete(ctx context.Context, resourceGroup, nsg
 func TestAzureSyncPolicyReconcilesRules(t *testing.T) {
 	mock := &mockSecurityRulesClient{
 		listRules: []*armnetwork.SecurityRule{
-			{Name: ptrString("ztap-stale-rule")},
+			{Name: new("ztap-stale-rule")},
 		},
 	}
 
@@ -105,7 +105,7 @@ func TestAzureSyncPolicyReconcilesRules(t *testing.T) {
 		},
 	}
 
-	err := client.SyncPolicy(context.Background(), np, "rg", "nsg")
+	err := client.SyncPolicy(t.Context(), np, "rg", "nsg")
 	if err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestAzureSyncPolicyInvalidPort(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "rg", "nsg"); err == nil {
+	if err := client.SyncPolicy(t.Context(), np, "rg", "nsg"); err == nil {
 		t.Fatal("expected error for invalid port")
 	}
 	if len(mock.upserts) != 0 {
@@ -199,7 +199,7 @@ func TestAzureSyncPolicyPortRange(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "rg", "nsg"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "rg", "nsg"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 	if len(mock.upserts) != 1 {
@@ -221,15 +221,15 @@ func TestAzureDiscoverResources(t *testing.T) {
 
 	interfaces := &mockAzureInterfaces{items: []*armnetwork.Interface{
 		{
-			ID:   ptrString("/subscriptions/123/resourceGroups/rg/providers/Microsoft.Network/networkInterfaces/nic1"),
-			Name: ptrString("nic1"),
-			Tags: map[string]*string{"app": ptrString("web")},
+			ID:   new("/subscriptions/123/resourceGroups/rg/providers/Microsoft.Network/networkInterfaces/nic1"),
+			Name: new("nic1"),
+			Tags: map[string]*string{"app": new("web")},
 			Properties: &armnetwork.InterfacePropertiesFormat{
 				IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 					{
 						Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-							PrivateIPAddress: ptrString(privateIP),
-							PublicIPAddress:  &armnetwork.PublicIPAddress{ID: ptrString(publicIPID)},
+							PrivateIPAddress: new(privateIP),
+							PublicIPAddress:  &armnetwork.PublicIPAddress{ID: new(publicIPID)},
 						},
 					},
 				},
@@ -239,15 +239,15 @@ func TestAzureDiscoverResources(t *testing.T) {
 
 	publicIPs := &mockAzurePublicIPs{items: []*armnetwork.PublicIPAddress{
 		{
-			ID: ptrString(publicIPID),
+			ID: new(publicIPID),
 			Properties: &armnetwork.PublicIPAddressPropertiesFormat{
-				IPAddress: ptrString(publicIP),
+				IPAddress: new(publicIP),
 			},
 		},
 	}}
 
 	client := &AzureClient{interfaces: interfaces, publicIPs: publicIPs, rulePrefix: defaultAzureRulePrefix, priorityBase: defaultPriorityBase}
-	resources, err := client.DiscoverResources(context.Background(), "rg")
+	resources, err := client.DiscoverResources(t.Context(), "rg")
 	if err != nil {
 		t.Fatalf("DiscoverResources returned error: %v", err)
 	}

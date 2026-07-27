@@ -64,8 +64,8 @@ func TestGCPSyncPolicyReconcilesRules(t *testing.T) {
 	networkURL := networkSelfLink("demo", "default")
 	mock := &mockFirewalls{
 		listRules: []*computepb.Firewall{
-			{Name: proto.String("ztap-egress-tcp-5432-10-0-0-0-24")},
-			{Name: proto.String("ztap-stale-rule")},
+			{Name: new("ztap-egress-tcp-5432-10-0-0-0-24")},
+			{Name: new("ztap-stale-rule")},
 		},
 	}
 
@@ -92,7 +92,7 @@ func TestGCPSyncPolicyReconcilesRules(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "demo", "default"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "demo", "default"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 
@@ -150,7 +150,7 @@ func TestGCPSyncPolicyUnsupportedProtocol(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "demo", "default"); err == nil {
+	if err := client.SyncPolicy(t.Context(), np, "demo", "default"); err == nil {
 		t.Fatal("expected error for unsupported protocol")
 	}
 	if len(mock.inserts) != 0 || len(mock.patches) != 0 || len(mock.deletes) != 0 {
@@ -167,11 +167,11 @@ func TestGCPSyncPolicyWithPodSelector(t *testing.T) {
 	instances := &mockInstances{
 		instances: []*computepb.Instance{
 			{
-				Name:   proto.String("vm1"),
+				Name:   new("vm1"),
 				Id:     proto.Uint64(1),
 				Labels: map[string]string{"app": "web", "tier": "frontend"},
 				NetworkInterfaces: []*computepb.NetworkInterface{
-					{Network: proto.String(networkURL), NetworkIP: proto.String("10.10.0.5")},
+					{Network: new(networkURL), NetworkIP: new("10.10.0.5")},
 				},
 			},
 		},
@@ -196,7 +196,7 @@ func TestGCPSyncPolicyWithPodSelector(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, projectID, network); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, projectID, network); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 
@@ -242,7 +242,7 @@ func TestGCPSyncPolicyPortRange(t *testing.T) {
 		},
 	}
 
-	if err := client.SyncPolicy(context.Background(), np, "demo", "default"); err != nil {
+	if err := client.SyncPolicy(t.Context(), np, "demo", "default"); err != nil {
 		t.Fatalf("SyncPolicy returned error: %v", err)
 	}
 	if len(fw.inserts) != 1 {
@@ -271,18 +271,18 @@ func TestGCPDiscoverResources(t *testing.T) {
 	instances := &mockInstances{
 		instances: []*computepb.Instance{
 			{
-				Name:   proto.String("vm1"),
+				Name:   new("vm1"),
 				Id:     proto.Uint64(1),
 				Labels: map[string]string{"app": "web"},
 				NetworkInterfaces: []*computepb.NetworkInterface{
-					{Network: proto.String(networkURL), NetworkIP: proto.String("10.10.0.5")},
+					{Network: new(networkURL), NetworkIP: new("10.10.0.5")},
 				},
 			},
 		},
 	}
 
 	client := &GCPClient{instances: instances, rulePrefix: defaultGCPRulePrefix, priorityBase: defaultGCPPriorityBase}
-	resources, err := client.DiscoverResources(context.Background(), projectID, network)
+	resources, err := client.DiscoverResources(t.Context(), projectID, network)
 	if err != nil {
 		t.Fatalf("DiscoverResources returned error: %v", err)
 	}

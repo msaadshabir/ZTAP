@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -77,7 +78,10 @@ type PolicyEnforcerConfig struct {
 func NewPolicyEnforcer(config PolicyEnforcerConfig) *PolicyEnforcer {
 	auditLogger := config.AuditLogger
 	if auditLogger == nil {
-		homeDir, _ := os.UserHomeDir()
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			homeDir = os.TempDir()
+		}
 		logPath := filepath.Join(homeDir, ".ztap", "audit.log")
 		al, err := audit.NewAuditLogger(logPath)
 		if err != nil {
@@ -215,7 +219,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 					},
 				})
 				if pe.auditLogger != nil {
-					details := map[string]interface{}{
+					details := map[string]any{
 						"version": update.Version,
 						"source":  update.Source,
 						"dry_run": pe.dryRun,
@@ -259,7 +263,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 
 				// Log failure to audit log
 				if pe.auditLogger != nil {
-					details := map[string]interface{}{
+					details := map[string]any{
 						"version": update.Version,
 						"source":  update.Source,
 						"dry_run": pe.dryRun,
@@ -290,7 +294,7 @@ func (pe *PolicyEnforcer) enforcementLoop(ctx context.Context, updates <-chan cl
 
 			// Log success to audit log
 			if pe.auditLogger != nil {
-				details := map[string]interface{}{
+				details := map[string]any{
 					"version":     update.Version,
 					"source":      update.Source,
 					"duration_ms": duration * 1000,
@@ -560,9 +564,7 @@ func hashYAML(yaml []byte) uint64 {
 
 func copyLabels(labels map[string]string) map[string]string {
 	copied := make(map[string]string, len(labels))
-	for k, v := range labels {
-		copied[k] = v
-	}
+	maps.Copy(copied, labels)
 	return copied
 }
 
@@ -626,7 +628,7 @@ func sortedSelectorKeys(selectors map[string]selectorWatch) []string {
 	for key := range selectors {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }
 

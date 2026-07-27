@@ -52,7 +52,7 @@ func TestBundleBuildValidateAndRestorePlan(t *testing.T) {
 	svc := NewService(p)
 
 	var buf bytes.Buffer
-	manifest, err := svc.Backup(context.Background(), &buf, DefaultBackupOptions(), HostInfo{OS: "test", Arch: "test"})
+	manifest, err := svc.Backup(t.Context(), &buf, DefaultBackupOptions(), HostInfo{OS: "test", Arch: "test"})
 	if err != nil {
 		t.Fatalf("Backup: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestBundleBuildValidateAndRestorePlan(t *testing.T) {
 		t.Fatalf("expected bundle version 1")
 	}
 
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(buf.Bytes())); err != nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(buf.Bytes())); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestBundleBuildValidateAndRestorePlan(t *testing.T) {
 	if err := os.MkdirAll(extractDir, 0700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	_, plan, err := svc.ExtractAndPlan(context.Background(), bytes.NewReader(buf.Bytes()), extractDir)
+	_, plan, err := svc.ExtractAndPlan(t.Context(), bytes.NewReader(buf.Bytes()), extractDir)
 	if err != nil {
 		t.Fatalf("ExtractAndPlan: %v", err)
 	}
@@ -93,14 +93,14 @@ func TestRestoreForceGate(t *testing.T) {
 	svc := NewService(p)
 
 	var buf bytes.Buffer
-	_, err = svc.Backup(context.Background(), &buf, DefaultBackupOptions(), HostInfo{OS: "test", Arch: "test"})
+	_, err = svc.Backup(t.Context(), &buf, DefaultBackupOptions(), HostInfo{OS: "test", Arch: "test"})
 	if err != nil {
 		t.Fatalf("Backup: %v", err)
 	}
 
 	extractDir := filepath.Join(tmp, "extract")
 	_ = os.MkdirAll(extractDir, 0700)
-	_, _, _, err = svc.Restore(context.Background(), bytes.NewReader(buf.Bytes()), extractDir, RestoreOptions{DryRun: false, Force: false})
+	_, _, _, err = svc.Restore(t.Context(), bytes.NewReader(buf.Bytes()), extractDir, RestoreOptions{DryRun: false, Force: false})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -111,7 +111,7 @@ func TestValidateRejectsUnexpectedFileBeforeManifest(t *testing.T) {
 	invalid := buildTarGz(t, []tarEntry{{Path: "auth/users.json", Data: []byte("{}")}, {Path: "manifest.json", Data: []byte(`{"bundle_version":1,"created_at":"x","host":{"os":"x","arch":"x"},"features":{},"items":[]}`)}})
 
 	svc := NewService(&testProvider{})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -121,7 +121,7 @@ func TestBackupIncludesManifestWarnings(t *testing.T) {
 
 	t.Run("discovery not implemented", func(t *testing.T) {
 		var buf bytes.Buffer
-		m, err := svc.Backup(context.Background(), &buf, BackupOptions{IncludeDiscovery: true}, HostInfo{OS: "test", Arch: "test"})
+		m, err := svc.Backup(t.Context(), &buf, BackupOptions{IncludeDiscovery: true}, HostInfo{OS: "test", Arch: "test"})
 		if err != nil {
 			t.Fatalf("Backup: %v", err)
 		}
@@ -133,7 +133,7 @@ func TestBackupIncludesManifestWarnings(t *testing.T) {
 
 	t.Run("policy current missing", func(t *testing.T) {
 		var buf bytes.Buffer
-		m, err := svc.Backup(context.Background(), &buf, BackupOptions{IncludePolicyCurrent: true}, HostInfo{OS: "test", Arch: "test"})
+		m, err := svc.Backup(t.Context(), &buf, BackupOptions{IncludePolicyCurrent: true}, HostInfo{OS: "test", Arch: "test"})
 		if err != nil {
 			t.Fatalf("Backup: %v", err)
 		}
@@ -225,7 +225,7 @@ func TestValidateRejectsPathTraversal(t *testing.T) {
 	data := []byte("{}")
 	items := []ManifestItem{itemForData("../evil", data)}
 	invalid := buildTarGz(t, []tarEntry{{Path: "manifest.json", Data: mustManifestJSON(t, items)}, {Path: "../evil", Data: data}})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -236,7 +236,7 @@ func TestValidateRejectsAbsolutePath(t *testing.T) {
 	data := []byte("{}")
 	items := []ManifestItem{itemForData("/abs", data)}
 	invalid := buildTarGz(t, []tarEntry{{Path: "manifest.json", Data: mustManifestJSON(t, items)}, {Path: "/abs", Data: data}})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -247,7 +247,7 @@ func TestValidateRejectsBackslashPath(t *testing.T) {
 	data := []byte("{}")
 	items := []ManifestItem{itemForData("a\\b", data)}
 	invalid := buildTarGz(t, []tarEntry{{Path: "manifest.json", Data: mustManifestJSON(t, items)}, {Path: "a\\b", Data: data}})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -256,7 +256,7 @@ func TestValidateRejectsUnexpectedFile(t *testing.T) {
 	svc := NewService(&testProvider{})
 
 	invalid := buildTarGz(t, []tarEntry{{Path: "manifest.json", Data: mustManifestJSON(t, nil)}, {Path: "auth/users.json", Data: []byte("{}")}})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -268,7 +268,7 @@ func TestValidateRejectsChecksumMismatch(t *testing.T) {
 	it := itemForData("auth/users.json", data)
 	it.SHA256 = strings.Repeat("0", 64)
 	invalid := buildTarGz(t, []tarEntry{{Path: "manifest.json", Data: mustManifestJSON(t, []ManifestItem{it})}, {Path: "auth/users.json", Data: data}})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -280,7 +280,7 @@ func TestValidateRejectsSizeMismatch(t *testing.T) {
 	it := itemForData("auth/users.json", data)
 	it.Size = int64(len(data) + 1)
 	invalid := buildTarGz(t, []tarEntry{{Path: "manifest.json", Data: mustManifestJSON(t, []ManifestItem{it})}, {Path: "auth/users.json", Data: data}})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -291,7 +291,7 @@ func TestValidateRejectsDuplicateEntry(t *testing.T) {
 	data := []byte("{}")
 	it := itemForData("auth/users.json", data)
 	invalid := buildTarGz(t, []tarEntry{{Path: "manifest.json", Data: mustManifestJSON(t, []ManifestItem{it})}, {Path: "auth/users.json", Data: data}, {Path: "auth/users.json", Data: data}})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -304,7 +304,7 @@ func TestValidateRejectsNonRegularFile(t *testing.T) {
 		{Header: tar.Header{Name: "manifest.json", Mode: 0600, Typeflag: tar.TypeReg, Size: int64(len(mustManifestJSON(t, items)))}, Data: mustManifestJSON(t, items)},
 		{Header: tar.Header{Name: "auth/users.json", Mode: 0600, Typeflag: tar.TypeSymlink, Linkname: "target", Size: 0}, Data: nil},
 	})
-	if _, err := svc.Validate(context.Background(), bytes.NewReader(invalid)); err == nil {
+	if _, err := svc.Validate(t.Context(), bytes.NewReader(invalid)); err == nil {
 		t.Fatalf("expected validate error")
 	}
 }
@@ -313,7 +313,7 @@ func TestProviderExportBestEffortWarnings(t *testing.T) {
 	t.Run("users skipped when auth nil", func(t *testing.T) {
 		svc := NewService(&APIProvider{Auth: nil})
 		var buf bytes.Buffer
-		m, err := svc.Backup(context.Background(), &buf, BackupOptions{IncludeUsers: true}, HostInfo{OS: "test", Arch: "test"})
+		m, err := svc.Backup(t.Context(), &buf, BackupOptions{IncludeUsers: true}, HostInfo{OS: "test", Arch: "test"})
 		if err != nil {
 			t.Fatalf("Backup: %v", err)
 		}
@@ -328,7 +328,7 @@ func TestProviderExportBestEffortWarnings(t *testing.T) {
 	t.Run("sessions skipped when sqlite path empty", func(t *testing.T) {
 		svc := NewService(&APIProvider{SessionsSQLitePath: ""})
 		var buf bytes.Buffer
-		m, err := svc.Backup(context.Background(), &buf, BackupOptions{IncludeSessions: true}, HostInfo{OS: "test", Arch: "test"})
+		m, err := svc.Backup(t.Context(), &buf, BackupOptions{IncludeSessions: true}, HostInfo{OS: "test", Arch: "test"})
 		if err != nil {
 			t.Fatalf("Backup: %v", err)
 		}
@@ -343,7 +343,7 @@ func TestProviderExportBestEffortWarnings(t *testing.T) {
 	t.Run("sessions skipped when sqlite file missing", func(t *testing.T) {
 		svc := NewService(&APIProvider{SessionsSQLitePath: filepath.Join(t.TempDir(), "missing.db")})
 		var buf bytes.Buffer
-		m, err := svc.Backup(context.Background(), &buf, BackupOptions{IncludeSessions: true}, HostInfo{OS: "test", Arch: "test"})
+		m, err := svc.Backup(t.Context(), &buf, BackupOptions{IncludeSessions: true}, HostInfo{OS: "test", Arch: "test"})
 		if err != nil {
 			t.Fatalf("Backup: %v", err)
 		}
@@ -365,7 +365,7 @@ func TestProviderExportBestEffortWarnings(t *testing.T) {
 
 		svc := NewService(&APIProvider{Auth: am})
 		var buf bytes.Buffer
-		m, err := svc.Backup(context.Background(), &buf, BackupOptions{IncludeUsers: true}, HostInfo{OS: "test", Arch: "test"})
+		m, err := svc.Backup(t.Context(), &buf, BackupOptions{IncludeUsers: true}, HostInfo{OS: "test", Arch: "test"})
 		if err != nil {
 			t.Fatalf("Backup: %v", err)
 		}

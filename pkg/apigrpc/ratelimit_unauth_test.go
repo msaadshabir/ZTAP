@@ -68,9 +68,9 @@ func TestGRPCRateLimit_UnauthBucketBlocks(t *testing.T) {
 	authClient := apiv1.NewAuthServiceClient(conn)
 
 	// Call a protected method without auth metadata (will fail auth, but should still be rate-limited).
-	_, _ = authClient.WhoAmI(context.Background(), &emptypb.Empty{})
+	_, _ = authClient.WhoAmI(t.Context(), &emptypb.Empty{})
 
-	_, err = authClient.WhoAmI(context.Background(), &emptypb.Empty{})
+	_, err = authClient.WhoAmI(t.Context(), &emptypb.Empty{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}

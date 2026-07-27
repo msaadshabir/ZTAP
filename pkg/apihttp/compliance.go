@@ -28,8 +28,8 @@ func parseEvidenceWindow(s string) (time.Duration, error) {
 	if s == "" {
 		return 90 * 24 * time.Hour, nil
 	}
-	if strings.HasSuffix(s, "d") {
-		n := strings.TrimSpace(strings.TrimSuffix(s, "d"))
+	if before, ok := strings.CutSuffix(s, "d"); ok {
+		n := strings.TrimSpace(before)
 		if n == "" {
 			return 0, errors.New("invalid evidence_window")
 		}

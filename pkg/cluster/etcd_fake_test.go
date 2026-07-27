@@ -251,7 +251,7 @@ func TestEtcdElectionWithFakeClient_RegisterAndDeregisterNode(t *testing.T) {
 	}
 
 	registeredKey := "/ztap-test-fake/nodes/node-b"
-	getResp, err := fake.Get(context.Background(), registeredKey)
+	getResp, err := fake.Get(t.Context(), registeredKey)
 	if err != nil {
 		t.Fatalf("fake Get: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestEtcdElectionWithFakeClient_RegisterAndDeregisterNode(t *testing.T) {
 		t.Fatalf("DeregisterNode: %v", err)
 	}
 
-	getResp, err = fake.Get(context.Background(), registeredKey)
+	getResp, err = fake.Get(t.Context(), registeredKey)
 	if err != nil {
 		t.Fatalf("fake Get after delete: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestEtcdPolicySyncWithFakeClient_Lifecycle(t *testing.T) {
 		t.Fatalf("NewEtcdPolicySyncWithClient: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	updateCh := ps.SubscribePolicies(ctx)

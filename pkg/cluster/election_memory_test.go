@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -13,7 +14,7 @@ func TestInMemoryElectionStart(t *testing.T) {
 	}
 	election := NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {
@@ -42,7 +43,7 @@ func TestInMemoryElectionDoubleStart(t *testing.T) {
 	}
 	election := NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {
@@ -63,7 +64,7 @@ func TestInMemoryElectionRegisterNode(t *testing.T) {
 	}
 	election := NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {
@@ -91,89 +92,93 @@ func TestInMemoryElectionRegisterNode(t *testing.T) {
 }
 
 func TestInMemoryElectionLeaderElection(t *testing.T) {
-	config := LeaderElectionConfig{
-		NodeID:            "node-1",
-		NodeAddress:       "127.0.0.1:9090",
-		HeartbeatInterval: 100 * time.Millisecond,
-		InitialLeadership: 10 * time.Millisecond,
-	}
-	election := NewInMemoryElection(config)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := election.Start(ctx); err != nil {
-		t.Fatalf("failed to start: %v", err)
-	}
-	defer func() { _ = election.Stop() }()
-
-	deadline := time.Now().Add(1 * time.Second)
-	var leader *Node
-	for time.Now().Before(deadline) {
-		leader = election.GetLeader()
-		if leader != nil {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		config := LeaderElectionConfig{
+			NodeID:            "node-1",
+			NodeAddress:       "127.0.0.1:9090",
+			HeartbeatInterval: 100 * time.Millisecond,
+			InitialLeadership: 10 * time.Millisecond,
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if leader == nil {
-		t.Fatal("no leader elected")
-	}
+		election := NewInMemoryElection(config)
 
-	if leader.ID != "node-1" {
-		t.Errorf("expected leader node-1, got %s", leader.ID)
-	}
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
 
-	if !election.IsLeader() {
-		t.Error("this node should be the leader")
-	}
+		if err := election.Start(ctx); err != nil {
+			t.Fatalf("failed to start: %v", err)
+		}
+		defer func() { _ = election.Stop() }()
+
+		deadline := time.Now().Add(1 * time.Second)
+		var leader *Node
+		for time.Now().Before(deadline) {
+			leader = election.GetLeader()
+			if leader != nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if leader == nil {
+			t.Fatal("no leader elected")
+		}
+
+		if leader.ID != "node-1" {
+			t.Errorf("expected leader node-1, got %s", leader.ID)
+		}
+
+		if !election.IsLeader() {
+			t.Error("this node should be the leader")
+		}
+	})
 }
 
 func TestInMemoryElectionMultipleNodes(t *testing.T) {
-	config := LeaderElectionConfig{
-		NodeID:            "node-1",
-		NodeAddress:       "127.0.0.1:9090",
-		HeartbeatInterval: 100 * time.Millisecond,
-		InitialLeadership: 10 * time.Millisecond,
-	}
-	election := NewInMemoryElection(config)
+	synctest.Test(t, func(t *testing.T) {
+		config := LeaderElectionConfig{
+			NodeID:            "node-1",
+			NodeAddress:       "127.0.0.1:9090",
+			HeartbeatInterval: 100 * time.Millisecond,
+			InitialLeadership: 10 * time.Millisecond,
+		}
+		election := NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
 
-	if err := election.Start(ctx); err != nil {
-		t.Fatalf("failed to start: %v", err)
-	}
-	defer func() { _ = election.Stop() }()
+		if err := election.Start(ctx); err != nil {
+			t.Fatalf("failed to start: %v", err)
+		}
+		defer func() { _ = election.Stop() }()
 
-	// Register additional nodes
-	node2 := &Node{ID: "node-2", Address: "127.0.0.1:9091", State: StateHealthy}
-	node3 := &Node{ID: "node-3", Address: "127.0.0.1:9092", State: StateHealthy}
+		// Register additional nodes
+		node2 := &Node{ID: "node-2", Address: "127.0.0.1:9091", State: StateHealthy}
+		node3 := &Node{ID: "node-3", Address: "127.0.0.1:9092", State: StateHealthy}
 
-	if err := election.RegisterNode(node2); err != nil {
-		t.Fatalf("failed to register node-2: %v", err)
-	}
-	if err := election.RegisterNode(node3); err != nil {
-		t.Fatalf("failed to register node-3: %v", err)
-	}
+		if err := election.RegisterNode(node2); err != nil {
+			t.Fatalf("failed to register node-2: %v", err)
+		}
+		if err := election.RegisterNode(node3); err != nil {
+			t.Fatalf("failed to register node-3: %v", err)
+		}
 
-	// Wait for leader election
-	time.Sleep(200 * time.Millisecond)
+		// Wait for leader election
+		time.Sleep(200 * time.Millisecond)
 
-	leader := election.GetLeader()
-	if leader == nil {
-		t.Fatal("no leader elected")
-	}
+		leader := election.GetLeader()
+		if leader == nil {
+			t.Fatal("no leader elected")
+		}
 
-	// Lexicographically first node should be leader
-	if leader.ID != "node-1" {
-		t.Errorf("expected leader node-1 (lexicographically first), got %s", leader.ID)
-	}
+		// Lexicographically first node should be leader
+		if leader.ID != "node-1" {
+			t.Errorf("expected leader node-1 (lexicographically first), got %s", leader.ID)
+		}
 
-	nodes := election.GetNodes()
-	if len(nodes) != 3 {
-		t.Errorf("expected 3 nodes, got %d", len(nodes))
-	}
+		nodes := election.GetNodes()
+		if len(nodes) != 3 {
+			t.Errorf("expected 3 nodes, got %d", len(nodes))
+		}
+	})
 }
 
 func TestInMemoryElectionDeregisterNode(t *testing.T) {
@@ -184,7 +189,7 @@ func TestInMemoryElectionDeregisterNode(t *testing.T) {
 	}
 	election := NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {
@@ -213,86 +218,90 @@ func TestInMemoryElectionDeregisterNode(t *testing.T) {
 }
 
 func TestInMemoryElectionWatch(t *testing.T) {
-	config := LeaderElectionConfig{
-		NodeID:      "node-1",
-		NodeAddress: "127.0.0.1:9090",
-	}
-	election := NewInMemoryElection(config)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := election.Start(ctx); err != nil {
-		t.Fatalf("failed to start: %v", err)
-	}
-	defer func() { _ = election.Stop() }()
-
-	watchCtx, watchCancel := context.WithCancel(ctx)
-	defer watchCancel()
-
-	changes := election.Watch(watchCtx)
-
-	node2 := &Node{ID: "node-2", Address: "127.0.0.1:9091", State: StateHealthy}
-	if err := election.RegisterNode(node2); err != nil {
-		t.Fatalf("failed to register: %v", err)
-	}
-
-	// Wait for change notification
-	select {
-	case change := <-changes:
-		if change.Type != ChangeNodeJoined {
-			t.Errorf("expected ChangeNodeJoined, got %s", change.Type)
+	synctest.Test(t, func(t *testing.T) {
+		config := LeaderElectionConfig{
+			NodeID:      "node-1",
+			NodeAddress: "127.0.0.1:9090",
 		}
-		if change.Node.ID != "node-2" {
-			t.Errorf("expected node-2, got %s", change.Node.ID)
+		election := NewInMemoryElection(config)
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+
+		if err := election.Start(ctx); err != nil {
+			t.Fatalf("failed to start: %v", err)
 		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for change notification")
-	}
+		defer func() { _ = election.Stop() }()
+
+		watchCtx, watchCancel := context.WithCancel(ctx)
+		defer watchCancel()
+
+		changes := election.Watch(watchCtx)
+
+		node2 := &Node{ID: "node-2", Address: "127.0.0.1:9091", State: StateHealthy}
+		if err := election.RegisterNode(node2); err != nil {
+			t.Fatalf("failed to register: %v", err)
+		}
+
+		// Wait for change notification
+		select {
+		case change := <-changes:
+			if change.Type != ChangeNodeJoined {
+				t.Errorf("expected ChangeNodeJoined, got %s", change.Type)
+			}
+			if change.Node.ID != "node-2" {
+				t.Errorf("expected node-2, got %s", change.Node.ID)
+			}
+		case <-time.After(1 * time.Second):
+			t.Fatal("timeout waiting for change notification")
+		}
+	})
 }
 
 func TestInMemoryElectionLeaderChanges(t *testing.T) {
-	config := LeaderElectionConfig{
-		NodeID:            "node-1",
-		NodeAddress:       "127.0.0.1:9090",
-		HeartbeatInterval: 100 * time.Millisecond,
-	}
-	election := NewInMemoryElection(config)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := election.Start(ctx); err != nil {
-		t.Fatalf("failed to start: %v", err)
-	}
-	defer func() { _ = election.Stop() }()
-
-	leaderCtx, leaderCancel := context.WithCancel(ctx)
-	defer leaderCancel()
-
-	changes := election.LeaderChanges(leaderCtx)
-
-	// Wait for initial leader election
-	time.Sleep(200 * time.Millisecond)
-
-	// Mark current leader as unhealthy to trigger election
-	leader := election.GetLeader()
-	if leader != nil {
-		_ = election.SetNodeState(leader.ID, StateUnhealthy)
-	}
-
-	// Wait for new election
-	time.Sleep(200 * time.Millisecond)
-
-	// Should receive a leader change notification
-	select {
-	case newLeader := <-changes:
-		if newLeader == nil {
-			t.Error("leader should not be nil")
+	synctest.Test(t, func(t *testing.T) {
+		config := LeaderElectionConfig{
+			NodeID:            "node-1",
+			NodeAddress:       "127.0.0.1:9090",
+			HeartbeatInterval: 100 * time.Millisecond,
 		}
-	case <-time.After(1 * time.Second):
-		// Timeout is acceptable; leader change may not always fire in test
-	}
+		election := NewInMemoryElection(config)
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+
+		if err := election.Start(ctx); err != nil {
+			t.Fatalf("failed to start: %v", err)
+		}
+		defer func() { _ = election.Stop() }()
+
+		leaderCtx, leaderCancel := context.WithCancel(ctx)
+		defer leaderCancel()
+
+		changes := election.LeaderChanges(leaderCtx)
+
+		// Wait for initial leader election
+		time.Sleep(200 * time.Millisecond)
+
+		// Mark current leader as unhealthy to trigger election
+		leader := election.GetLeader()
+		if leader != nil {
+			_ = election.SetNodeState(leader.ID, StateUnhealthy)
+		}
+
+		// Wait for new election
+		time.Sleep(200 * time.Millisecond)
+
+		// Should receive a leader change notification
+		select {
+		case newLeader := <-changes:
+			if newLeader == nil {
+				t.Error("leader should not be nil")
+			}
+		case <-time.After(1 * time.Second):
+			// Timeout is acceptable; leader change may not always fire in test
+		}
+	})
 }
 
 func TestInMemoryElectionStop(t *testing.T) {
@@ -302,7 +311,7 @@ func TestInMemoryElectionStop(t *testing.T) {
 	}
 	election := NewInMemoryElection(config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	if err := election.Start(ctx); err != nil {

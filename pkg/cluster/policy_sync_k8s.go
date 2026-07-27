@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -130,7 +131,7 @@ func (s *K8sPolicySync) Stop() error {
 
 // SyncPolicy is not supported for Kubernetes-backed sync since policies flow from the operator.
 func (s *K8sPolicySync) SyncPolicy(ctx context.Context, policyName string, policyYAML []byte) error {
-	return fmt.Errorf("SyncPolicy not supported in K8sPolicySync; use the ZtapNetworkPolicy CRD instead")
+	return errors.New("SyncPolicy not supported in K8sPolicySync; use the ZtapNetworkPolicy CRD instead")
 }
 
 // GetPolicyVersion is not currently tracked for the Kubernetes backend.
@@ -167,7 +168,6 @@ func (s *K8sPolicySync) watchLoop(ctx context.Context) {
 	}
 
 	for _, ns := range s.namespaces {
-		ns := ns
 		go s.watchNamespace(ctx, ns)
 	}
 }

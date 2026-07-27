@@ -98,8 +98,8 @@ func (in complianceInputs) evidenceWindow() (time.Duration, error) {
 		return 90 * 24 * time.Hour, nil
 	}
 	// Support simple Go duration; also accept "90d" style.
-	if strings.HasSuffix(in.window, "d") {
-		n := strings.TrimSpace(strings.TrimSuffix(in.window, "d"))
+	if before, ok := strings.CutSuffix(in.window, "d"); ok {
+		n := strings.TrimSpace(before)
 		if n == "" {
 			return 0, errors.New("invalid evidence-window")
 		}

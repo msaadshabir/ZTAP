@@ -49,7 +49,7 @@ type User struct {
 	PasswordHash string    `json:"password_hash"`
 	Role         Role      `json:"role"`
 	CreatedAt    time.Time `json:"created_at"`
-	LastLogin    time.Time `json:"last_login,omitempty"`
+	LastLogin    time.Time `json:"last_login"`
 	Enabled      bool      `json:"enabled"`
 }
 

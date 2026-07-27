@@ -105,16 +105,9 @@ func TestGRPCAuthLoginAndWhoAmI(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	authClient := apiv1.NewAuthServiceClient(conn)
-	loginResp, err := authClient.Login(context.Background(), &apiv1.LoginRequest{Username: "alice", Password: "pw"})
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-	tok := loginResp.GetToken()
-	if tok == "" {
-		t.Fatalf("expected token")
-	}
+	tok := loginGRPCToken(t, conn, "alice", "pw")
 
-	mdCtx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tok))
+	mdCtx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+tok))
 	whoResp, err := authClient.WhoAmI(mdCtx, &emptypb.Empty{})
 	if err != nil {
 		t.Fatalf("WhoAmI: %v", err)
@@ -129,7 +122,7 @@ func TestGRPCHealthCheck_Unauthenticated(t *testing.T) {
 	_, conn := newGRPCHealthTestServer(t)
 
 	hc := grpc_health_v1.NewHealthClient(conn)
-	resp, err := hc.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
+	resp, err := hc.Check(t.Context(), &grpc_health_v1.HealthCheckRequest{})
 	if err != nil {
 		t.Fatalf("Health Check: %v", err)
 	}
@@ -145,7 +138,7 @@ func TestGRPCHealthCheck_NotReady(t *testing.T) {
 	srv.readiness.Audit = nil
 
 	hc := grpc_health_v1.NewHealthClient(conn)
-	resp, err := hc.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
+	resp, err := hc.Check(t.Context(), &grpc_health_v1.HealthCheckRequest{})
 	if err != nil {
 		t.Fatalf("Health Check: %v", err)
 	}
@@ -160,7 +153,7 @@ func TestGRPCHealthWatch_Unauthenticated(t *testing.T) {
 	_, conn := newGRPCHealthTestServer(t)
 
 	hc := grpc_health_v1.NewHealthClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	stream, err := hc.Watch(ctx, &grpc_health_v1.HealthCheckRequest{})
 	if err != nil {
@@ -221,14 +214,9 @@ func TestGRPCFlowsStream(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	authClient := apiv1.NewAuthServiceClient(conn)
-	loginResp, err := authClient.Login(context.Background(), &apiv1.LoginRequest{Username: "bob", Password: "pw"})
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-	tok := loginResp.GetToken()
+	tok := loginGRPCToken(t, conn, "bob", "pw")
 
-	streamCtx, streamCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	streamCtx, streamCancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer streamCancel()
 	ctx := metadata.NewOutgoingContext(streamCtx, metadata.Pairs("authorization", "Bearer "+tok))
 	flowsClient := apiv1.NewFlowsServiceClient(conn)

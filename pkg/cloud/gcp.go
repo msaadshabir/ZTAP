@@ -3,7 +3,9 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 
@@ -13,7 +15,6 @@ import (
 	compute "cloud.google.com/go/compute/apiv1"
 	computepb "cloud.google.com/go/compute/apiv1/computepb"
 	"google.golang.org/api/iterator"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -41,7 +42,7 @@ type gcpFirewallsClient struct {
 func (c *gcpFirewallsClient) List(ctx context.Context, projectID, networkURL string) ([]*computepb.Firewall, error) {
 	it := c.client.List(ctx, &computepb.ListFirewallsRequest{
 		Project: projectID,
-		Filter:  proto.String(fmt.Sprintf("network=\"%s\"", networkURL)),
+		Filter:  new(fmt.Sprintf("network=\"%s\"", networkURL)),
 	})
 
 	var rules []*computepb.Firewall
@@ -206,7 +207,7 @@ func (c *GCPClient) ListManagedFirewalls(ctx context.Context, projectID, network
 		}
 	}
 
-	sort.Strings(managed)
+	slices.Sort(managed)
 	return managed, nil
 }
 
@@ -269,8 +270,8 @@ func (c *GCPClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkP
 
 	for _, spec := range desired {
 		ruleName := c.rulePrefix + spec.name
-		spec.rule.Name = proto.String(ruleName)
-		spec.rule.Priority = proto.Int32(priority)
+		spec.rule.Name = new(ruleName)
+		spec.rule.Priority = new(priority)
 
 		if _, ok := managedExisting[ruleName]; ok {
 			if err := c.firewalls.Patch(ctx, projectID, spec.rule); err != nil {
@@ -341,15 +342,15 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 				name:    sanitizeGCPRuleName(fmt.Sprintf("egress-%s-%s-%s", protoValue, portLabel, nameSuffix)),
 				sortKey: fmt.Sprintf("egress-%s-%s-%s", protoValue, portLabel, sortSuffix),
 				rule: &computepb.Firewall{
-					Network:           proto.String(networkURL),
-					Direction:         proto.String("EGRESS"),
+					Network:           new(networkURL),
+					Direction:         new("EGRESS"),
 					DestinationRanges: destRanges,
 					Allowed: []*computepb.Allowed{{
-						IPProtocol: proto.String(protoValue),
+						IPProtocol: new(protoValue),
 						Ports:      []string{portRange(start, end)},
 					}},
-					Disabled:    proto.Bool(false),
-					Description: proto.String(gcpRuleDescription),
+					Disabled:    new(false),
+					Description: new(gcpRuleDescription),
 				},
 			})
 		}
@@ -393,15 +394,15 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 				name:    sanitizeGCPRuleName(fmt.Sprintf("ingress-%s-%s-%s", protoValue, portLabel, nameSuffix)),
 				sortKey: fmt.Sprintf("ingress-%s-%s-%s", protoValue, portLabel, sortSuffix),
 				rule: &computepb.Firewall{
-					Network:      proto.String(networkURL),
-					Direction:    proto.String("INGRESS"),
+					Network:      new(networkURL),
+					Direction:    new("INGRESS"),
 					SourceRanges: sourceRanges,
 					Allowed: []*computepb.Allowed{{
-						IPProtocol: proto.String(protoValue),
+						IPProtocol: new(protoValue),
 						Ports:      []string{portRange(start, end)},
 					}},
-					Disabled:    proto.Bool(false),
-					Description: proto.String(gcpRuleDescription),
+					Disabled:    new(false),
+					Description: new(gcpRuleDescription),
 				},
 			})
 		}
@@ -526,7 +527,7 @@ func ipsToCIDRs(ips []string) ([]string, error) {
 	for cidr := range uniq {
 		cidrs = append(cidrs, cidr)
 	}
-	sort.Strings(cidrs)
+	slices.Sort(cidrs)
 	return cidrs, nil
 }
 
@@ -568,9 +569,7 @@ func (c *GCPClient) discoverResources(ctx context.Context, projectID, networkURL
 		}
 
 		labels := make(map[string]string, len(inst.Labels))
-		for k, v := range inst.Labels {
-			labels[k] = v
-		}
+		maps.Copy(labels, inst.Labels)
 
 		for _, nic := range inst.NetworkInterfaces {
 			if nic == nil {
@@ -622,6 +621,6 @@ func resolveAddresses(resources []Resource, selector policy.PodSelectorSpec) []s
 		uniq[a] = struct{}{}
 		dedup = append(dedup, a)
 	}
-	sort.Strings(dedup)
+	slices.Sort(dedup)
 	return dedup
 }

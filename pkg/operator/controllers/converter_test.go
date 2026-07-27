@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"ztap/pkg/operator/api/v1alpha1"
