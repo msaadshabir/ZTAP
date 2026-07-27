@@ -552,7 +552,6 @@ func compactCIDR(cidr string) string {
 }
 
 //go:fix inline
-func ptrString(v string) *string { return new(v) }
 func ptrProtocol(proto string) *armnetwork.SecurityRuleProtocol {
 	switch strings.ToUpper(proto) {
 	case "TCP":

@@ -8,11 +8,6 @@ import (
 	"testing"
 )
 
-//go:fix inline
-func intPtr(v int) *int {
-	return new(v)
-}
-
 func TestLoadFromFile(t *testing.T) {
 	// Create temp directory
 	tmpDir := t.TempDir()

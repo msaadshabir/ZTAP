@@ -254,7 +254,7 @@ func printCloudResources(resources []cloud.Resource) {
 			if k == "Name" {
 				continue
 			}
-			labels.WriteString(fmt.Sprintf("%s=%s ", k, v))
+			_, _ = fmt.Fprintf(&labels, "%s=%s ", k, v)
 		}
 		_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
 			r.ID, r.Name, r.Type, r.PrivateIP, r.PublicIP, labels.String())

@@ -137,7 +137,7 @@ func EnforceWithPF(opts EnforcementOptions) error {
 	anchorContent.WriteString("# ZTAP Managed Rules\n")
 
 	for _, p := range opts.Policies {
-		anchorContent.WriteString(fmt.Sprintf("# Policy: %s\n", sanitizeForLogPlain(p.Metadata.Name)))
+		_, _ = fmt.Fprintf(&anchorContent, "# Policy: %s\n", sanitizeForLogPlain(p.Metadata.Name))
 
 		// Process egress rules (outbound traffic)
 		for _, egress := range p.Spec.Egress {
@@ -155,8 +155,8 @@ func EnforceWithPF(opts EnforcementOptions) error {
 					if port.EndPort != nil {
 						portExpr = fmt.Sprintf("%d:%d", port.Port, *port.EndPort)
 					}
-					anchorContent.WriteString(fmt.Sprintf("pass out quick proto %s from any to %s port = %s\n",
-						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(egress.To.IPBlock.CIDR), portExpr))
+					_, _ = fmt.Fprintf(&anchorContent, "pass out quick proto %s from any to %s port = %s\n",
+						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(egress.To.IPBlock.CIDR), portExpr)
 				}
 			}
 		}
@@ -177,8 +177,8 @@ func EnforceWithPF(opts EnforcementOptions) error {
 					if port.EndPort != nil {
 						portExpr = fmt.Sprintf("%d:%d", port.Port, *port.EndPort)
 					}
-					anchorContent.WriteString(fmt.Sprintf("pass in quick proto %s from %s to any port = %s\n",
-						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(ingress.From.IPBlock.CIDR), portExpr))
+					_, _ = fmt.Fprintf(&anchorContent, "pass in quick proto %s from %s to any port = %s\n",
+						sanitizeForLogPlain(port.Protocol), sanitizeForLogPlain(ingress.From.IPBlock.CIDR), portExpr)
 				}
 			}
 		}
