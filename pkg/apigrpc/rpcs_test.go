@@ -266,15 +266,11 @@ func TestGRPCUsersPermissionDenied(t *testing.T) {
 	if err := env.auth.CreateUser("viewer", "pw", auth.RoleViewer); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	authClient := apiv1.NewAuthServiceClient(env.conn)
-	resp, err := authClient.Login(t.Context(), &apiv1.LoginRequest{Username: "viewer", Password: "pw"})
-	if err != nil {
-		t.Fatalf("Login viewer: %v", err)
-	}
+	tok := loginGRPCToken(t, env.conn, "viewer", "pw")
 
-	ctx := authCtx(resp.GetToken())
+	ctx := authCtx(tok)
 	usersClient := apiv1.NewUsersServiceClient(env.conn)
-	_, err = usersClient.ListUsers(ctx, &emptypb.Empty{})
+	_, err := usersClient.ListUsers(ctx, &emptypb.Empty{})
 	st, _ := status.FromError(err)
 	if st.Code() != codes.PermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", st.Code())

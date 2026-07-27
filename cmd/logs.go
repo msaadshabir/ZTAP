@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"ztap/pkg/logging"
+	"ztap/pkg/paths"
 
 	"github.com/spf13/cobra"
 )
@@ -147,7 +148,7 @@ func levelToMinLevel(value string) logsMinLevel {
 
 func resolveLogFilePath() string {
 	if v := strings.TrimSpace(os.Getenv("ZTAP_LOG_FILE")); v != "" {
-		return expandPath(v)
+		return paths.Expand(v)
 	}
 
 	configPath := os.Getenv("ZTAP_CONFIG")
@@ -157,7 +158,7 @@ func resolveLogFilePath() string {
 	cfg, err := logging.LoadConfig(configPath)
 	if err == nil {
 		if strings.TrimSpace(cfg.File) != "" {
-			return expandPath(cfg.File)
+			return paths.Expand(cfg.File)
 		}
 	}
 
@@ -166,17 +167,6 @@ func resolveLogFilePath() string {
 		return "/tmp/ztap.log"
 	}
 	return filepath.Join(home, ".ztap", "ztap.log")
-}
-
-func expandPath(p string) string {
-	clean := os.ExpandEnv(strings.TrimSpace(p))
-	if strings.HasPrefix(clean, "~") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			clean = filepath.Join(home, strings.TrimPrefix(clean, "~"))
-		}
-	}
-	return clean
 }
 
 func readLogFile(path string) ([]logEntry, error) {

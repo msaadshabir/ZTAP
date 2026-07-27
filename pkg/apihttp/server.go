@@ -10,13 +10,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"ztap/pkg/alert"
+	"ztap/pkg/apiutil"
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
 	"ztap/pkg/cluster"
@@ -137,14 +137,14 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		opts.Config.MaxRestoreBytes = 100 << 20 // 100 MiB
 	}
 	if opts.AuthManager == nil {
-		am, err := defaultAuthManager()
+		am, err := apiutil.DefaultAuthManager()
 		if err != nil {
 			return nil, err
 		}
 		opts.AuthManager = am
 	}
 	if opts.AuditLogger == nil {
-		al, err := defaultAuditLogger()
+		al, err := apiutil.DefaultAuditLogger()
 		if err != nil {
 			return nil, err
 		}
@@ -673,26 +673,6 @@ func bearerToken(r *http.Request) (string, error) {
 func sessionFromContext(ctx context.Context) (*auth.Session, bool) {
 	sess, ok := ctx.Value(sessionKey).(*auth.Session)
 	return sess, ok
-}
-
-func defaultAuthManager() (*auth.AuthManager, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-	return auth.NewAuthManager(filepath.Join(homeDir, ".ztap", "users.json"))
-}
-
-func defaultAuditLogger() (*audit.AuditLogger, error) {
-	if opts, _, err := loadAuditOptions(); err == nil {
-		return audit.NewAuditLoggerWithOptions(opts)
-	}
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-	logPath := filepath.Join(homeDir, ".ztap", "audit.log")
-	return audit.NewAuditLogger(logPath)
 }
 
 type statusResponse struct {

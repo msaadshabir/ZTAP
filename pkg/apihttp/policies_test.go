@@ -72,31 +72,9 @@ func newPolicyServer(t *testing.T) (*Server, *auth.AuthManager) {
 	return srv, am
 }
 
-func loginToken(t *testing.T, srv *Server) string {
-	t.Helper()
-
-	body, _ := json.Marshal(map[string]string{"username": "admin1", "password": "password123"})
-	req := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var resp struct {
-		Token string `json:"token"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode login: %v", err)
-	}
-	if resp.Token == "" {
-		t.Fatalf("expected token")
-	}
-	return resp.Token
-}
-
 func TestPoliciesLifecycle(t *testing.T) {
 	srv, _ := newPolicyServer(t)
-	token := loginToken(t, srv)
+	token := loginToken(t, srv, "admin1", "password123")
 
 	policyYAML := "apiVersion: ztap/v1\nkind: NetworkPolicy\nmetadata:\n  name: web\nspec:\n  podSelector:\n    matchLabels:\n      app: web\n  egress:\n  - to:\n      ipBlock:\n        cidr: 10.0.0.0/8\n    ports:\n    - protocol: TCP\n      port: 443\n"
 
@@ -144,7 +122,7 @@ func TestPoliciesLifecycle(t *testing.T) {
 
 func TestPoliciesExpectedVersionConflict(t *testing.T) {
 	srv, _ := newPolicyServer(t)
-	token := loginToken(t, srv)
+	token := loginToken(t, srv, "admin1", "password123")
 
 	policyYAML := "apiVersion: ztap/v1\nkind: NetworkPolicy\nmetadata:\n  name: web\nspec:\n  podSelector:\n    matchLabels:\n      app: web\n  egress:\n  - to:\n      ipBlock:\n        cidr: 10.0.0.0/8\n    ports:\n    - protocol: TCP\n      port: 443\n"
 	putBody, _ := json.Marshal(map[string]any{"policy_yaml": policyYAML, "expected_version": int64(1)})

@@ -50,24 +50,11 @@ func TestConfigBackupAndRestoreDryRun(t *testing.T) {
 	}
 
 	// Login to get token.
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin2", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin2", "pw")
 
 	// Backup.
 	backupReq := httptest.NewRequest(http.MethodPost, "/v1/config/backup", bytes.NewReader([]byte(`{}`)))
-	backupReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	backupReq.Header.Set("Authorization", "Bearer "+token)
 	backupRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(backupRR, backupReq)
 	if backupRR.Code != http.StatusOK {
@@ -83,7 +70,7 @@ func TestConfigBackupAndRestoreDryRun(t *testing.T) {
 
 	// Restore dry-run.
 	restoreReq := httptest.NewRequest(http.MethodPost, "/v1/config/restore?dry_run=1", bytes.NewReader(bundle))
-	restoreReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	restoreReq.Header.Set("Authorization", "Bearer "+token)
 	restoreReq.Header.Set("Content-Type", "application/gzip")
 	restoreRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(restoreRR, restoreReq)
@@ -112,23 +99,10 @@ func TestConfigBackupMethodNotAllowed(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin_mna_backup", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin_mna_backup", "pw")
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/config/backup", nil)
-	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
@@ -151,23 +125,10 @@ func TestConfigRestoreMethodNotAllowed(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin_mna_restore", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin_mna_restore", "pw")
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/config/restore", nil)
-	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
@@ -190,20 +151,10 @@ func TestConfigRestoreInvalidGzip(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin_invalid_gz", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
+	token := loginToken(t, srv, "admin_invalid_gz", "pw")
 
 	restoreReq := httptest.NewRequest(http.MethodPost, "/v1/config/restore?dry_run=1", bytes.NewReader([]byte("not-gzip")))
-	restoreReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	restoreReq.Header.Set("Authorization", "Bearer "+token)
 	restoreRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(restoreRR, restoreReq)
 	if restoreRR.Code != http.StatusBadRequest {
@@ -226,20 +177,10 @@ func TestConfigRestoreBodyTooLarge(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin_too_large", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
+	token := loginToken(t, srv, "admin_too_large", "pw")
 
 	restoreReq := httptest.NewRequest(http.MethodPost, "/v1/config/restore?dry_run=1", bytes.NewReader([]byte("aa")))
-	restoreReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	restoreReq.Header.Set("Authorization", "Bearer "+token)
 	restoreRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(restoreRR, restoreReq)
 	if restoreRR.Code != http.StatusRequestEntityTooLarge {
@@ -270,23 +211,10 @@ func TestConfigBackupIncludesPolicyCurrentWhenProvided(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin_policy", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin_policy", "pw")
 
 	backupReq := httptest.NewRequest(http.MethodPost, "/v1/config/backup", bytes.NewReader([]byte(`{"include_policy_current":true}`)))
-	backupReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	backupReq.Header.Set("Authorization", "Bearer "+token)
 	backupRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(backupRR, backupReq)
 	if backupRR.Code != http.StatusOK {
@@ -329,23 +257,10 @@ func TestConfigBackupPermissionDenied(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "viewer1", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "viewer1", "pw")
 
 	backupReq := httptest.NewRequest(http.MethodPost, "/v1/config/backup", bytes.NewReader([]byte(`{}`)))
-	backupReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	backupReq.Header.Set("Authorization", "Bearer "+token)
 	backupRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(backupRR, backupReq)
 	if backupRR.Code != http.StatusForbidden {
@@ -368,23 +283,10 @@ func TestConfigRestoreRequiresForce(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin3", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin3", "pw")
 
 	backupReq := httptest.NewRequest(http.MethodPost, "/v1/config/backup", bytes.NewReader([]byte(`{}`)))
-	backupReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	backupReq.Header.Set("Authorization", "Bearer "+token)
 	backupRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(backupRR, backupReq)
 	if backupRR.Code != http.StatusOK {
@@ -393,7 +295,7 @@ func TestConfigRestoreRequiresForce(t *testing.T) {
 	bundle := backupRR.Body.Bytes()
 
 	restoreReq := httptest.NewRequest(http.MethodPost, "/v1/config/restore", bytes.NewReader(bundle))
-	restoreReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	restoreReq.Header.Set("Authorization", "Bearer "+token)
 	restoreReq.Header.Set("Content-Type", "application/gzip")
 	restoreRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(restoreRR, restoreReq)
@@ -417,23 +319,10 @@ func TestConfigRestoreForceApply(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin4", "password": "pw"})
-	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
-	loginRR := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(loginRR, loginReq)
-	if loginRR.Code != http.StatusOK {
-		t.Fatalf("login expected 200, got %d: %s", loginRR.Code, loginRR.Body.String())
-	}
-	var loginResp struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(loginRR.Body.Bytes(), &loginResp)
-	if loginResp.Token == "" {
-		t.Fatalf("expected token")
-	}
+	token := loginToken(t, srv, "admin4", "pw")
 
 	backupReq := httptest.NewRequest(http.MethodPost, "/v1/config/backup", bytes.NewReader([]byte(`{}`)))
-	backupReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	backupReq.Header.Set("Authorization", "Bearer "+token)
 	backupRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(backupRR, backupReq)
 	if backupRR.Code != http.StatusOK {
@@ -442,7 +331,7 @@ func TestConfigRestoreForceApply(t *testing.T) {
 	bundle := backupRR.Body.Bytes()
 
 	restoreReq := httptest.NewRequest(http.MethodPost, "/v1/config/restore?force=1", bytes.NewReader(bundle))
-	restoreReq.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	restoreReq.Header.Set("Authorization", "Bearer "+token)
 	restoreReq.Header.Set("Content-Type", "application/gzip")
 	restoreRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(restoreRR, restoreReq)

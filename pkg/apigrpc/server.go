@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"ztap/pkg/alert"
+	"ztap/pkg/apiutil"
 	"ztap/pkg/audit"
 	"ztap/pkg/auth"
 	"ztap/pkg/cluster"
@@ -136,14 +137,14 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		opts.Config.Listen = "127.0.0.1:9092"
 	}
 	if opts.AuthManager == nil {
-		am, err := defaultAuthManager()
+		am, err := apiutil.DefaultAuthManager()
 		if err != nil {
 			return nil, err
 		}
 		opts.AuthManager = am
 	}
 	if opts.AuditLogger == nil {
-		al, err := defaultAuditLogger()
+		al, err := apiutil.DefaultAuditLogger()
 		if err != nil {
 			return nil, err
 		}
@@ -313,26 +314,6 @@ func auditActor(ctx context.Context) string {
 		return sess.Username
 	}
 	return "system"
-}
-
-func defaultAuthManager() (*auth.AuthManager, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-	return auth.NewAuthManager(filepath.Join(homeDir, ".ztap", "users.json"))
-}
-
-func defaultAuditLogger() (*audit.AuditLogger, error) {
-	if opts, _, err := loadAuditOptions(); err == nil {
-		return audit.NewAuditLoggerWithOptions(opts)
-	}
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-	logPath := filepath.Join(homeDir, ".ztap", "audit.log")
-	return audit.NewAuditLogger(logPath)
 }
 
 func (s *Server) emitAlert(a alert.Alert) {

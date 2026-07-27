@@ -97,25 +97,11 @@ func newPolicyGRPCServer(t *testing.T) (*grpc.ClientConn, func()) {
 	return conn, cleanup
 }
 
-func loginGRPCToken(t *testing.T, conn *grpc.ClientConn) string {
-	t.Helper()
-
-	authClient := apiv1.NewAuthServiceClient(conn)
-	resp, err := authClient.Login(t.Context(), &apiv1.LoginRequest{Username: "admin1", Password: "pw"})
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-	if resp.GetToken() == "" {
-		t.Fatalf("expected token")
-	}
-	return resp.GetToken()
-}
-
 func TestGRPCPoliciesLifecycle(t *testing.T) {
 	conn, cleanup := newPolicyGRPCServer(t)
 	t.Cleanup(cleanup)
 
-	tok := loginGRPCToken(t, conn)
+	tok := loginGRPCToken(t, conn, "admin1", "pw")
 	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+tok))
 
 	policyYAML := "apiVersion: ztap/v1\nkind: NetworkPolicy\nmetadata:\n  name: web\nspec:\n  podSelector:\n    matchLabels:\n      app: web\n  egress:\n  - to:\n      ipBlock:\n        cidr: 10.0.0.0/8\n    ports:\n    - protocol: TCP\n      port: 443\n"

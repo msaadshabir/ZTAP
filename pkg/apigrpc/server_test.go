@@ -105,14 +105,7 @@ func TestGRPCAuthLoginAndWhoAmI(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	authClient := apiv1.NewAuthServiceClient(conn)
-	loginResp, err := authClient.Login(t.Context(), &apiv1.LoginRequest{Username: "alice", Password: "pw"})
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-	tok := loginResp.GetToken()
-	if tok == "" {
-		t.Fatalf("expected token")
-	}
+	tok := loginGRPCToken(t, conn, "alice", "pw")
 
 	mdCtx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+tok))
 	whoResp, err := authClient.WhoAmI(mdCtx, &emptypb.Empty{})
@@ -221,12 +214,7 @@ func TestGRPCFlowsStream(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	authClient := apiv1.NewAuthServiceClient(conn)
-	loginResp, err := authClient.Login(t.Context(), &apiv1.LoginRequest{Username: "bob", Password: "pw"})
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-	tok := loginResp.GetToken()
+	tok := loginGRPCToken(t, conn, "bob", "pw")
 
 	streamCtx, streamCancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer streamCancel()
