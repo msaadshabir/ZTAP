@@ -177,8 +177,7 @@ func (d *InMemoryDiscovery) Watch(ctx context.Context, labels map[string]string)
 	ch <- ips
 
 	// Handle context cancellation
-	go func() {
-		<-ctx.Done()
+	context.AfterFunc(ctx, func() {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if watcher.closed {
@@ -195,7 +194,7 @@ func (d *InMemoryDiscovery) Watch(ctx context.Context, labels map[string]string)
 		}
 		watcher.closed = true
 		close(ch)
-	}()
+	})
 
 	return ch, nil
 }

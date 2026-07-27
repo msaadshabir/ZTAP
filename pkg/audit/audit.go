@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -274,7 +275,7 @@ func (al *AuditLogger) Query(opts QueryOptions) ([]AuditEntry, error) {
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return nil, fmt.Errorf("corrupted entry at position %d: %w", entryNum, err)
@@ -355,7 +356,7 @@ func (al *AuditLogger) VerifyIntegrity() (bool, error) {
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return false, fmt.Errorf("corrupted entry at position %d: %w", position, err)
@@ -427,7 +428,7 @@ func (al *AuditLogger) VerifyIntegrityDetailed(verifier Verifier) VerifyResult {
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			result.Valid = false
@@ -681,7 +682,7 @@ func (al *AuditLogger) loadLastHash() error {
 	for {
 		var entry AuditEntry
 		if err := decoder.Decode(&entry); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			al.cacheMu.Lock()

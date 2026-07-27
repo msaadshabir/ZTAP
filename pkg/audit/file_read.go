@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -84,7 +85,7 @@ func GetFileStats(path string) (FileStats, error) {
 	for {
 		var e AuditEntry
 		if err := dec.Decode(&e); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return FileStats{}, err
@@ -121,7 +122,7 @@ func VerifyFileIntegrity(path string) (bool, error) {
 	for {
 		var entry AuditEntry
 		if err := dec.Decode(&entry); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return false, err
@@ -161,7 +162,7 @@ func QueryFile(path string, opts QueryOptions) ([]AuditEntry, error) {
 	for {
 		var entry AuditEntry
 		if err := dec.Decode(&entry); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return nil, err
@@ -205,7 +206,7 @@ func ScanFile(path string, opts QueryOptions, fn func(AuditEntry) bool) error {
 	for {
 		var entry AuditEntry
 		if err := dec.Decode(&entry); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return err

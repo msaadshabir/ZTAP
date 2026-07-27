@@ -62,10 +62,7 @@ func (d *Dispatcher) Start(ctx context.Context) {
 			go d.worker(ctx)
 		}
 
-		go func() {
-			<-ctx.Done()
-			d.Close()
-		}()
+		context.AfterFunc(ctx, d.Close)
 	})
 }
 

@@ -444,11 +444,20 @@ func (e *EtcdElection) runElectionLoop() {
 		// Campaign to become leader
 		logging.Infof("Node %s campaigning for leadership", safeNodeID)
 		if err := e.election.Campaign(e.ctx, string(nodeData)); err != nil {
-			if err == context.Canceled {
+			if errors.Is(err, context.Canceled) {
 				return
 			}
 			logging.Warnf("Campaign error: %v, retrying...", err)
-			time.Sleep(e.config.HeartbeatInterval)
+			timer := time.NewTimer(e.config.HeartbeatInterval)
+			select {
+			case <-e.stopCh:
+				timer.Stop()
+				return
+			case <-e.ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
 			continue
 		}
 
