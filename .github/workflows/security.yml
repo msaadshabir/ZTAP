@@ -37,7 +37,7 @@ jobs:
       ZTAP_SECURITY_SKIP_VET: "1"
     steps:
       - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -67,7 +67,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Run Trivy filesystem scan and upload SARIF
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
@@ -79,7 +79,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload SARIF to GitHub
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
         with:
           sarif_file: trivy-results.sarif
         continue-on-error: true
