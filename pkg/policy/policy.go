@@ -19,7 +19,7 @@ import (
 
 	"ztap/pkg/logging"
 
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // ServiceDiscovery interface for label resolution

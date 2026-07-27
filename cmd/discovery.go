@@ -11,7 +11,7 @@ import (
 	"ztap/pkg/discovery"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
