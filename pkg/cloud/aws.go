@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -386,7 +387,7 @@ func buildAWSEgressRules(p policy.NetworkPolicy, resources []Resource) (map[awsR
 		cidr := strings.TrimSpace(egress.To.IPBlock.CIDR)
 		selector := egress.To.PodSelector
 		if !selectorEmpty(egress.To.NamespaceSelector) {
-			return nil, 0, fmt.Errorf("namespaceSelector is not supported for AWS security group rules")
+			return nil, 0, errors.New("namespaceSelector is not supported for AWS security group rules")
 		}
 
 		if cidr == "" && selectorEmpty(selector) {
@@ -411,7 +412,7 @@ func buildAWSEgressRules(p policy.NetworkPolicy, resources []Resource) (map[awsR
 
 		for _, port := range egress.Ports {
 			if port.PortName != "" {
-				return nil, 0, fmt.Errorf("named ports are not supported for AWS security group rules")
+				return nil, 0, errors.New("named ports are not supported for AWS security group rules")
 			}
 			start := port.Port
 			end := port.Port
@@ -423,7 +424,7 @@ func buildAWSEgressRules(p policy.NetworkPolicy, resources []Resource) (map[awsR
 			}
 			proto := strings.ToLower(strings.TrimSpace(port.Protocol))
 			if proto == "" {
-				return nil, 0, fmt.Errorf("protocol is required")
+				return nil, 0, errors.New("protocol is required")
 			}
 			for _, targetCIDR := range cidrs {
 				key, err := awsRuleKeyFor(targetCIDR, proto, start, end)

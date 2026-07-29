@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"text/tabwriter"
 	"time"
 
@@ -237,7 +238,7 @@ var policyHistoryCmd = &cobra.Command{
 		for _, rev := range revisions {
 			rollbackFrom := "-"
 			if rev.RollbackFromVersion != nil {
-				rollbackFrom = fmt.Sprintf("%d", *rev.RollbackFromVersion)
+				rollbackFrom = strconv.FormatInt(*rev.RollbackFromVersion, 10)
 			}
 			reason := rev.Reason
 			if reason == "" {

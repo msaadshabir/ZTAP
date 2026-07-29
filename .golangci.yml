@@ -7,9 +7,23 @@ linters:
   default: none
   enable:
     - errcheck
+    - gocritic
+    - govet
     - ineffassign
+    - perfsprint
     - staticcheck
     - unused
+    - usestdlibvars
   exclusions:
+    rules:
+      # SA5011 false positives: t.Fatal* terminates the test goroutine.
+      - linters: [staticcheck]
+        text: "SA5011"
+        path: _test\.go$
     paths:
       - ^examples/
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

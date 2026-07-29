@@ -185,22 +185,22 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 func sanitizeManifestPath(p string) (string, error) {
 	relPath := filepath.FromSlash(p)
 	if relPath == "" {
-		return "", fmt.Errorf("empty path")
+		return "", errors.New("empty path")
 	}
 
 	// Reject absolute paths (including drive letters or UNC paths on Windows).
 	if filepath.IsAbs(relPath) {
-		return "", fmt.Errorf("absolute paths are not allowed")
+		return "", errors.New("absolute paths are not allowed")
 	}
 
 	sep := string(os.PathSeparator)
 	parts := strings.SplitSeq(relPath, sep)
 	for part := range parts {
 		if part == "" {
-			return "", fmt.Errorf("empty path component")
+			return "", errors.New("empty path component")
 		}
 		if part == "." || part == ".." {
-			return "", fmt.Errorf("dot or dot-dot path components are not allowed")
+			return "", errors.New("dot or dot-dot path components are not allowed")
 		}
 	}
 

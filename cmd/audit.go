@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -231,7 +232,7 @@ func runAuditVerify(cmd *cobra.Command, args []string) error {
 		if result.Error != nil {
 			return result.Error
 		}
-		return fmt.Errorf("audit log has been tampered with")
+		return errors.New("audit log has been tampered with")
 	}
 
 	fmt.Println("\n[PASS] Audit log integrity verified successfully.")

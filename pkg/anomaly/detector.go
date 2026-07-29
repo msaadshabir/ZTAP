@@ -143,7 +143,7 @@ func (d *SimpleDetector) Detect(flow FlowRecord) (*AnomalyScore, error) {
 		if d.blockedCountries[flow.SourceGeo] {
 			country = flow.SourceGeo
 		}
-		reasons = append(reasons, fmt.Sprintf("traffic to/from blocked country %s", country))
+		reasons = append(reasons, "traffic to/from blocked country "+country)
 	}
 
 	// Check for unusual traffic volume

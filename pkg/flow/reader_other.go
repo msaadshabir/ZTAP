@@ -4,7 +4,7 @@ package flow
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -78,4 +78,4 @@ func CreateDefaultReader() FlowReader {
 }
 
 // ErrNotSupported is returned when flow monitoring is not available.
-var ErrNotSupported = fmt.Errorf("flow monitoring requires Linux with eBPF support")
+var ErrNotSupported = errors.New("flow monitoring requires Linux with eBPF support")

@@ -1,6 +1,7 @@
 package compliance
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -33,7 +34,7 @@ func ParseFrameworkID(s string) (FrameworkID, bool) {
 func ValidateControlID(framework FrameworkID, controlID string) error {
 	controlID = strings.TrimSpace(controlID)
 	if controlID == "" {
-		return fmt.Errorf("control id is empty")
+		return errors.New("control id is empty")
 	}
 
 	switch framework {

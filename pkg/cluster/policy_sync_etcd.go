@@ -425,7 +425,7 @@ func (ps *EtcdPolicySync) applyPolicy(ctx context.Context, policyName string, po
 }
 
 func (ps *EtcdPolicySync) statesPrefix() string {
-	return fmt.Sprintf("%s/policies/state/", ps.config.KeyPrefix)
+	return ps.config.KeyPrefix + "/policies/state/"
 }
 
 func (ps *EtcdPolicySync) revisionsPrefix(key PolicyKey) string {
@@ -444,7 +444,7 @@ func (ps *EtcdPolicySync) stateKey(key PolicyKey) string {
 }
 
 func (ps *EtcdPolicySync) watchPrefix() string {
-	return fmt.Sprintf("%s/policies/updates/", ps.config.KeyPrefix)
+	return ps.config.KeyPrefix + "/policies/updates/"
 }
 
 func (ps *EtcdPolicySync) updateKey(key PolicyKey, version int64) string {

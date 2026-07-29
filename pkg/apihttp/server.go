@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -224,7 +225,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	go func() {
 		if s.cfg.TLS.Enabled {
 			if s.cfg.TLS.CertFile == "" || s.cfg.TLS.KeyFile == "" {
-				errCh <- fmt.Errorf("TLS is enabled but certificate or key file is missing")
+				errCh <- errors.New("TLS is enabled but certificate or key file is missing")
 				return
 			}
 			// Build TLS config, optionally requiring client certificates.
@@ -233,7 +234,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 			if s.cfg.TLS.ClientAuth {
 				if s.cfg.TLS.ClientCAFile == "" {
-					errCh <- fmt.Errorf("mTLS is enabled but client CA file is missing")
+					errCh <- errors.New("mTLS is enabled but client CA file is missing")
 					return
 				}
 				pem, err := os.ReadFile(s.cfg.TLS.ClientCAFile)
@@ -243,7 +244,7 @@ func (s *Server) Serve(ctx context.Context) error {
 				}
 				pool := x509.NewCertPool()
 				if !pool.AppendCertsFromPEM(pem) {
-					errCh <- fmt.Errorf("no certificates found in client CA file")
+					errCh <- errors.New("no certificates found in client CA file")
 					return
 				}
 				tlsCfg.ClientCAs = pool
@@ -429,12 +430,12 @@ func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration, limit flo
 	if retrySeconds <= 0 {
 		retrySeconds = 1
 	}
-	w.Header().Set("Retry-After", fmt.Sprintf("%d", retrySeconds))
+	w.Header().Set("Retry-After", strconv.Itoa(retrySeconds))
 	if limit > 0 {
 		w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.2f", limit))
 	}
 	if burst > 0 {
-		w.Header().Set("X-RateLimit-Burst", fmt.Sprintf("%d", burst))
+		w.Header().Set("X-RateLimit-Burst", strconv.Itoa(burst))
 	}
 	writeJSON(w, http.StatusTooManyRequests, rateLimitedResponse{Error: "rate_limited", RetryAfterSeconds: retrySeconds})
 }

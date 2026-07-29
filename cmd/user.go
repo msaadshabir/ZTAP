@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -328,7 +329,7 @@ func CheckAuth(perm auth.Permission) error {
 	tokenFile := getTokenFile()
 	tokenBytes, err := os.ReadFile(tokenFile)
 	if err != nil {
-		return fmt.Errorf("not authenticated: please run 'ztap login'")
+		return errors.New("not authenticated: please run 'ztap login'")
 	}
 
 	am, err := getAuthManager()

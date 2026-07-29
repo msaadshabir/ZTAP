@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -154,7 +155,7 @@ var awsInventoryResolveCmd = &cobra.Command{
 				MatchLabels: labelsRaw,
 			}
 		} else {
-			return fmt.Errorf("either --labels or --selector is required")
+			return errors.New("either --labels or --selector is required")
 		}
 
 		matched := inv.Match(selector)
@@ -191,7 +192,7 @@ func parseSelectorString(selectorStr string) (policy.PodSelectorSpec, error) {
 	// We need to extract the requirements from the selector
 	requirements, selectable := sel.Requirements()
 	if !selectable {
-		return policy.PodSelectorSpec{}, fmt.Errorf("selector is not selectable")
+		return policy.PodSelectorSpec{}, errors.New("selector is not selectable")
 	}
 
 	spec := policy.PodSelectorSpec{

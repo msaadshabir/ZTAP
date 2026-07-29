@@ -17,11 +17,12 @@ and Semantic Versioning (https://semver.org/).
 
 ### Changed
 
+- Lint: enabled `govet`, `gocritic`, `perfsprint`, and `usestdlibvars` linters plus `gofmt`/`goimports` formatters in `.golangci.yml` (golangci-lint v2), closing a blind spot where gofmt/vet had not run in CI; fixed all new findings (mechanical `perfsprint` rewrites, `//go:fix` inlining of pointer helpers, if-else→switch refactors; SA5011 excluded in tests — false positives because `t.Fatal` terminates the test goroutine).
 - Dependencies: upgraded `google.golang.org/grpc` to v1.79.3.
 - Tooling: bumped Go toolchain to 1.25.8 for the security workflow.
 - Dependencies: refreshed Go module and GitHub Actions versions via Dependabot.
 - **CI: optimized GitHub Actions workflows** across all four workflow files (`ci.yml`, `security.yml`, `codeql.yml`, `release.yml`):
-  - Removed redundant `gofmt` and `go vet` steps from lint job (golangci-lint covers both).
+  - Removed redundant `gofmt` and `go vet` steps from lint job. (Note: golangci-lint did not actually run gofmt/govet until the v2 config enabled them — see below.)
   - Parallelized Docker builds via matrix strategy (ztap, ztap-anomaly, ztap-operator build concurrently).
   - Reduced CI schedule from nightly to weekly. Reduced CodeQL timeout from 360 to 90 minutes.
   - Added `paths-ignore` to push triggers so doc-only changes skip CI/security/CodeQL pipelines.

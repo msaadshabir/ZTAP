@@ -330,17 +330,17 @@ func (d *DNSDiscovery) ResolveLabels(labels map[string]string) ([]string, error)
 
 // RegisterService not supported for DNS discovery
 func (d *DNSDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
-	return fmt.Errorf("DNS discovery does not support registration")
+	return errors.New("DNS discovery does not support registration")
 }
 
 // DeregisterService not supported for DNS discovery
 func (d *DNSDiscovery) DeregisterService(name string) error {
-	return fmt.Errorf("DNS discovery does not support deregistration")
+	return errors.New("DNS discovery does not support deregistration")
 }
 
 // Watch not supported for DNS discovery
 func (d *DNSDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
-	return nil, fmt.Errorf("DNS discovery does not support watching")
+	return nil, errors.New("DNS discovery does not support watching")
 }
 
 // Stop is a no-op for DNS discovery.
@@ -364,22 +364,22 @@ func (c *ConsulDiscovery) ResolveLabels(labels map[string]string) ([]string, err
 	// Placeholder: In production, use Consul API
 	// consul, err := api.NewClient(&api.Config{Address: c.address})
 	// services, _, err := consul.Health().Service(serviceName, "", true, nil)
-	return nil, fmt.Errorf("consul discovery not yet implemented")
+	return nil, errors.New("consul discovery not yet implemented")
 }
 
 // RegisterService registers with Consul
 func (c *ConsulDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
-	return fmt.Errorf("consul discovery not yet implemented")
+	return errors.New("consul discovery not yet implemented")
 }
 
 // DeregisterService removes from Consul
 func (c *ConsulDiscovery) DeregisterService(name string) error {
-	return fmt.Errorf("consul discovery not yet implemented")
+	return errors.New("consul discovery not yet implemented")
 }
 
 // Watch watches Consul for service changes
 func (c *ConsulDiscovery) Watch(ctx context.Context, labels map[string]string) (<-chan []string, error) {
-	return nil, fmt.Errorf("consul discovery not yet implemented")
+	return nil, errors.New("consul discovery not yet implemented")
 }
 
 // Stop is a no-op for the Consul discovery stub.
@@ -455,7 +455,7 @@ func (c *CacheDiscovery) ResolveSelector(selector policy.PodSelectorSpec) ([]str
 	if backend, ok := c.backend.(policy.SelectorResolver); ok {
 		return backend.ResolveSelector(selector)
 	}
-	return nil, fmt.Errorf("selector resolution not supported by backend")
+	return nil, errors.New("selector resolution not supported by backend")
 }
 
 // ResolveSelectorScoped delegates scoped selector resolution when supported by backend.
@@ -463,7 +463,7 @@ func (c *CacheDiscovery) ResolveSelectorScoped(scope string, selector policy.Pod
 	if backend, ok := c.backend.(policy.SelectorResolver); ok {
 		return backend.ResolveSelectorScoped(scope, selector)
 	}
-	return nil, fmt.Errorf("scoped selector resolution not supported by backend")
+	return nil, errors.New("scoped selector resolution not supported by backend")
 }
 
 // ResolveNamespaces delegates namespace selector resolution when supported by backend.
@@ -471,7 +471,7 @@ func (c *CacheDiscovery) ResolveNamespaces(selector policy.PodSelectorSpec) ([]s
 	if backend, ok := c.backend.(policy.NamespaceResolver); ok {
 		return backend.ResolveNamespaces(selector)
 	}
-	return nil, fmt.Errorf("namespace selector resolution not supported by backend")
+	return nil, errors.New("namespace selector resolution not supported by backend")
 }
 
 // ResolvePods delegates pod resolution when supported by backend.
@@ -479,7 +479,7 @@ func (c *CacheDiscovery) ResolvePods(selector policy.PodSelectorSpec) ([]policy.
 	if backend, ok := c.backend.(policy.PodResolver); ok {
 		return backend.ResolvePods(selector)
 	}
-	return nil, fmt.Errorf("pod resolution not supported by backend")
+	return nil, errors.New("pod resolution not supported by backend")
 }
 
 // ResolvePodsScoped delegates scoped pod resolution when supported by backend.
@@ -487,7 +487,7 @@ func (c *CacheDiscovery) ResolvePodsScoped(scope string, selector policy.PodSele
 	if backend, ok := c.backend.(policy.PodResolver); ok {
 		return backend.ResolvePodsScoped(scope, selector)
 	}
-	return nil, fmt.Errorf("scoped pod resolution not supported by backend")
+	return nil, errors.New("scoped pod resolution not supported by backend")
 }
 
 // RegisterService delegates to backend

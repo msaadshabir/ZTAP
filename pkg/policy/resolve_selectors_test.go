@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -84,7 +85,7 @@ type mockNamespaceDiscovery struct {
 }
 
 func (m *mockNamespaceDiscovery) ResolveLabels(labels map[string]string) ([]string, error) {
-	return nil, fmt.Errorf("unscoped lookup not supported")
+	return nil, errors.New("unscoped lookup not supported")
 }
 
 func (m *mockNamespaceDiscovery) ResolveLabelsScoped(scope string, labels map[string]string) ([]string, error) {
@@ -486,7 +487,7 @@ type mockPodDiscovery struct {
 }
 
 func (m *mockPodDiscovery) ResolveLabels(labels map[string]string) ([]string, error) {
-	return nil, fmt.Errorf("unexpected ResolveLabels call")
+	return nil, errors.New("unexpected ResolveLabels call")
 }
 
 func (m *mockPodDiscovery) RegisterService(name string, ip string, labels map[string]string) error {

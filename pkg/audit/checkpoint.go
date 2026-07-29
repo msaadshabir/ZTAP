@@ -3,6 +3,7 @@ package audit
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -100,7 +101,7 @@ func (cr *CheckpointReader) Read() (Checkpoint, error) {
 		return Checkpoint{}, fmt.Errorf("verifying checkpoint: %w", err)
 	}
 	if !valid {
-		return Checkpoint{}, fmt.Errorf("checkpoint signature invalid")
+		return Checkpoint{}, errors.New("checkpoint signature invalid")
 	}
 
 	return checkpoint, nil
