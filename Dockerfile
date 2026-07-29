@@ -19,7 +19,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o ztap .
 
 # Final stage - minimal runtime image
-FROM alpine:3.22
+FROM alpine:3.24
 
 ARG VERSION=dev
 ARG REVISION=unknown
