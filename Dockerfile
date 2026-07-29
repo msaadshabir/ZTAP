@@ -1,10 +1,10 @@
 # Build stage for Go application
 FROM golang:1.26.5-alpine AS go-builder
 
-# Install build dependencies
-RUN apk add --no-cache git make clang llvm
+# eBPF bytecode is vendored (pkg/enforcer/bpf_bpf*.o) and regeneration is
+# verified by the CI drift check, so no clang/llvm/make/git toolchain is
+# needed in this image.
 
-# Set working directory
 WORKDIR /app
 
 # Copy go mod files
@@ -14,14 +14,22 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Generate eBPF pre-compiled bytecode
-RUN go generate ./pkg/enforcer/...
-
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o ztap .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o ztap .
 
 # Final stage - minimal runtime image
-FROM alpine:3.19
+FROM alpine:3.22
+
+ARG VERSION=dev
+ARG REVISION=unknown
+
+LABEL org.opencontainers.image.source="https://github.com/msaadshabir/ZTAP" \
+      org.opencontainers.image.title="ZTAP" \
+      org.opencontainers.image.description="Zero Trust Access Platform: eBPF-based microsegmentation and policy enforcement" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates iptables
