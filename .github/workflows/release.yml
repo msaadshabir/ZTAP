@@ -13,162 +13,117 @@ permissions:
   contents: read
 
 jobs:
-  build-release:
-    name: Build Release Binaries
+  goreleaser:
+    name: GoReleaser
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-          - goos: windows
-            goarch: arm64
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      hashes: ${{ steps.hashes.outputs.hashes }}
 
     steps:
       - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
-      - name: Get version from tag
-        id: version
-        run: printf 'VERSION=%s\n' "${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
 
-      - name: Build binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-          CGO_ENABLED: "0"
-        run: |
-          mkdir -p dist
-          BASENAME="ztap-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          BINARY_NAME="${BASENAME}"
-          if [ "${GOOS}" = "windows" ]; then
-            BINARY_NAME="${BINARY_NAME}.exe"
-          fi
-
-          go build -ldflags="-s -w -X main.Version=${VERSION}" -o "dist/${BINARY_NAME}" .
-
-          # Create archive
-          cd dist
-          if [ "${GOOS}" = "windows" ]; then
-            zip "${BASENAME}.zip" "${BINARY_NAME}"
-          else
-            tar czf "${BASENAME}.tar.gz" "${BINARY_NAME}"
-          fi
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: ztap-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            dist/*.tar.gz
-            dist/*.zip
-          retention-days: 7
-
-  create-release:
-    name: Create GitHub Release
-    needs: build-release
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write
-
-    steps:
-      - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          path: artifacts
-          pattern: ztap-*
-          merge-multiple: false
-
-      - name: Get version from tag
-        id: version
-        run: printf 'VERSION=%s\n' "${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-
-      - name: Generate checksums
-        run: |
-          cd artifacts
-          find . -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec sha256sum {} + | sed 's|  \./[^/]*/|  |' | sort -k2 > ../checksums.txt
-          echo "Generated checksums:"
-          cat ../checksums.txt
+      - name: Install syft
+        run: go install github.com/anchore/syft/cmd/syft@v1.50.0
 
       - name: Generate changelog
-        id: changelog
         run: |
-          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
+          VERSION="${GITHUB_REF#refs/tags/}"
           echo "Generating changelog for ${VERSION}"
 
           # Extract changelog section if exists
           if [ -f "CHANGELOG.md" ]; then
             sed -n "/## ${VERSION}/,/## /p" CHANGELOG.md | sed '$d' > release-notes.md
-          else
-            echo "Release ${VERSION}" > release-notes.md
-            echo "" >> release-notes.md
-            echo "See commits for details." >> release-notes.md
           fi
-        env:
-          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.VERSION }}
+          if [ ! -s release-notes.md ]; then
+            {
+              echo "Release ${VERSION}"
+              echo ""
+              echo "See commits for details."
+            } > release-notes.md
+          fi
 
-      - name: Create Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.2
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.zip
-            checksums.txt
-          body_path: release-notes.md
-          draft: false
-          prerelease: ${{ contains(steps.version.outputs.VERSION, 'rc') || contains(steps.version.outputs.VERSION, 'beta') }}
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --release-notes=release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Generate SLSA subject hashes
+        id: hashes
+        shell: bash
+        run: echo "hashes=$(base64 -w0 dist/checksums.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-dist
+          path: dist/
+          retention-days: 7
+
+  provenance:
+    name: SLSA 3 Provenance
+    needs: [goreleaser]
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generic-generator.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    with:
+      base64-subjects: ${{ needs.goreleaser.outputs.hashes }}
+      upload-assets: true
+      provenance-name: ztap.intoto.jsonl
+
   docker-release:
     name: Build and Push Docker Images
-    needs: create-release
+    needs: goreleaser
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
+      id-token: write
 
     steps:
       - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0  # v4.4.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
 
       - name: Get version from tag
         id: version
@@ -180,12 +135,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push ZTAP image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        id: build-ztap
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}
+            REVISION=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/ztap:latest
             ghcr.io/${{ github.repository_owner }}/ztap:${{ steps.version.outputs.VERSION }}
@@ -194,12 +155,18 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push ZTAP Operator image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        id: build-operator
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: ./Dockerfile.operator
           platforms: linux/amd64,linux/arm64
           push: true
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}
+            REVISION=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/ztap-operator:latest
             ghcr.io/${{ github.repository_owner }}/ztap-operator:${{ steps.version.outputs.VERSION }}
@@ -208,15 +175,32 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push Anomaly Detector image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        id: build-anomaly
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./pkg/anomaly
           file: ./pkg/anomaly/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}
+            REVISION=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/ztap-anomaly:latest
             ghcr.io/${{ github.repository_owner }}/ztap-anomaly:${{ steps.version.outputs.VERSION }}
             ghcr.io/${{ github.repository_owner }}/ztap-anomaly:${{ steps.version.outputs.VERSION_SHORT }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Sign images
+        env:
+          COSIGN_YES: "true"
+          IMAGE_ZTAP: ghcr.io/${{ github.repository_owner }}/ztap@${{ steps.build-ztap.outputs.digest }}
+          IMAGE_OPERATOR: ghcr.io/${{ github.repository_owner }}/ztap-operator@${{ steps.build-operator.outputs.digest }}
+          IMAGE_ANOMALY: ghcr.io/${{ github.repository_owner }}/ztap-anomaly@${{ steps.build-anomaly.outputs.digest }}
+        run: |
+          cosign sign --yes "${IMAGE_ZTAP}"
+          cosign sign --yes "${IMAGE_OPERATOR}"
+          cosign sign --yes "${IMAGE_ANOMALY}"
