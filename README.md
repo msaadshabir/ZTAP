@@ -1,5 +1,7 @@
 # ZTAP: Zero Trust Access Platform
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/msaadshabir/ZTAP/badge)](https://scorecard.dev/viewer/?uri=github.com/msaadshabir/ZTAP)
+
 ## Quick Start
 
 ### Installation

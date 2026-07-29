@@ -28,7 +28,8 @@ if ! command -v govulncheck >/dev/null 2>&1; then
   echo "Installing govulncheck..."
   go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
 fi
-export PATH="$(go env GOPATH)/bin:$PATH"
+GOBIN="$(go env GOPATH)/bin"
+export PATH="$GOBIN:$PATH"
 govulncheck ./...
 
 echo "==> gosec"
@@ -36,7 +37,8 @@ if ! command -v gosec >/dev/null 2>&1; then
   echo "Installing gosec..."
   go install "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}"
 fi
-export PATH="$(go env GOPATH)/bin:$PATH"
+GOBIN="$(go env GOPATH)/bin"
+export PATH="$GOBIN:$PATH"
 
 # G304/G703 (variable file path / path-traversal taint): expected in a CLI that reads operator-specified files.
 # G602 (slice bounds): false positive on fixed-length arrays (e.g., [4]uint32 index 0).

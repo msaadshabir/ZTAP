@@ -7,7 +7,8 @@ PROTOC_GEN_GO_GRPC_VERSION="v1.6.0"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-export PATH="$(go env GOPATH)/bin:$PATH"
+GOBIN="$(go env GOPATH)/bin"
+export PATH="$GOBIN:$PATH"
 
 # Install pinned versions when missing OR when the installed version does not
 # match the pin (presence-only checks let stale tools drift).

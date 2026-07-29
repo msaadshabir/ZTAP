@@ -233,7 +233,7 @@ func writeBaseline(p string, summaries map[string]*fileCov) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(p, data, 0o644)
+	return os.WriteFile(p, data, 0o600)
 }
 
 // isGatedPath reports whether a repo-relative path is coverage-gated.
