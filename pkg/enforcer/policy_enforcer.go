@@ -2,6 +2,7 @@ package enforcer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"maps"
@@ -376,7 +377,7 @@ func (pe *PolicyEnforcer) enforceUpdates(ctx context.Context, updates []cluster.
 		return err
 	}
 	if requiresSubject && !IsLinux() {
-		return fmt.Errorf("ingress named ports require Linux subject-scoped enforcement")
+		return errors.New("ingress named ports require Linux subject-scoped enforcement")
 	}
 
 	if IsLinux() {
@@ -388,16 +389,16 @@ func (pe *PolicyEnforcer) enforceUpdates(ctx context.Context, updates []cluster.
 		if pe.subjectResolver != nil {
 			if requiresSubject {
 				if !CanUseEBPF() {
-					return fmt.Errorf("ingress named ports require eBPF enforcement, but eBPF is unavailable")
+					return errors.New("ingress named ports require eBPF enforcement, but eBPF is unavailable")
 				}
 				if !policiesSupportedByEBPF(flat, "") {
-					return fmt.Errorf("ingress named ports require eBPF enforcement, but policies are not eBPF-compatible")
+					return errors.New("ingress named ports require eBPF enforcement, but policies are not eBPF-compatible")
 				}
 			}
 			return EnforceWithEBPFIfAvailableScoped(ScopedEnforcementOptions{Policies: scoped, DryRun: pe.dryRun, CgroupPath: pe.cgroupPath, Context: ctx})
 		}
 		if requiresSubject {
-			return fmt.Errorf("ingress named ports require subject-scoped enforcement")
+			return errors.New("ingress named ports require subject-scoped enforcement")
 		}
 		return EnforceWithEBPFIfAvailable(EnforcementOptions{Policies: flat, DryRun: pe.dryRun, CgroupPath: pe.cgroupPath, Context: ctx})
 	}
@@ -473,7 +474,7 @@ func (pe *PolicyEnforcer) compilePolicies(ctx context.Context, updates []cluster
 		if requiresSubject {
 			resolver, ok := pe.subjectResolver.(SubjectPortResolver)
 			if !ok || pe.subjectResolver == nil {
-				return nil, nil, false, fmt.Errorf("ingress named ports require subject-scoped enforcement")
+				return nil, nil, false, errors.New("ingress named ports require subject-scoped enforcement")
 			}
 			for _, p := range normalized {
 				if !policyHasIngressNamedPorts(p) {

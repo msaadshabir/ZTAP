@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -120,10 +121,10 @@ func NewK8sDiscoveryAllNamespaces(client kubernetes.Interface) (*K8sDiscoveryAll
 func (d *K8sDiscoveryAllNamespaces) Start(ctx context.Context) error {
 	d.factory.Start(ctx.Done())
 	if !cache.WaitForCacheSync(ctx.Done(), d.podSynced) {
-		return fmt.Errorf("failed to sync kubernetes cache")
+		return errors.New("failed to sync kubernetes cache")
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), d.nsSynced) {
-		return fmt.Errorf("failed to sync kubernetes namespace cache")
+		return errors.New("failed to sync kubernetes namespace cache")
 	}
 	return nil
 }
@@ -263,11 +264,11 @@ func (d *K8sDiscoveryAllNamespaces) ResolveNamespaces(selector policy.PodSelecto
 }
 
 func (d *K8sDiscoveryAllNamespaces) RegisterService(name string, ip string, labels map[string]string) error {
-	return fmt.Errorf("RegisterService not supported in K8sDiscoveryAllNamespaces")
+	return errors.New("RegisterService not supported in K8sDiscoveryAllNamespaces")
 }
 
 func (d *K8sDiscoveryAllNamespaces) DeregisterService(name string) error {
-	return fmt.Errorf("DeregisterService not supported in K8sDiscoveryAllNamespaces")
+	return errors.New("DeregisterService not supported in K8sDiscoveryAllNamespaces")
 }
 
 // Watch is a backward-compatible unscoped watch.

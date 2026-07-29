@@ -2,11 +2,13 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"ztap/pkg/logging"
@@ -166,7 +168,7 @@ func (c *GCPClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, proj
 // DiscoverResources lists GCE instances for the specified project/network.
 func (c *GCPClient) DiscoverResources(ctx context.Context, projectID, network string) ([]Resource, error) {
 	if c.instances == nil {
-		return nil, fmt.Errorf("gcp instances client not configured for discovery")
+		return nil, errors.New("gcp instances client not configured for discovery")
 	}
 	networkURL := networkSelfLink(projectID, network)
 	return c.discoverResources(ctx, projectID, networkURL)
@@ -221,7 +223,7 @@ func (c *GCPClient) SyncPolicyWithOptions(ctx context.Context, p policy.NetworkP
 	var resolveLabels func(policy.PodSelectorSpec) ([]string, error)
 	if hasPodSelectors(p) {
 		if c.instances == nil {
-			return fmt.Errorf("gcp instances client not configured for label resolution")
+			return errors.New("gcp instances client not configured for label resolution")
 		}
 		resources, err := c.discoverResources(ctx, projectID, networkURL)
 		if err != nil {
@@ -308,7 +310,7 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 		cidr := strings.TrimSpace(egress.To.IPBlock.CIDR)
 		selector := egress.To.PodSelector
 		if len(egress.To.NamespaceSelector.MatchLabels) > 0 || len(egress.To.NamespaceSelector.MatchExpressions) > 0 {
-			return nil, fmt.Errorf("namespaceSelector is not supported for gcp firewall rules")
+			return nil, errors.New("namespaceSelector is not supported for gcp firewall rules")
 		}
 
 		if cidr == "" && len(selector.MatchLabels) == 0 && len(selector.MatchExpressions) == 0 {
@@ -317,7 +319,7 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 
 		for _, port := range egress.Ports {
 			if port.PortName != "" {
-				return nil, fmt.Errorf("named ports are not supported for gcp firewall rules")
+				return nil, errors.New("named ports are not supported for gcp firewall rules")
 			}
 			start := port.Port
 			end := port.Port
@@ -360,7 +362,7 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 		cidr := strings.TrimSpace(ingress.From.IPBlock.CIDR)
 		selector := ingress.From.PodSelector
 		if len(ingress.From.NamespaceSelector.MatchLabels) > 0 || len(ingress.From.NamespaceSelector.MatchExpressions) > 0 {
-			return nil, fmt.Errorf("namespaceSelector is not supported for gcp firewall rules")
+			return nil, errors.New("namespaceSelector is not supported for gcp firewall rules")
 		}
 
 		if cidr == "" && len(selector.MatchLabels) == 0 && len(selector.MatchExpressions) == 0 {
@@ -369,7 +371,7 @@ func (c *GCPClient) buildRules(p policy.NetworkPolicy, networkURL string, resolv
 
 		for _, port := range ingress.Ports {
 			if port.PortName != "" {
-				return nil, fmt.Errorf("named ports are not supported for gcp firewall rules")
+				return nil, errors.New("named ports are not supported for gcp firewall rules")
 			}
 			start := port.Port
 			end := port.Port
@@ -459,14 +461,14 @@ func sanitizeGCPRuleName(name string) string {
 
 func portRange(start int, end int) string {
 	if end <= start {
-		return fmt.Sprintf("%d", start)
+		return strconv.Itoa(start)
 	}
 	return fmt.Sprintf("%d-%d", start, end)
 }
 
 func portRangeLabel(start int, end int) string {
 	if end <= start {
-		return fmt.Sprintf("%d", start)
+		return strconv.Itoa(start)
 	}
 	return fmt.Sprintf("%d-%d", start, end)
 }
@@ -481,7 +483,7 @@ func (c *GCPClient) resolveTargetCIDRs(resolveLabels func(policy.PodSelectorSpec
 	}
 
 	if resolveLabels == nil {
-		return nil, "selector-missing-discovery", "selector-missing-discovery", fmt.Errorf("podSelector requires service discovery")
+		return nil, "selector-missing-discovery", "selector-missing-discovery", errors.New("podSelector requires service discovery")
 	}
 
 	ips, err := resolveLabels(selector)
@@ -498,7 +500,7 @@ func (c *GCPClient) resolveTargetCIDRs(resolveLabels func(policy.PodSelectorSpec
 	}
 
 	labelKey := selectorKey(selector)
-	return cidrs, fmt.Sprintf("sel-%s", labelKey), fmt.Sprintf("sel-%s", labelKey), nil
+	return cidrs, "sel-" + labelKey, "sel-" + labelKey, nil
 }
 
 func selectorKey(selector policy.PodSelectorSpec) string {
@@ -537,9 +539,9 @@ func ipToCIDR(ip string) (string, error) {
 		return "", fmt.Errorf("invalid ip %s", ip)
 	}
 	if parsed.To4() != nil {
-		return fmt.Sprintf("%s/32", parsed.String()), nil
+		return parsed.String() + "/32", nil
 	}
-	return fmt.Sprintf("%s/128", parsed.String()), nil
+	return parsed.String() + "/128", nil
 }
 
 func hasPodSelectors(p policy.NetworkPolicy) bool {
@@ -586,7 +588,7 @@ func (c *GCPClient) discoverResources(ctx context.Context, projectID, networkURL
 			}
 
 			resources = append(resources, Resource{
-				ID:        fmt.Sprintf("%d", inst.GetId()),
+				ID:        strconv.FormatUint(inst.GetId(), 10),
 				Name:      inst.GetName(),
 				Type:      "GCE",
 				PrivateIP: privateIP,

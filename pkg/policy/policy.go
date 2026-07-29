@@ -167,12 +167,12 @@ func parsePortValue(raw any) (int, string, error) {
 		return int(v), "", nil
 	case uint64:
 		if v > uint64(math.MaxInt) {
-			return 0, "", fmt.Errorf("port must be between 1 and 65535")
+			return 0, "", errors.New("port must be between 1 and 65535")
 		}
 		return int(v), "", nil // #nosec G115 -- bounded by MaxInt check above
 	case float64:
 		if v != float64(int(v)) {
-			return 0, "", fmt.Errorf("port must be an integer")
+			return 0, "", errors.New("port must be an integer")
 		}
 		return int(v), "", nil
 	case json.Number:
@@ -191,7 +191,7 @@ func parsePortValue(raw any) (int, string, error) {
 		}
 		return 0, s, nil
 	default:
-		return 0, "", fmt.Errorf("port must be an integer or string")
+		return 0, "", errors.New("port must be an integer or string")
 	}
 }
 
@@ -214,7 +214,7 @@ func parsePortJSON(raw json.RawMessage) (int, string, error) {
 		}
 		return 0, s, nil
 	}
-	return 0, "", fmt.Errorf("port must be an integer or string")
+	return 0, "", errors.New("port must be an integer or string")
 }
 
 func portValueForMarshal(port int, portName string) any {
@@ -785,14 +785,15 @@ func (p *NetworkPolicy) detectRuleConflicts() error {
 	for i, egress := range p.Spec.Egress {
 		labels := map[string]string(nil)
 		cidr := ""
-		if egress.To.IPBlock.CIDR != "" {
+		switch {
+		case egress.To.IPBlock.CIDR != "":
 			if len(egress.To.IPBlock.Except) > 0 {
 				continue
 			}
 			cidr = egress.To.IPBlock.CIDR
-		} else if selectorIsSimple(egress.To.PodSelector) && selectorIsEmpty(egress.To.NamespaceSelector) {
+		case selectorIsSimple(egress.To.PodSelector) && selectorIsEmpty(egress.To.NamespaceSelector):
 			labels = egress.To.PodSelector.MatchLabels
-		} else {
+		default:
 			continue
 		}
 		for _, port := range egress.Ports {
@@ -813,14 +814,15 @@ func (p *NetworkPolicy) detectRuleConflicts() error {
 	for i, ingress := range p.Spec.Ingress {
 		labels := map[string]string(nil)
 		cidr := ""
-		if ingress.From.IPBlock.CIDR != "" {
+		switch {
+		case ingress.From.IPBlock.CIDR != "":
 			if len(ingress.From.IPBlock.Except) > 0 {
 				continue
 			}
 			cidr = ingress.From.IPBlock.CIDR
-		} else if selectorIsSimple(ingress.From.PodSelector) && selectorIsEmpty(ingress.From.NamespaceSelector) {
+		case selectorIsSimple(ingress.From.PodSelector) && selectorIsEmpty(ingress.From.NamespaceSelector):
 			labels = ingress.From.PodSelector.MatchLabels
-		} else {
+		default:
 			continue
 		}
 		for _, port := range ingress.Ports {
@@ -1067,14 +1069,14 @@ func NewPolicyResolver(discovery ServiceDiscovery) *PolicyResolver {
 // ResolveLabels converts label selectors to IP addresses using service discovery
 func (r *PolicyResolver) ResolveLabels(labels map[string]string) ([]string, error) {
 	if r.discovery == nil {
-		return nil, fmt.Errorf("no service discovery backend configured")
+		return nil, errors.New("no service discovery backend configured")
 	}
 	return r.discovery.ResolveLabels(labels)
 }
 
 func (r *PolicyResolver) ResolveLabelsScoped(scope string, labels map[string]string) ([]string, error) {
 	if r.discovery == nil {
-		return nil, fmt.Errorf("no service discovery backend configured")
+		return nil, errors.New("no service discovery backend configured")
 	}
 
 	scope = strings.TrimSpace(scope)
@@ -1090,7 +1092,7 @@ func (r *PolicyResolver) ResolveLabelsScoped(scope string, labels map[string]str
 func (r *PolicyResolver) resolvePodsScoped(scope string, selector PodSelectorSpec) ([]PodInfo, error) {
 	resolver, ok := r.discovery.(PodResolver)
 	if !ok {
-		return nil, fmt.Errorf("discovery backend does not support pod resolution")
+		return nil, errors.New("discovery backend does not support pod resolution")
 	}
 	scope = strings.TrimSpace(scope)
 	if scope != "" {
@@ -1101,12 +1103,12 @@ func (r *PolicyResolver) resolvePodsScoped(scope string, selector PodSelectorSpe
 
 func (r *PolicyResolver) resolveTargetPods(scope string, podSelector PodSelectorSpec, namespaceSelector PodSelectorSpec) ([]PodInfo, error) {
 	if r.discovery == nil {
-		return nil, fmt.Errorf("no service discovery backend configured")
+		return nil, errors.New("no service discovery backend configured")
 	}
 	if !selectorIsEmpty(namespaceSelector) {
 		resolver, ok := r.discovery.(NamespaceResolver)
 		if !ok {
-			return nil, fmt.Errorf("discovery backend does not support namespaceSelector")
+			return nil, errors.New("discovery backend does not support namespaceSelector")
 		}
 		namespaces, err := resolver.ResolveNamespaces(namespaceSelector)
 		if err != nil {
@@ -1136,7 +1138,7 @@ func (r *PolicyResolver) resolveTargetPods(scope string, podSelector PodSelector
 
 func (r *PolicyResolver) resolveSelectorIPs(scope string, selector PodSelectorSpec) ([]string, error) {
 	if r.discovery == nil {
-		return nil, fmt.Errorf("no service discovery backend configured")
+		return nil, errors.New("no service discovery backend configured")
 	}
 	if selectorIsEmpty(selector) {
 		return r.ResolveLabelsScoped(scope, map[string]string{})
@@ -1144,7 +1146,7 @@ func (r *PolicyResolver) resolveSelectorIPs(scope string, selector PodSelectorSp
 	if len(selector.MatchExpressions) > 0 {
 		resolver, ok := r.discovery.(SelectorResolver)
 		if !ok {
-			return nil, fmt.Errorf("discovery backend does not support matchExpressions")
+			return nil, errors.New("discovery backend does not support matchExpressions")
 		}
 		scope = strings.TrimSpace(scope)
 		if scope != "" {
@@ -1158,12 +1160,12 @@ func (r *PolicyResolver) resolveSelectorIPs(scope string, selector PodSelectorSp
 // ResolvePeerTargets resolves peer selectors (pod+namespace) into IPs.
 func (r *PolicyResolver) ResolvePeerTargets(scope string, podSelector PodSelectorSpec, namespaceSelector PodSelectorSpec) ([]string, error) {
 	if r.discovery == nil {
-		return nil, fmt.Errorf("no service discovery backend configured")
+		return nil, errors.New("no service discovery backend configured")
 	}
 	if !selectorIsEmpty(namespaceSelector) {
 		resolver, ok := r.discovery.(NamespaceResolver)
 		if !ok {
-			return nil, fmt.Errorf("discovery backend does not support namespaceSelector")
+			return nil, errors.New("discovery backend does not support namespaceSelector")
 		}
 		namespaces, err := resolver.ResolveNamespaces(namespaceSelector)
 		if err != nil {
@@ -1194,7 +1196,7 @@ func (r *PolicyResolver) ResolvePeerTargets(scope string, podSelector PodSelecto
 // ResolveLabels (standalone) is deprecated, use PolicyResolver instead
 // Kept for backward compatibility
 func ResolveLabels(labels map[string]string) ([]string, error) {
-	return nil, fmt.Errorf("label resolution requires service discovery backend")
+	return nil, errors.New("label resolution requires service discovery backend")
 }
 
 // ResolvePodSelectorsToIPBlocks translates all podSelector targets in the given policies
@@ -1209,7 +1211,7 @@ func (r *PolicyResolver) ResolvePodSelectorsToIPBlocks(policies []NetworkPolicy)
 // this falls back to the legacy non-scoped ResolveLabels behavior.
 func (r *PolicyResolver) ResolvePodSelectorsToIPBlocksScoped(scope string, policies []NetworkPolicy) ([]NetworkPolicy, error) {
 	if r.discovery == nil {
-		return nil, fmt.Errorf("no service discovery backend configured")
+		return nil, errors.New("no service discovery backend configured")
 	}
 
 	resolvedPolicies := make([]NetworkPolicy, 0, len(policies))
@@ -1485,7 +1487,7 @@ func ipsToHostCIDRs(ips []string) ([]string, error) {
 func ipToHostCIDR(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", fmt.Errorf("empty IP")
+		return "", errors.New("empty IP")
 	}
 	parsed := net.ParseIP(raw)
 	if parsed == nil {
@@ -1571,7 +1573,7 @@ func NeedsTargetResolution(policies []NetworkPolicy) bool {
 
 func expandIPBlockExcept(block IPBlockSpec, limit int) ([]string, error) {
 	if strings.TrimSpace(block.CIDR) == "" {
-		return nil, fmt.Errorf("missing cidr")
+		return nil, errors.New("missing cidr")
 	}
 	base, err := netip.ParsePrefix(strings.TrimSpace(block.CIDR))
 	if err != nil {

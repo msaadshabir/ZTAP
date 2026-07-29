@@ -393,6 +393,7 @@ func (e *EtcdElection) LeaderChanges(ctx context.Context) <-chan *Node {
 }
 
 // WatchLeader is a legacy method - use LeaderChanges instead.
+//
 // Deprecated: Use LeaderChanges(ctx) instead.
 func (e *EtcdElection) WatchLeader() <-chan *Node {
 	ch := make(chan *Node, 10)
@@ -403,6 +404,7 @@ func (e *EtcdElection) WatchLeader() <-chan *Node {
 }
 
 // WatchClusterState is a legacy method - use Watch instead.
+//
 // Deprecated: Use Watch(ctx) instead.
 func (e *EtcdElection) WatchClusterState() <-chan ClusterStateChange {
 	ch := make(chan ClusterStateChange, 10)
@@ -557,7 +559,7 @@ func (e *EtcdElection) monitorNodes() {
 	if e.client == nil {
 		return
 	}
-	prefix := fmt.Sprintf("%s/nodes/", e.etcdConfig.KeyPrefix)
+	prefix := e.etcdConfig.KeyPrefix + "/nodes/"
 	watchChan := e.client.Watch(e.ctx, prefix, clientv3.WithPrefix())
 
 	for {
@@ -608,7 +610,7 @@ func (e *EtcdElection) handleNodeEvent(ev *clientv3.Event) {
 	case clientv3.EventTypeDelete:
 		// Extract node ID from key
 		key := string(ev.Kv.Key)
-		prefix := fmt.Sprintf("%s/nodes/", e.etcdConfig.KeyPrefix)
+		prefix := e.etcdConfig.KeyPrefix + "/nodes/"
 		nodeID := key[len(prefix):]
 
 		e.mu.Lock()

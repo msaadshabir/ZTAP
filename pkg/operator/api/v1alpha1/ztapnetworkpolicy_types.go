@@ -2,7 +2,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"maps"
 	"strconv"
 	"strings"
@@ -99,7 +99,7 @@ func parsePortJSON(raw json.RawMessage) (int, string, error) {
 		}
 		return 0, s, nil
 	}
-	return 0, "", fmt.Errorf("port must be an integer or string")
+	return 0, "", errors.New("port must be an integer or string")
 }
 
 func portValueForMarshal(port int, portName string) any {

@@ -111,7 +111,7 @@ func NewAuditLogger(logPath string) (*AuditLogger, error) {
 // NewAuditLoggerWithOptions creates an audit logger with integrity features.
 func NewAuditLoggerWithOptions(opts AuditLoggerOptions) (*AuditLogger, error) {
 	if opts.LogPath == "" {
-		return nil, fmt.Errorf("audit log path is required")
+		return nil, errors.New("audit log path is required")
 	}
 	if err := os.MkdirAll(filepath.Dir(opts.LogPath), 0700); err != nil {
 		return nil, fmt.Errorf("failed to create audit log directory: %w", err)
@@ -471,7 +471,7 @@ func (al *AuditLogger) VerifyIntegrityDetailed(verifier Verifier) VerifyResult {
 				result.Valid = false
 				result.SignatureValid = false
 				result.FirstInvalidEntry = entry.ID
-				result.Error = fmt.Errorf("signature present but no verifier configured")
+				result.Error = errors.New("signature present but no verifier configured")
 				return result
 			}
 			if entry.IntegrityAlg != verifier.Algorithm() {
@@ -531,7 +531,7 @@ func (al *AuditLogger) VerifyIntegrityDetailed(verifier Verifier) VerifyResult {
 		if verifier == nil {
 			result.Valid = false
 			result.CheckpointValid = false
-			result.Error = fmt.Errorf("checkpoint configured but no verifier provided")
+			result.Error = errors.New("checkpoint configured but no verifier provided")
 			return result
 		}
 		checkpointReader := NewCheckpointReader(verifier, al.checkpointPath)
@@ -545,7 +545,7 @@ func (al *AuditLogger) VerifyIntegrityDetailed(verifier Verifier) VerifyResult {
 		if checkpoint.EntryCount != result.EntryCount || checkpoint.LastHash != result.LastHash || checkpoint.LastSeq != result.LastSeq {
 			result.Valid = false
 			result.CheckpointValid = false
-			result.Error = fmt.Errorf("checkpoint mismatch")
+			result.Error = errors.New("checkpoint mismatch")
 			return result
 		}
 	}
@@ -563,7 +563,7 @@ func (al *AuditLogger) Ready(ctx context.Context) error {
 	al.mu.RUnlock()
 
 	if f == nil {
-		return fmt.Errorf("audit log file is nil")
+		return errors.New("audit log file is nil")
 	}
 	if _, err := f.Stat(); err != nil {
 		return fmt.Errorf("stat audit log file: %w", err)

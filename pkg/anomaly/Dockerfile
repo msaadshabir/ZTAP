@@ -1,5 +1,15 @@
 FROM python:3.13-slim
 
+ARG VERSION=dev
+ARG REVISION=unknown
+
+LABEL org.opencontainers.image.source="https://github.com/msaadshabir/ZTAP" \
+      org.opencontainers.image.title="ZTAP Anomaly Detector" \
+      org.opencontainers.image.description="Anomaly detection service for ZTAP (Zero Trust Access Platform)" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
+
 # Set working directory
 WORKDIR /app
 

@@ -2,7 +2,7 @@ package policy
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -854,7 +854,7 @@ func (m *mockDiscovery) ResolveLabels(labels map[string]string) ([]string, error
 	if ips, ok := m.services[key]; ok {
 		return ips, nil
 	}
-	return nil, fmt.Errorf("no services found")
+	return nil, errors.New("no services found")
 }
 
 func (m *mockDiscovery) RegisterService(name string, ip string, labels map[string]string) error {

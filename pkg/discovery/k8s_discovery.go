@@ -72,7 +72,7 @@ func NewK8sDiscovery(client kubernetes.Interface, namespace string) (*K8sDiscove
 func (d *K8sDiscovery) Start(ctx context.Context) error {
 	d.factory.Start(ctx.Done())
 	if !cache.WaitForCacheSync(ctx.Done(), d.podSynced) {
-		return fmt.Errorf("failed to sync kubernetes cache")
+		return errors.New("failed to sync kubernetes cache")
 	}
 	return nil
 }
@@ -176,11 +176,11 @@ func (d *K8sDiscovery) ResolveSelectorScoped(scope string, selector policy.PodSe
 }
 
 func (d *K8sDiscovery) RegisterService(name string, ip string, labels map[string]string) error {
-	return fmt.Errorf("RegisterService not supported in K8sDiscovery")
+	return errors.New("RegisterService not supported in K8sDiscovery")
 }
 
 func (d *K8sDiscovery) DeregisterService(name string) error {
-	return fmt.Errorf("DeregisterService not supported in K8sDiscovery")
+	return errors.New("DeregisterService not supported in K8sDiscovery")
 }
 
 func (d *K8sDiscovery) Watch(ctx context.Context, selector map[string]string) (<-chan []string, error) {

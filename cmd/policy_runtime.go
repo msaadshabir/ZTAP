@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -69,7 +70,7 @@ func initPolicyRuntime(ctx context.Context, nodeAddress string) (cluster.LeaderE
 
 	if backend == clusterBackendEtcd {
 		if len(runtimeCfg.Etcd.Endpoints) == 0 {
-			return nil, nil, nil, fmt.Errorf("etcd endpoints are required when cluster backend is etcd")
+			return nil, nil, nil, errors.New("etcd endpoints are required when cluster backend is etcd")
 		}
 		etcdCfg := &cluster.EtcdConfig{
 			Endpoints:         runtimeCfg.Etcd.Endpoints,
@@ -160,7 +161,7 @@ func waitForLeader(ctx context.Context, election cluster.LeaderElection) {
 func splitHostPortForNodeID(addr string) (host, port string, err error) {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
-		return "", "", fmt.Errorf("empty address")
+		return "", "", errors.New("empty address")
 	}
 	host, port, err = net.SplitHostPort(addr)
 	if err == nil {

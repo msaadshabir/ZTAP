@@ -81,7 +81,7 @@ var resolveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		labels, _ := cmd.Flags().GetStringToString("labels")
 		if len(labels) == 0 {
-			return fmt.Errorf("no labels provided")
+			return errors.New("no labels provided")
 		}
 
 		disc, err := getDiscoveryBackend()
@@ -115,7 +115,7 @@ var listServicesCmd = &cobra.Command{
 		// Only works with InMemoryDiscovery
 		memDisc, ok := disc.(*discovery.InMemoryDiscovery)
 		if !ok {
-			return fmt.Errorf("list command only works with in-memory discovery")
+			return errors.New("list command only works with in-memory discovery")
 		}
 
 		services := memDisc.ListServices()
@@ -226,7 +226,7 @@ func loadDiscoveryFromConfig() (discovery.ServiceDiscovery, error) {
 	case dnsDiscoveryBackend:
 		domain := strings.TrimSpace(cfg.Discovery.DNS.Domain)
 		if domain == "" {
-			return nil, fmt.Errorf("discovery.dns.domain is required for dns backend")
+			return nil, errors.New("discovery.dns.domain is required for dns backend")
 		}
 		backend = discovery.NewDNSDiscovery(domain)
 	case k8sDiscoveryBackend:

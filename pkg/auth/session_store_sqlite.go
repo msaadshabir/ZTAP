@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ type SQLiteSessionStoreOptions struct {
 func NewSQLiteSessionStore(opts SQLiteSessionStoreOptions) (*SQLiteSessionStore, error) {
 	path := filepath.Clean(opts.Path)
 	if path == "." || path == "" {
-		return nil, fmt.Errorf("invalid sqlite path")
+		return nil, errors.New("invalid sqlite path")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -152,7 +153,7 @@ func (s *SQLiteSessionStore) DeleteByUsername(ctx context.Context, username stri
 
 func (s *SQLiteSessionStore) Ping(ctx context.Context) error {
 	if s.db == nil {
-		return fmt.Errorf("sqlite sessions db is nil")
+		return errors.New("sqlite sessions db is nil")
 	}
 	return s.db.PingContext(ctx)
 }

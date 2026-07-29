@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -124,7 +125,7 @@ func (r *ZtapNetworkPolicyReconciler) publishPolicy(ctx context.Context, ztnp *z
 			},
 			Annotations: map[string]string{
 				"ztap.io/policyName": fmt.Sprintf("%s/%s", ztnp.Namespace, ztnp.Name),
-				"ztap.io/version":    fmt.Sprintf("%d", ztnp.Generation),
+				"ztap.io/version":    strconv.FormatInt(ztnp.Generation, 10),
 			},
 		},
 		Data: map[string]string{

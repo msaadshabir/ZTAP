@@ -252,10 +252,10 @@ func (am *AuthManager) CreateUser(username, password string, role Role) error {
 
 	username = strings.TrimSpace(username)
 	if username == "" {
-		return fmt.Errorf("username cannot be empty")
+		return errors.New("username cannot be empty")
 	}
 	if password == "" {
-		return fmt.Errorf("password cannot be empty")
+		return errors.New("password cannot be empty")
 	}
 
 	role = Role(strings.TrimSpace(string(role)))

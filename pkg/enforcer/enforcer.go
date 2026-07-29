@@ -2,10 +2,12 @@ package enforcer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"ztap/pkg/logging"
@@ -149,9 +151,9 @@ func EnforceWithPF(opts EnforcementOptions) error {
 			if egress.To.IPBlock.CIDR != "" {
 				for _, port := range egress.Ports {
 					if port.PortName != "" {
-						return fmt.Errorf("named ports are not supported by pf enforcement")
+						return errors.New("named ports are not supported by pf enforcement")
 					}
-					portExpr := fmt.Sprintf("%d", port.Port)
+					portExpr := strconv.Itoa(port.Port)
 					if port.EndPort != nil {
 						portExpr = fmt.Sprintf("%d:%d", port.Port, *port.EndPort)
 					}
@@ -171,9 +173,9 @@ func EnforceWithPF(opts EnforcementOptions) error {
 			if ingress.From.IPBlock.CIDR != "" {
 				for _, port := range ingress.Ports {
 					if port.PortName != "" {
-						return fmt.Errorf("named ports are not supported by pf enforcement")
+						return errors.New("named ports are not supported by pf enforcement")
 					}
-					portExpr := fmt.Sprintf("%d", port.Port)
+					portExpr := strconv.Itoa(port.Port)
 					if port.EndPort != nil {
 						portExpr = fmt.Sprintf("%d:%d", port.Port, *port.EndPort)
 					}

@@ -3,6 +3,7 @@ package apihttp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -17,7 +18,7 @@ func (s *Server) handleFlowsStream(w http.ResponseWriter, r *http.Request) {
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("streaming not supported"))
+		writeError(w, http.StatusInternalServerError, errors.New("streaming not supported"))
 		return
 	}
 

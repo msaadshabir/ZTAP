@@ -145,7 +145,7 @@ func buildOptions(cfg AuditConfig) (AuditLoggerOptions, Verifier, error) {
 		return opts, nil, nil
 	case "hmac-sha256":
 		if strings.TrimSpace(cfg.HMACKeyFile) == "" {
-			return AuditLoggerOptions{}, nil, fmt.Errorf("hmac-sha256 integrity mode requires hmac_key_file")
+			return AuditLoggerOptions{}, nil, errors.New("hmac-sha256 integrity mode requires hmac_key_file")
 		}
 		keyFile := paths.Expand(cfg.HMACKeyFile)
 		keyBytes, err := os.ReadFile(keyFile)
@@ -157,7 +157,7 @@ func buildOptions(cfg AuditConfig) (AuditLoggerOptions, Verifier, error) {
 			return AuditLoggerOptions{}, nil, err
 		}
 		if len(key) == 0 {
-			return AuditLoggerOptions{}, nil, fmt.Errorf("hmac key file is empty")
+			return AuditLoggerOptions{}, nil, errors.New("hmac key file is empty")
 		}
 		keyID := strings.TrimSpace(cfg.KeyID)
 		if keyID == "" {
@@ -169,7 +169,7 @@ func buildOptions(cfg AuditConfig) (AuditLoggerOptions, Verifier, error) {
 		return opts, NewHMACVerifier(key, keyID), nil
 	case "ed25519":
 		if strings.TrimSpace(cfg.Ed25519PrivateKey) == "" {
-			return AuditLoggerOptions{}, nil, fmt.Errorf("ed25519 integrity mode requires ed25519_private_key_file")
+			return AuditLoggerOptions{}, nil, errors.New("ed25519 integrity mode requires ed25519_private_key_file")
 		}
 		keyFile := paths.Expand(cfg.Ed25519PrivateKey)
 		priv, err := os.ReadFile(keyFile)

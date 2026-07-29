@@ -269,10 +269,10 @@ The repository ships with `.github/workflows/ci.yml`, which runs `golangci-lint`
 
 Coverage notes:
 
-- Each matrix job writes `coverage-${{ matrix.os }}.out`.
-- The `cmd/covergate` report step is advisory in CI (it logs uncovered statements but should not fail the workflow).
+- Each matrix job writes `coverage-${{ matrix.os }}.out` with `-coverpkg=./pkg/...,./cmd/...`.
+- The `cmd/covergate` step is a hard gate: it fails the job when any `pkg/` or `cmd/` file drops below its baseline in `.covergate-baseline.json` (ratchet — improvements allowed, regressions are not). See "Coverage gate (ratchet)" in `CONTRIBUTING.md` for local usage and how to regenerate the baseline.
 - Shared matrix `run:` commands must be shell-compatible across bash and PowerShell.
-- CI artifacts (coverage, benchmarks) have a 14-30 day retention policy.
+- CI artifacts (coverage) have a 14-day retention policy.
 
 Docker builds are parallelized via a matrix strategy (ztap, ztap-anomaly, ztap-operator) with GHA layer caching. A separate Docker Compose test job validates the full stack on non-PR events.
 

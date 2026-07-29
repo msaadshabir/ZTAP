@@ -33,6 +33,27 @@ go test ./... -v
 go test ./... -race
 ```
 
+### Coverage gate (ratchet)
+
+CI enforces a per-file coverage ratchet over `pkg/` and `cmd/`: a file may
+improve but must not drop below its recorded baseline in
+`.covergate-baseline.json`. Run it locally with:
+
+```bash
+go test ./... -covermode=atomic -coverpkg=./pkg/...,./cmd/... -coverprofile=coverage.out
+go run ./cmd/covergate -coverprofile coverage.out -repo . -baseline .covergate-baseline.json
+```
+
+If your change intentionally restructures code (or you added tests and want to
+lock in the improvement), regenerate the baseline and commit it:
+
+```bash
+go run ./cmd/covergate -coverprofile coverage.out -repo . -baseline .covergate-baseline.json -update-baseline
+```
+
+Files not yet in the baseline are reported but not gated; add coverage or
+regenerate the baseline to track them.
+
 ### Lint / Format
 
 ```bash

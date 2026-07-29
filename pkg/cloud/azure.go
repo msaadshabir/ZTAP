@@ -2,9 +2,11 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"ztap/pkg/logging"
@@ -252,7 +254,7 @@ func (c *AzureClient) SyncPolicy(ctx context.Context, p policy.NetworkPolicy, re
 // DiscoverResources lists Azure network interfaces and associated IPs.
 func (c *AzureClient) DiscoverResources(ctx context.Context, resourceGroup string) ([]Resource, error) {
 	if c.interfaces == nil {
-		return nil, fmt.Errorf("azure interfaces client not configured for discovery")
+		return nil, errors.New("azure interfaces client not configured for discovery")
 	}
 
 	var nics []*armnetwork.Interface
@@ -404,7 +406,7 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 
 		for _, port := range egress.Ports {
 			if port.PortName != "" {
-				return nil, fmt.Errorf("named ports are not supported for Azure NSG rules")
+				return nil, errors.New("named ports are not supported for Azure NSG rules")
 			}
 			start := port.Port
 			end := port.Port
@@ -422,8 +424,8 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 				sortKey: fmt.Sprintf("egress-%s-%s-%s", proto, portLabel, cidr),
 				rule: armnetwork.SecurityRule{
 					Properties: &armnetwork.SecurityRulePropertiesFormat{
-						Access:                   ptrAccess(armnetwork.SecurityRuleAccessAllow),
-						Direction:                ptrDirection(armnetwork.SecurityRuleDirectionOutbound),
+						Access:                   new(armnetwork.SecurityRuleAccessAllow),
+						Direction:                new(armnetwork.SecurityRuleDirectionOutbound),
 						Protocol:                 ptrProtocol(proto),
 						SourceAddressPrefix:      new(azureProtocolAsterisk),
 						DestinationAddressPrefix: new(cidr),
@@ -444,7 +446,7 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 
 		for _, port := range ingress.Ports {
 			if port.PortName != "" {
-				return nil, fmt.Errorf("named ports are not supported for Azure NSG rules")
+				return nil, errors.New("named ports are not supported for Azure NSG rules")
 			}
 			start := port.Port
 			end := port.Port
@@ -462,8 +464,8 @@ func (c *AzureClient) buildRules(p policy.NetworkPolicy) ([]ruleSpec, error) {
 				sortKey: fmt.Sprintf("ingress-%s-%s-%s", proto, portLabel, cidr),
 				rule: armnetwork.SecurityRule{
 					Properties: &armnetwork.SecurityRulePropertiesFormat{
-						Access:                   ptrAccess(armnetwork.SecurityRuleAccessAllow),
-						Direction:                ptrDirection(armnetwork.SecurityRuleDirectionInbound),
+						Access:                   new(armnetwork.SecurityRuleAccessAllow),
+						Direction:                new(armnetwork.SecurityRuleDirectionInbound),
 						Protocol:                 ptrProtocol(proto),
 						SourceAddressPrefix:      new(cidr),
 						DestinationAddressPrefix: new(azureProtocolAsterisk),
@@ -534,14 +536,14 @@ func normalizeProtocol(proto string) string {
 
 func azurePortRange(start int, end int) string {
 	if end <= start {
-		return fmt.Sprintf("%d", start)
+		return strconv.Itoa(start)
 	}
 	return fmt.Sprintf("%d-%d", start, end)
 }
 
 func azurePortRangeLabel(start int, end int) string {
 	if end <= start {
-		return fmt.Sprintf("%d", start)
+		return strconv.Itoa(start)
 	}
 	return fmt.Sprintf("%d-%d", start, end)
 }
@@ -567,12 +569,4 @@ func ptrProtocol(proto string) *armnetwork.SecurityRuleProtocol {
 		p := armnetwork.SecurityRuleProtocolAsterisk
 		return &p
 	}
-}
-
-//go:fix inline
-func ptrAccess(a armnetwork.SecurityRuleAccess) *armnetwork.SecurityRuleAccess { return new(a) }
-
-//go:fix inline
-func ptrDirection(d armnetwork.SecurityRuleDirection) *armnetwork.SecurityRuleDirection {
-	return new(d)
 }

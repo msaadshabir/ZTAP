@@ -1,0 +1,38 @@
+version: 2
+project_name: ztap
+
+builds:
+  - id: ztap
+    main: . # Phase C note: becomes ./cmd/ztap
+    binary: ztap
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    args: [sign-blob, --bundle, "${artifact}.sigstore.json", --yes, "${artifact}"]
+    artifacts: checksum
+    env:
+      - COSIGN_YES=true
+
+release:
+  prerelease: auto
