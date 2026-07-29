@@ -128,16 +128,12 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test ./... -v -covermode=atomic -coverpkg=./pkg/... -coverprofile=coverage-${{ matrix.os }}.out -timeout 10m
+        run: go test ./... -v -covermode=atomic -coverpkg=./pkg/...,./cmd/... -coverprofile=coverage-${{ matrix.os }}.out -timeout 10m
 
-      - name: Coverage report (pkg/, advisory)
+      - name: Coverage gate (ratchet)
         if: ${{ hashFiles(format('coverage-{0}.out', matrix.os)) != '' }}
         shell: bash
-        run: go run ./cmd/covergate -coverprofile coverage-${{ matrix.os }}.out -repo . || echo "coverage gate reported uncovered statements (advisory only in CI)"
-
-      - name: Coverage report skipped (no profile)
-        if: ${{ hashFiles(format('coverage-{0}.out', matrix.os)) == '' }}
-        run: echo "coverage profile coverage-${{ matrix.os }}.out not found; skipping advisory coverage gate"
+        run: go run ./cmd/covergate -coverprofile coverage-${{ matrix.os }}.out -repo . -baseline .covergate-baseline.json
 
       - name: Upload coverage artifact
         if: failure() || github.event_name != 'pull_request'
@@ -412,35 +408,6 @@ jobs:
           fi
           go build -o "${out}" .
           ls -lh "${out}"
-
-  benchmark:
-    name: Benchmark Tests
-    runs-on: ubuntu-24.04
-    needs: test-go
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run benchmarks
-        run: |
-          go test ./pkg/... -bench=. -benchmem -run=^$ > benchmark-results.txt || true
-          cat benchmark-results.txt
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: benchmark-results
-          path: benchmark-results.txt
-          retention-days: 30
 
   all-checks:
     name: All Checks Passed
