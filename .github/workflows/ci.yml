@@ -266,7 +266,6 @@ jobs:
       - name: Install dependencies
         working-directory: pkg/anomaly
         run: |
-          python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pytest pytest-cov
 
@@ -482,6 +481,30 @@ jobs:
           go build -o "${out}" .
           ls -lh "${out}"
 
+  fuzz:
+    name: Go Fuzz Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run fuzz tests (short)
+        run: |
+          go test -run='^$' -fuzz='^FuzzParsePolicyKey$' -fuzztime=30s ./pkg/cluster
+          go test -run='^$' -fuzz='^FuzzParseMappingFile$' -fuzztime=30s ./pkg/compliance
+          go test -run='^$' -fuzz='^FuzzValidateControlID$' -fuzztime=30s ./pkg/compliance
+
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-24.04
@@ -498,6 +521,7 @@ jobs:
       - ebpf-verification
       - build-check
       - dependency-review
+      - fuzz
     if: always()
     timeout-minutes: 5
 
@@ -517,6 +541,7 @@ jobs:
           echo "  ebpf-verification: ${NEEDS_EBPF_VERIFICATION_RESULT}"
           echo "  build-check: ${NEEDS_BUILD_CHECK_RESULT}"
           echo "  dependency-review: ${NEEDS_DEPENDENCY_REVIEW_RESULT}"
+          echo "  fuzz: ${NEEDS_FUZZ_RESULT}"
           echo ""
 
           if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
@@ -541,3 +566,4 @@ jobs:
           NEEDS_EBPF_VERIFICATION_RESULT: ${{ needs.ebpf-verification.result }}
           NEEDS_BUILD_CHECK_RESULT: ${{ needs.build-check.result }}
           NEEDS_DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
+          NEEDS_FUZZ_RESULT: ${{ needs.fuzz.result }}

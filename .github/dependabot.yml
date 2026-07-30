@@ -83,3 +83,14 @@ updates:
     labels:
       - "dependencies"
       - "automated"
+
+  - package-ecosystem: "docker"
+    directory: "/pkg/anomaly"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "automated"

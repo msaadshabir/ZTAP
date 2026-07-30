@@ -1,5 +1,5 @@
 # Build stage for Go application
-FROM golang:1.26.5-alpine AS go-builder
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS go-builder
 
 # eBPF bytecode is vendored (pkg/enforcer/bpf_bpf*.o) and regeneration is
 # verified by the CI drift check, so no clang/llvm/make/git toolchain is
@@ -19,7 +19,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o ztap .
 
 # Final stage - minimal runtime image
-FROM alpine:3.24
+FROM alpine:3.24@sha256:28bd5fe8b56d1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91
 
 ARG VERSION=dev
 ARG REVISION=unknown
