@@ -141,7 +141,7 @@ jobs:
       - name: Run buf lint and breaking checks
         uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
         with:
-          version: v1.64.0
+          version: 1.64.0
           lint: true
           breaking: true
           breaking_against: ".git#branch=main"
