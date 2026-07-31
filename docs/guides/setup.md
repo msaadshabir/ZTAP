@@ -723,7 +723,7 @@ Or manually import:
 ```bash
 # Install Python dependencies
 cd pkg/anomaly
-pip3 install flask scikit-learn numpy
+python3 -m pip install --require-hashes -r requirements.txt
 
 # Start service
 python3 service.py
