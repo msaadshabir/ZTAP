@@ -3,6 +3,7 @@
 package flow
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"unsafe"
@@ -87,7 +88,7 @@ func (r *WindowsReader) isZTAPFilter(filterID uint64) (bool, error) {
 	engine := r.engineHandle
 	r.mu.RUnlock()
 	if engine == 0 {
-		return false, fmt.Errorf("WFP engine is not open")
+		return false, errors.New("WFP engine is not open")
 	}
 
 	var f *fwpmFilter0

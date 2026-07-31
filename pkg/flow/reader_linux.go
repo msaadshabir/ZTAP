@@ -6,6 +6,7 @@ package flow
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -29,7 +30,7 @@ type LinuxReader struct {
 // The flowEventsMap should be the "flow_events" ring buffer from the loaded eBPF program.
 func NewLinuxReader(flowEventsMap *ebpf.Map) (*LinuxReader, error) {
 	if flowEventsMap == nil {
-		return nil, fmt.Errorf("flow_events map is nil")
+		return nil, errors.New("flow_events map is nil")
 	}
 
 	// Verify it's a ring buffer

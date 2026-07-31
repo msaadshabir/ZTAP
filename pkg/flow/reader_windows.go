@@ -5,6 +5,7 @@ package flow
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -688,7 +689,7 @@ func (r *WindowsReader) subscribe() error {
 	h := r.engineHandle
 	r.mu.RUnlock()
 	if h == 0 {
-		return fmt.Errorf("WFP engine handle is not open")
+		return errors.New("WFP engine handle is not open")
 	}
 
 	// Net event type filtering: create a subscription per type (conditions are AND'ed).

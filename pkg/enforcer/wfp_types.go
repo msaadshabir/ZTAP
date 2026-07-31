@@ -4,6 +4,7 @@ package enforcer
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -154,7 +155,7 @@ func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 
 			for _, port := range egress.Ports {
 				if port.PortName != "" {
-					return nil, fmt.Errorf("named ports are not supported by WFP translation")
+					return nil, errors.New("named ports are not supported by WFP translation")
 				}
 				start := port.Port
 				end := port.Port
@@ -229,7 +230,7 @@ func TranslatePolicyToWFP(p policy.NetworkPolicy) ([]WFPSpec, error) {
 
 			for _, port := range ingress.Ports {
 				if port.PortName != "" {
-					return nil, fmt.Errorf("named ports are not supported by WFP translation")
+					return nil, errors.New("named ports are not supported by WFP translation")
 				}
 				start := port.Port
 				end := port.Port
