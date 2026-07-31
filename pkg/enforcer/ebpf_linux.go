@@ -6,11 +6,13 @@ package enforcer
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -no-strip -target bpfel,bpfeb -cc clang bpf ../../bpf/filter.c -- -I../../bpf
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -180,7 +182,7 @@ func (e *eBPFEnforcer) LoadPoliciesScoped(policies []ScopedPolicy) error {
 		}
 	}
 	if sawZero && sawNonZero {
-		return fmt.Errorf("mixed global (cgroup_id=0) and per-cgroup policies are not supported")
+		return errors.New("mixed global (cgroup_id=0) and per-cgroup policies are not supported")
 	}
 	// If we don't see any explicit cgroup_id=0 entries, treat this as scoped enforcement
 	// even if the subject set is currently empty.
@@ -251,7 +253,7 @@ func (e *eBPFEnforcer) LoadPoliciesScoped(policies []ScopedPolicy) error {
 
 	if scopedMode {
 		if e.enforcedCgroups == nil || e.enforcementConfigMap == nil {
-			return fmt.Errorf("tenant semantics requested but enforced_cgroups/enforcement_config_map not available")
+			return errors.New("tenant semantics requested but enforced_cgroups/enforcement_config_map not available")
 		}
 		if err := e.setSelectedOnlyMode(true); err != nil {
 			return err
@@ -394,10 +396,10 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 
 		for _, port := range egress.Ports {
 			if port.PortName != "" {
-				return fmt.Errorf("named ports are not supported by eBPF enforcement")
+				return errors.New("named ports are not supported by eBPF enforcement")
 			}
 			if port.EndPort != nil {
-				return fmt.Errorf("port ranges are not supported by eBPF enforcement")
+				return errors.New("port ranges are not supported by eBPF enforcement")
 			}
 			portValue, err := toUint16Port(port.Port)
 			if err != nil {
@@ -481,7 +483,7 @@ func (e *eBPFEnforcer) addEgressRule(policyName string, egress policy.EgressRule
 
 			safeDest := strings.ReplaceAll(ipnet.String(), "\n", "")
 			safeDest = strings.ReplaceAll(safeDest, "\r", "")
-			safePort := strings.ReplaceAll(fmt.Sprint(port.Port), "\n", "")
+			safePort := strings.ReplaceAll(strconv.Itoa(port.Port), "\n", "")
 			safePort = strings.ReplaceAll(safePort, "\r", "")
 			logging.Debugf("Added eBPF egress rule: %s -> %s:%s (ALLOW)",
 				safePolicyName, safeDest, safePort)
@@ -520,10 +522,10 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 
 		for _, port := range ingress.Ports {
 			if port.PortName != "" {
-				return fmt.Errorf("named ports are not supported by eBPF enforcement")
+				return errors.New("named ports are not supported by eBPF enforcement")
 			}
 			if port.EndPort != nil {
-				return fmt.Errorf("port ranges are not supported by eBPF enforcement")
+				return errors.New("port ranges are not supported by eBPF enforcement")
 			}
 			portValue, err := toUint16Port(port.Port)
 			if err != nil {
@@ -608,7 +610,7 @@ func (e *eBPFEnforcer) addIngressRule(policyName string, ingress policy.IngressR
 			safeSrc := strings.ReplaceAll(ipnet.String(), "\n", "")
 			safeSrc = strings.ReplaceAll(safeSrc, "\r", "")
 			// Normalize port before logging to avoid depending directly on user-controlled data.
-			safePortStr := fmt.Sprintf("%d", port.Port)
+			safePortStr := strconv.Itoa(port.Port)
 			safePortStr = strings.ReplaceAll(safePortStr, "\n", "")
 			safePortStr = strings.ReplaceAll(safePortStr, "\r", "")
 			logging.Debugf("Added eBPF ingress rule: %s <- %s:%s (ALLOW)",
@@ -636,7 +638,7 @@ func toUint16Port(p int) (uint16, error) {
 // Attach attaches the eBPF programs to cgroup for both egress and ingress
 func (e *eBPFEnforcer) Attach(cgroupPath string) error {
 	if e.objs == nil {
-		return fmt.Errorf("eBPF objects not loaded")
+		return errors.New("eBPF objects not loaded")
 	}
 
 	safeCgroupPath := strings.ReplaceAll(cgroupPath, "\n", "")
@@ -752,10 +754,10 @@ func (e *eBPFEnforcer) Close() error {
 // PinFlowEventsMap pins the flow_events ring buffer map to bpffs so other processes can open it.
 func (e *eBPFEnforcer) PinFlowEventsMap(path string) error {
 	if e.objs == nil || e.objs.FlowEvents == nil {
-		return fmt.Errorf("flow_events map not available")
+		return errors.New("flow_events map not available")
 	}
 	if path == "" {
-		return fmt.Errorf("pin path is empty")
+		return errors.New("pin path is empty")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
