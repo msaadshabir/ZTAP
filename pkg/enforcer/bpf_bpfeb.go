@@ -42,6 +42,21 @@ type bpfPolicyValue struct {
 	Padding [3]uint8
 }
 
+// Names of all BPF objects in the ELF.
+//
+// Used for safe lookups in a Collection or CollectionSpec.
+const (
+	bpfMapEnforcedCgroups          = "enforced_cgroups"
+	bpfMapEnforcementConfigMap     = "enforcement_config_map"
+	bpfMapFlowEvents               = "flow_events"
+	bpfMapPolicyMap                = "policy_map"
+	bpfMapPolicyMapV6              = "policy_map_v6"
+	bpfProgFilterEgress            = "filter_egress"
+	bpfProgFilterEgressPermissive  = "filter_egress_permissive"
+	bpfProgFilterIngress           = "filter_ingress"
+	bpfProgFilterIngressPermissive = "filter_ingress_permissive"
+)
+
 // loadBpf returns the embedded CollectionSpec for bpf.
 func loadBpf() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_BpfBytes)
@@ -62,7 +77,7 @@ func loadBpf() (*ebpf.CollectionSpec, error) {
 //	*bpfMaps
 //
 // See ebpf.CollectionSpec.LoadAndAssign documentation for details.
-func loadBpfObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
+func loadBpfObjects(obj any, opts *ebpf.CollectionOptions) error {
 	spec, err := loadBpf()
 	if err != nil {
 		return err
