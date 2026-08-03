@@ -8,20 +8,8 @@ on:
   workflow_dispatch:
   push:
     branches: ["main"]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "LICENSE"
-      - ".github/copilot-instructions.md"
-      - ".github/dependabot.yml"
   pull_request:
     branches: ["main"]
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
-      - "pkg/anomaly/**.py"
-      - "pkg/anomaly/requirements.txt"
   schedule:
     # Run at 6 AM UTC every Monday
     - cron: "0 6 * * 1"

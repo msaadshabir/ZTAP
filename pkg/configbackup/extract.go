@@ -92,6 +92,9 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 		if err := validateTarHeader(h); err != nil {
 			return Manifest{}, nil, err
 		}
+		if strings.Contains(h.Name, "..") {
+			return Manifest{}, nil, errors.New("invalid archive path")
+		}
 
 		name := path.Clean(h.Name)
 		data, err := io.ReadAll(tr)
@@ -134,6 +137,9 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 		if err != nil {
 			return Manifest{}, nil, fmt.Errorf("invalid extraction path %s: %w", name, err)
 		}
+		if strings.Contains(relDst, "..") {
+			return Manifest{}, nil, errors.New("invalid extraction path")
+		}
 		dstAbs, err := filepath.Abs(filepath.Join(baseAbs, relDst))
 		if err != nil {
 			return Manifest{}, nil, err
@@ -160,6 +166,9 @@ func readBundleIntoDir(src io.Reader, extractedDir string) (Manifest, []string, 
 		relPath, err := sanitizeManifestPath(it.Path)
 		if err != nil {
 			return Manifest{}, nil, fmt.Errorf("invalid manifest item path %s: %w", it.Path, err)
+		}
+		if strings.Contains(it.Path, "..") || strings.Contains(relPath, "..") {
+			return Manifest{}, nil, fmt.Errorf("invalid manifest item path %s", it.Path)
 		}
 		p := filepath.Join(baseAbs, relPath)
 		absP, err := filepath.Abs(p)

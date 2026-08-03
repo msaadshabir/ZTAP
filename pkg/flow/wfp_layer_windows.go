@@ -3,6 +3,7 @@
 package flow
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"unsafe"
@@ -106,7 +107,7 @@ func (r *WindowsReader) layerKeyByID(layerID uint16) (windows.GUID, bool, error)
 	engine := r.engineHandle
 	r.mu.RUnlock()
 	if engine == 0 {
-		return windows.GUID{}, false, fmt.Errorf("WFP engine is not open")
+		return windows.GUID{}, false, errors.New("WFP engine is not open")
 	}
 
 	var layer *fwpmLayer0

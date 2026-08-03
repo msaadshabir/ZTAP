@@ -125,7 +125,7 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 		if rawCgroupPath == "" {
 			cgroupPath = defaultCgroupPath
 		} else {
-			if filepath.IsAbs(rawCgroupPath) {
+			if filepath.IsAbs(rawCgroupPath) || strings.Contains(rawCgroupPath, "..") {
 				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid cgroup path %s", rawCgroupPath))
 				return
 			}
@@ -157,6 +157,10 @@ func (s *Server) handleEnforcementStart(w http.ResponseWriter, r *http.Request) 
 			trimmedObj := strings.TrimSpace(req.BPFObject)
 			if trimmedObj == "" {
 				writeError(w, http.StatusBadRequest, errors.New("bpf_object must not be empty"))
+				return
+			}
+			if filepath.IsAbs(trimmedObj) || strings.Contains(trimmedObj, "..") {
+				writeError(w, http.StatusBadRequest, errors.New("bpf_object must be a relative path without parent-directory references"))
 				return
 			}
 			cleaned := filepath.Clean(trimmedObj)

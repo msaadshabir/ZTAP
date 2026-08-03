@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-pip install flask scikit-learn numpy
+python3 -m pip install --require-hashes -r requirements.txt
 ```
 
 ## Run

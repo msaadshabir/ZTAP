@@ -900,7 +900,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 		if cgroupPath == "" {
 			resolvedCgroupPath = defaultCgroupPath
 		} else {
-			if filepath.IsAbs(cgroupPath) {
+			if filepath.IsAbs(cgroupPath) || strings.Contains(cgroupPath, "..") {
 				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s", cgroupPath).Error())
 			}
 			cleaned := filepath.Clean(cgroupPath)
@@ -925,6 +925,9 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 		bpfObjectPath := ""
 		if bpfObject != "" {
 			const safeBPFDir = "/usr/lib/ztap/bpf"
+			if filepath.IsAbs(bpfObject) || strings.Contains(bpfObject, "..") {
+				return nil, status.Error(codes.InvalidArgument, "bpf_object must be a relative path without parent-directory references")
+			}
 			cleaned := filepath.Clean(bpfObject)
 			if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
 				return nil, status.Error(codes.InvalidArgument, "bpf_object contains an invalid path")

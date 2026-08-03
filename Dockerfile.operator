@@ -10,7 +10,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o ztap-operator ./cmd/ztap-operator
 
-FROM alpine:3.24@sha256:28bd5fe8b56d1258caf0b82e6b73458c5b694d178ad97c5e925c2d0e1a91
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 ARG VERSION=dev
 ARG REVISION=unknown
