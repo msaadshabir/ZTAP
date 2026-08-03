@@ -139,7 +139,9 @@ jobs:
           cache: true
 
       - name: Fetch main for breaking change detection
-        run: git fetch origin main
+        run: |
+          git fetch origin main
+          git branch -f main origin/main
 
       - name: Run buf lint and breaking checks
         uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
