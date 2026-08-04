@@ -219,7 +219,7 @@ Both `Dockerfile` and `Dockerfile.operator`:
   Phase C note: build path becomes `./cmd/ztap` / `./cmd/ztap-operator`.
 - [ ] Add OCI labels (`org.opencontainers.image.source/title/description/licenses/version/revision`).
 - [ ] `Dockerfile` only: drop unused `apk add git make` (keep `clang llvm` for the `go generate`
-  step, or drop the step entirely — the `bpf_bpf*.o` outputs are already vendored; prefer dropping
+  step, or drop the step entirely — the eBPF bytecode is inlined into `bpf_bpf*.go`; prefer dropping
   and rely on the B.5 drift check).
 - [ ] Build check: `docker build --build-arg VERSION=v0.0.0-test -t ztap:test .` then
   `docker run --rm ztap:test version` shows the injected version.
@@ -282,10 +282,10 @@ Both `Dockerfile` and `Dockerfile.operator`:
   Optionally migrate `buf.yaml`/`buf.gen.yaml` to v2 format + remote plugins in the same pass.
 - [ ] In the `ebpf-verification` job (`ci.yml:287+`), after `make -C bpf` add:
   ```yaml
-      - name: Check vendored eBPF is up to date
+      - name: Check generated eBPF bindings are up to date
         run: |
           go generate ./pkg/enforcer/...
-          git diff --exit-code -- pkg/enforcer/bpf_bpfel.go pkg/enforcer/bpf_bpfel.o pkg/enforcer/bpf_bpfeb.go pkg/enforcer/bpf_bpfeb.o
+          git diff --exit-code -- pkg/enforcer/bpf_bpfel.go pkg/enforcer/bpf_bpfeb.go
   ```
 - [ ] `scripts/gen_proto.sh`: verify versions instead of presence-only (`buf --version` match
   against pinned `v1.64.0`; same for plugins) or always `go run` the pinned module versions.

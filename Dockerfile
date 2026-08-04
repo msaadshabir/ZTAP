@@ -1,9 +1,9 @@
 # Build stage for Go application
 FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS go-builder
 
-# eBPF bytecode is vendored (pkg/enforcer/bpf_bpf*.o) and regeneration is
-# verified by the CI drift check, so no clang/llvm/make/git toolchain is
-# needed in this image.
+# eBPF bytecode is generated at build time (tools/bpfgen) and inlined into
+# pkg/enforcer/bpf_bpf*.go, and regeneration is verified by the CI drift
+# check, so no clang/llvm/make/git toolchain is needed in this image.
 
 WORKDIR /app
 

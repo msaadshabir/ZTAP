@@ -3,8 +3,6 @@
 
 package enforcer
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -no-strip -target bpfel,bpfeb -cc clang bpf ../../bpf/filter.c -- -I../../bpf
-
 import (
 	"errors"
 	"fmt"

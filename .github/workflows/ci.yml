@@ -378,10 +378,10 @@ jobs:
           sudo mkdir -p /usr/local/share/ztap/bpf
           sudo cp -v bpf/filter.o /usr/local/share/ztap/bpf/filter.o
 
-      - name: Check vendored eBPF is up to date
+      - name: Check generated eBPF bindings are up to date
         run: |
           go generate ./pkg/enforcer/...
-          git diff --exit-code -- pkg/enforcer/bpf_bpfel.go pkg/enforcer/bpf_bpfel.o pkg/enforcer/bpf_bpfeb.go pkg/enforcer/bpf_bpfeb.o
+          git diff --exit-code -- pkg/enforcer/bpf_bpfel.go pkg/enforcer/bpf_bpfeb.go
 
       - name: Inspect eBPF object (ELF)
         run: |
