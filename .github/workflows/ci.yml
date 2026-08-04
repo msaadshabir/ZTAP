@@ -138,7 +138,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # On push/schedule runs the checkout is already on main, and
+      # force-updating the checked-out branch would fail. Only PRs need
+      # a local main branch for buf's breaking check.
       - name: Fetch main for breaking change detection
+        if: github.event_name == 'pull_request'
         run: |
           git fetch origin main
           git branch -f main origin/main
