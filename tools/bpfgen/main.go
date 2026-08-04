@@ -103,7 +103,7 @@ func inlineObject(goFile, objectFile string) error {
 	b.WriteString("\t\t\"\",\n)\n")
 
 	out := strings.Replace(string(content), old, b.String(), 1)
-	return os.WriteFile(goFile, []byte(out), 0o644)
+	return os.WriteFile(goFile, []byte(out), 0o600)
 }
 
 // indentFor returns the gofmt-compatible indentation for a string-literal
