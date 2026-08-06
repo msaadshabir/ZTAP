@@ -495,7 +495,7 @@ jobs:
           if [ "${GOOS}" = "windows" ]; then
             out="${out}.exe"
           fi
-          go build -o "${out}" .
+          go build -o "${out}" ./cmd/ztap
           ls -lh "${out}"
 
   fuzz:

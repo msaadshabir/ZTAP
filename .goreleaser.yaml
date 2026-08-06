@@ -3,7 +3,7 @@ project_name: ztap
 
 builds:
   - id: ztap
-    main: . # Phase C note: becomes ./cmd/ztap
+    main: ./cmd/ztap
     binary: ztap
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]

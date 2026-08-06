@@ -6,7 +6,7 @@
 
 ```bash
 # Build and install (Linux/macOS/Windows)
-go build -o ztap
+go build -o ztap ./cmd/ztap
 sudo mv ztap /usr/local/bin/
 
 # Note for Linux: The binary includes pre-compiled eBPF bytecode.

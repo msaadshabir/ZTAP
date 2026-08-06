@@ -34,7 +34,7 @@ cd ZTAP
 go mod download
 
 # Build binary
-go build -o ztap
+go build -o ztap ./cmd/ztap
 
 # Build operator binary
 go build -o ztap-operator ./cmd/ztap-operator
