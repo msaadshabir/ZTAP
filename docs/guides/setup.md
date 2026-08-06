@@ -722,7 +722,7 @@ Or manually import:
 
 ```bash
 # Install Python dependencies
-cd pkg/anomaly
+cd internal/anomaly
 python3 -m pip install --require-hashes -r requirements.txt
 
 # Start service

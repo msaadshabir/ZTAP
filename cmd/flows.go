@@ -11,7 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"ztap/pkg/flow"
+	"ztap/internal/flow"
 
 	"github.com/spf13/cobra"
 )

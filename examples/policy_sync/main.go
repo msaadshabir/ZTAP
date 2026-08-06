@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"ztap/pkg/cluster"
+	"ztap/internal/cluster"
 )
 
 func main() {

@@ -126,7 +126,7 @@ The current `TranslatePolicyToWFP` path primarily installs **permit** filters; t
 From an elevated PowerShell in repo root:
 
 ```powershell
-go test ./pkg/flow -tags=integration -run TestWFPFlowIntegration -v
+go test ./internal/flow -tags=integration -run TestWFPFlowIntegration -v
 ```
 
 Expected result:

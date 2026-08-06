@@ -7,8 +7,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"ztap/pkg/cluster"
-	"ztap/pkg/logging"
+	"ztap/internal/cluster"
+	"ztap/internal/logging"
 
 	"github.com/spf13/cobra"
 )

@@ -188,7 +188,7 @@ Platform-specific enforcement:
 In Kubernetes deployments, ZTAP can use a Kubernetes-backed PolicySync implementation instead of the in-memory/etcd cluster sync.
 
 - Operator publishes validated policies into a ConfigMap “policy store”.
-- Agents watch the store via `pkg/cluster/policy_sync_k8s.go` and enforce updates using the same `PolicyEnforcer` pipeline.
+- Agents watch the store via `internal/cluster/policy_sync_k8s.go` and enforce updates using the same `PolicyEnforcer` pipeline.
 
 ## Metrics
 
@@ -206,10 +206,10 @@ Policy sync and enforcement metrics:
 
 ```bash
 # Unit tests
-go test ./pkg/cluster -v
+go test ./internal/cluster -v
 
 # Integration tests
-go test -tags=integration ./pkg/enforcer -v
+go test -tags=integration ./internal/enforcer -v
 ```
 
 ## Related Documentation

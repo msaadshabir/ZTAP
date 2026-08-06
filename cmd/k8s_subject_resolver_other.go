@@ -5,7 +5,7 @@ package cmd
 import (
 	"k8s.io/client-go/kubernetes"
 
-	"ztap/pkg/enforcer"
+	"ztap/internal/enforcer"
 )
 
 func newK8sSubjectResolver(client kubernetes.Interface, cgroupRoot string) enforcer.SubjectResolver {

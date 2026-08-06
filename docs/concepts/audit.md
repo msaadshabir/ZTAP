@@ -203,7 +203,7 @@ The audit logger is automatically integrated into the PolicyEnforcer, logging al
 ### Creating an Audit Logger
 
 ```go
-import "ztap/pkg/audit"
+import "ztap/internal/audit"
 
 // Create audit logger (hash chaining only)
 logger, err := audit.NewAuditLogger("/path/to/audit.log")
@@ -344,7 +344,7 @@ The audit system includes comprehensive tests:
 
 ```bash
 # Run audit package tests
-go test ./pkg/audit -v -cover
+go test ./internal/audit -v -cover
 
 # Expected output:
 # PASS: TestNewAuditLogger

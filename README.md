@@ -144,7 +144,7 @@ Full documentation lives under [`docs/`](docs/index.md).
 | **Concepts**  | [Architecture](docs/concepts/architecture.md), [eBPF](docs/concepts/ebpf.md), [Cluster](docs/concepts/cluster.md), [Audit](docs/concepts/audit.md), [Compliance](docs/concepts/compliance.md) |
 | **Reference** | [CLI](docs/reference/cli.md), [Configuration](docs/reference/config.md), [API](docs/reference/api.md)                                                                                         |
 | **Runbooks**  | [Windows Flow Monitoring](docs/runbooks/windows-flow-monitoring.md)                                                                                                                           |
-| **Project**   | [Project Status](docs/project-status.md), [Anomaly Detection](pkg/anomaly/README.md)                                                                                                          |
+| **Project**   | [Project Status](docs/project-status.md), [Anomaly Detection](internal/anomaly/README.md)                                                                                                          |
 
 ---
 
@@ -461,7 +461,7 @@ go test ./...
 bash scripts/security_check.sh
 
 # eBPF integration test (Linux + root required)
-sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v
+sudo go test -tags=integration ./internal/enforcer -run TestEBPFIntegration -v
 
 # Coverage
 go test ./... -cover

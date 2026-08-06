@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"ztap/pkg/cluster"
+	"ztap/internal/cluster"
 )
 
 // This example demonstrates how to use the etcd backend for distributed leader election.

@@ -9,9 +9,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"ztap/pkg/cluster"
-	"ztap/pkg/logging"
-	"ztap/pkg/policy"
+	"ztap/internal/cluster"
+	"ztap/internal/logging"
+	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
 )

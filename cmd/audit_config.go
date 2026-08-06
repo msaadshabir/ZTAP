@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"ztap/pkg/audit"
+	"ztap/internal/audit"
 )
 
 // loadAuditConfig loads audit configuration using the shared audit package.

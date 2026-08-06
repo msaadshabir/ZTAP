@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"ztap/pkg/alert"
-	"ztap/pkg/apihttp"
-	"ztap/pkg/logging"
-	"ztap/pkg/metrics"
+	"ztap/internal/alert"
+	"ztap/internal/apihttp"
+	"ztap/internal/logging"
+	"ztap/internal/metrics"
 
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v3"

@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"ztap/pkg/auth"
+	"ztap/internal/auth"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"

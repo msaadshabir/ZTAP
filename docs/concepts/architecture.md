@@ -8,7 +8,7 @@ ZTAP (Zero Trust Access Platform) implements microsegmentation across hybrid env
 
 ## Components
 
-### 0. API Server (`pkg/apihttp`)
+### 0. API Server (`internal/apihttp`)
 
 **Responsibility**: Expose a REST API around core ZTAP capabilities
 
@@ -22,7 +22,7 @@ ZTAP (Zero Trust Access Platform) implements microsegmentation across hybrid env
 - Policy management endpoints (CRUD, revisions, rollback)
 - User and cluster management endpoints
 
-### 1. Policy Engine (`pkg/policy`)
+### 1. Policy Engine (`internal/policy`)
 
 **Responsibility**: Parse, validate, and manage network policies
 
@@ -43,7 +43,7 @@ Validate() error
 ResolveLabels(labels map[string]string) ([]string, error)
 ```
 
-### 2. OS Enforcer (`pkg/enforcer`)
+### 2. OS Enforcer (`internal/enforcer`)
 
 **Responsibility**: Apply policies using OS-native mechanisms
 
@@ -88,7 +88,7 @@ StopWFPEnforcement() error
 - **Dry-run Mode**: Simulate enforcement without applying kernel rules (`--dry-run`)
 - **Platform Abstraction**: Unified interface across OSes
 
-### 3. Cloud Integrator (`pkg/cloud`)
+### 3. Cloud Integrator (`internal/cloud`)
 
 **Responsibility**: Sync policies to cloud providers
 
@@ -117,7 +117,7 @@ SyncPolicy(policy NetworkPolicy, projectID, network string) error
 SyncPolicy(policy NetworkPolicy, resourceGroup, nsgName string) error
 ```
 
-### 4. Anomaly Detector (`pkg/anomaly`)
+### 4. Anomaly Detector (`internal/anomaly`)
 
 **Responsibility**: Detect abnormal traffic patterns
 
@@ -133,7 +133,7 @@ Detect(flow FlowRecord) (*AnomalyScore, error)
 Train(flows []FlowRecord) error
 ```
 
-### 5. Alerting (`pkg/alert`)
+### 5. Alerting (`internal/alert`)
 
 **Responsibility**: Deliver alert notifications to external systems
 
@@ -147,7 +147,7 @@ Train(flows []FlowRecord) error
 
 - Policy enforcement success/failure (CLI/API/cluster enforcement)
 
-### 6. Metrics Collector (`pkg/metrics`)
+### 6. Metrics Collector (`internal/metrics`)
 
 **Responsibility**: Export Prometheus metrics
 
@@ -174,14 +174,14 @@ StartServer(port int) error
 
 - **Operator** (`cmd/ztap-operator`)
   - Watches `ZtapNetworkPolicy` (group `ztap.io/v1alpha1`)
-  - Converts to internal `ztap/v1` policy YAML and validates via `pkg/policy`
+  - Converts to internal `ztap/v1` policy YAML and validates via `internal/policy`
   - Publishes validated policies into a ConfigMap “policy store”
 - **Node Agent** (`ztap agent`)
-  - Watches the ConfigMap policy store via a Kubernetes-backed PolicySync (`pkg/cluster/policy_sync_k8s.go`)
+  - Watches the ConfigMap policy store via a Kubernetes-backed PolicySync (`internal/cluster/policy_sync_k8s.go`)
   - Enforces policies via the existing `PolicyEnforcer`
   - Resolves selectors (`matchLabels` + `matchExpressions`, optionally with `namespaceSelector`) to pod IPs using Kubernetes discovery:
-    - single-namespace: `pkg/discovery/k8s_discovery.go`
-    - multi-namespace/all namespaces: `pkg/discovery/k8s_discovery_all_namespaces.go` (tenant-scoped)
+    - single-namespace: `internal/discovery/k8s_discovery.go`
+    - multi-namespace/all namespaces: `internal/discovery/k8s_discovery_all_namespaces.go` (tenant-scoped)
   - Translates `podSelector` targets into concrete host CIDRs (`/32` for IPv4, `/128` for IPv6) `ipBlock` rules and re-applies enforcement when the resolved Pod IP set changes
 
 ## Data Flow

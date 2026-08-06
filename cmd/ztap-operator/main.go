@@ -13,8 +13,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	ztapv1alpha1 "ztap/pkg/operator/api/v1alpha1"
-	"ztap/pkg/operator/controllers"
+	ztapv1alpha1 "ztap/internal/operator/api/v1alpha1"
+	"ztap/internal/operator/controllers"
 )
 
 var (

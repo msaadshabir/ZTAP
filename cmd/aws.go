@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"ztap/pkg/cloud"
-	"ztap/pkg/inventory"
-	"ztap/pkg/logging"
-	"ztap/pkg/policy"
+	"ztap/internal/cloud"
+	"ztap/internal/inventory"
+	"ztap/internal/logging"
+	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v3"

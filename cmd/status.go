@@ -8,8 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"ztap/pkg/cloud"
-	"ztap/pkg/logging"
+	"ztap/internal/cloud"
+	"ztap/internal/logging"
 
 	"github.com/spf13/cobra"
 )

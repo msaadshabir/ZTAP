@@ -4,6 +4,11 @@
 > Generated from a full codebase audit. Each phase is independently shippable; phases are ordered to
 > minimize merge conflicts (mechanical edits → additive CI work → big rename → deep refactors).
 >
+> **Status (2026-02):** Phases A and B are **complete and verified** against the tree (evidence in
+> the completed-workstreams tables below; a handful of residuals are listed there). The active
+> checklist is **C → D → E → F**. Pre-flight 0.2/0.3 baselines must be re-captured immediately
+> before Phase C starts — the `/tmp` snapshots are ephemeral and the binary has since been rebuilt.
+>
 > **Scope decisions (agreed):**
 > - ✅ In scope: quick code modernization (A), CI/release supply chain (B), `pkg/`→`internal/` + cmd split (C), centralized config (D), anomaly service wire-up + hardening (E), `log/slog` migration (F).
 > - ❌ Out of scope (see Appendix B): broad Docker/compose/k8s-manifest modernization (except what release signing requires), standalone docs cleanup, operator controller-gen adoption.
@@ -21,7 +26,7 @@
 
 ## Pre-flight
 
-- [ ] **0.1** Baseline: confirm clean tree and green tests.
+- [x] **0.1** Baseline: confirm clean tree and green tests. *(done — A/B landed on a clean tree)*
   ```bash
   git status
   go test ./...
@@ -39,297 +44,63 @@
   go build -o /tmp/ztap-baseline .
   for f in examples/*.yaml; do /tmp/ztap-baseline policy validate -f "$f" || echo "BASELINE-FAIL: $f"; done
   ```
+
+> **Note:** 0.2/0.3 snapshots live in `/tmp` and are ephemeral — re-capture them on the working
+> branch immediately before Phase C starts (the baseline binary has since been rebuilt).
+
 - [ ] **0.4** Working branch: `git checkout -b modernization/main` (each phase merges or stacks; see commit splits).
 
 ---
 
-## Phase A — Quick code modernization (mechanical, low-risk)
+## Phase A — Quick code modernization ✅ COMPLETE (verified 2026-02)
 
-**Goal:** one uniform idiom baseline. Most of A2–A4 and A8 is auto-fixable with the Go team's
-`modernize` suite; do tool-driven fixes first, then the manual items.
+**Status:** every item below was verified against the tree. The table is evidence, not action
+items; the original detailed checklist is superseded.
 
-### A.1 — Unify YAML on v3
+| Item | Evidence (verified in tree) |
+|---|---|
+| A.1 YAML v3 | 0 files import `gopkg.in/yaml.v2`; 16 files on `yaml.v3`. Note: `go.yaml.in/yaml/v2` remains in go.mod **as an indirect dep** (transitive via k8s tooling) — expected; the original "should drop out of go.mod" criterion meant *direct imports* only |
+| A.2 modernize | 0 `sort.Strings`, 0 no-arg `fmt.Errorf`; remaining `interface{}` sites are all in generated `proto/*.pb.go` (correctly skipped). The `go run ...modernize@latest -test -fix ./...` invocation was re-confirmed working |
+| A.3 typed atomics | 0 package-func `atomic.Add/Load/Store` in `pkg/alert`, `pkg/flow` |
+| A.4 error chains | `%w` at `pkg/enforcer/iptables_linux.go:39`; 0 `fmt.Errorf(...).Error()` anti-patterns in `pkg/apigrpc/server.go`; no `var _ = errors.New` import-keeper in `policy_sync_etcd.go` |
+| A.5 context hygiene | `errors.Is` for `io.EOF`/`context.Canceled`; `context.AfterFunc` in `pkg/discovery/discovery.go` + `pkg/alert/dispatcher.go`; no `time.Sleep(HeartbeatInterval)` remains in `election_etcd.go` |
+| A.6 test refresh | 4 `context.Background()` remain in tests (was ~100) — sweep opportunistically |
+| A.7 dedup | landed as `pkg/paths.Expand` + `pkg/apiutil.DefaultAuthManager()` — exactly the plan's proposed `pkg/apiutil/` home; tilde-expansion and auth defaults no longer duplicated |
 
-Files importing `gopkg.in/yaml.v2` (7): `pkg/policy/policy.go:22`,
-`pkg/operator/controllers/ztapnetworkpolicy_controller.go:7`,
-`pkg/operator/controllers/converter_test.go:7`, `cmd/discovery.go:14`, `cmd/azure.go:16`,
-`cmd/gcp.go:16`, `cmd/aws.go:18`.
-
-- [ ] Edit all 7 files: import `gopkg.in/yaml.v3` as `yaml` (drop the v2 import).
-  ```bash
-  rg -l 'gopkg.in/yaml.v2' --type go | xargs sed -i '' 's|yaml "gopkg.in/yaml.v2"|yaml "gopkg.in/yaml.v3"|; s|"gopkg.in/yaml.v2"|"gopkg.in/yaml.v3"|'
-  go mod tidy   # yaml.v2 should drop out of go.mod
-  rg 'gopkg.in/yaml.v2' go.mod go.sum || true   # confirm gone
-  ```
-- [ ] **Wire-safety check** (policy + operator converter moved together — the operator marshals
-  ConfigMap YAML that agents unmarshal): re-run the Pre-flight 0.3 validation and the operator tests.
-  ```bash
-  go test ./pkg/policy/... ./pkg/operator/... -count=1
-  for f in examples/*.yaml; do go run . policy validate -f "$f" || echo "FAIL: $f"; done
-  ```
-- [ ] Watch for v3 strictness differences: duplicate map keys now error (good), `omitempty`
-  zero-value behavior, `inline` maps. Fix any fallout in `pkg/policy` types.
-
-**Commit:** `refactor: unify YAML handling on gopkg.in/yaml.v3 (drop yaml.v2)`
-
-### A.2 — Tool-driven idiom fixes (errors.New, slices.Sort, any, CutPrefix, min, for-range-int)
-
-- [ ] Run the modernize suite (covers `interface{}`→`any`, `sort.Strings`→`slices.Sort`,
-  `fmt.Errorf` without args→`errors.New`, `min`/`max`, `range`-over-int, and more):
-  ```bash
-  go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test -fix ./...
-  go build ./... && go test ./...
-  ```
-- [ ] Expected hotspots to spot-check manually afterwards: `pkg/cluster/*` (≈159 no-format
-  `fmt.Errorf`), `pkg/discovery/*` + `pkg/enforcer/*` (≈44 `sort.Strings`), `pkg/audit/*` +
-  `pkg/enforcer/policy_enforcer.go` + `cmd/aws.go` (≈20 `interface{}`; skip k8s
-  `cache.ResourceEventHandlerFuncs` signatures — they're API-dictated), `pkg/apigrpc/server.go:1617`
-  (`min` clamp), `pkg/apihttp/{users,cluster,policies}.go` + `pkg/compliance/mapping_annotations.go`
-  + `pkg/logging/logger.go` + `pkg/audit/config.go` (`strings.CutPrefix`).
-
-**Commit:** `refactor: apply gopls modernize fixes (any, slices, errors.New, min, CutPrefix)`
-
-### A.3 — Typed atomics
-
-- [ ] `pkg/alert/dispatcher.go:73,85,91,96` and `pkg/flow/reader_windows.go` (≈14 sites):
-  convert `atomic.AddUint64(&x, 1)` / `atomic.LoadUint64(&x)` package-func style to typed
-  `atomic.Uint64` / `atomic.Bool` struct fields. (No autofix; hand-edit, tests in both packages
-  must pass unchanged.)
-
-**Commit:** `refactor: use typed sync/atomic fields in alert and flow packages`
-
-### A.4 — Error-chain fixes (manual)
-
-- [ ] `pkg/enforcer/iptables_linux.go:39` — `fmt.Errorf("%v: %s", err, ...)` → `fmt.Errorf("%w: %s", err, ...)`.
-- [ ] `pkg/apigrpc/server.go` (~8 sites, lines 866–976) — replace the
-  `fmt.Errorf("...: %w", err).Error()` anti-pattern with direct `status.Errorf(codes.X, "...: %v", err)`.
-- [ ] `pkg/cluster/policy_sync_etcd.go:479-480` — delete `var _ = errors.New(...)` import-keeper hack
-  and the now-unneeded import.
-- [ ] `pkg/enforcer/policy_enforcer.go:80` — handle the swallowed `os.UserHomeDir()` error
-  (fall back to a temp dir or return the error).
-
-**Commit:** `fix: preserve error chains in enforcer and gRPC server paths`
-
-### A.5 — Context hygiene quick wins
-
-- [ ] `pkg/audit/audit.go:277,358,430,684` + `pkg/audit/file_read.go:87`: `err == io.EOF` → `errors.Is(err, io.EOF)`.
-- [ ] `pkg/cluster/election_etcd.go:446`: `err == context.Canceled` → `errors.Is(err, context.Canceled)`.
-- [ ] `pkg/cluster/election_etcd.go:450`: replace uncancellable `time.Sleep(HeartbeatInterval)` in the
-  campaign retry loop with `select { case <-e.ctx.Done(): ...; case <-time.NewTimer(...).C: }`
-  (defer timer Stop) — shutdown currently blocks up to a full heartbeat.
-- [ ] `pkg/discovery/discovery.go:179-196` and `pkg/alert/dispatcher.go:65-68`: replace
-  "goroutine that only waits for `<-ctx.Done()`" with `context.AfterFunc`.
-
-**Commit:** `fix: cancellable etcd campaign loop and context-aware error checks`
-
-### A.6 — Test suite refresh
-
-- [ ] `context.Background()` → `t.Context()` in tests (~100 sites; modernize suite flags some,
-  finish by hand with `rg 'context.Background\(\)' --type go -g '*_test.go'`).
-- [ ] `pkg/enforcer/ebpf_linux_integration_test.go:552`: `os.Setenv` → `t.Setenv`.
-- [ ] Remove hand-rolled `contextWithTimeout` helper at `pkg/apihttp/cluster_test.go:85`
-  (use `t.Context()` + `context.WithTimeout`).
-- [ ] Pilot `testing/synctest` on 2–3 timer-heavy files (e.g. `pkg/cluster/election_test.go`,
-  `pkg/discovery/*_test.go`); expand only if runtime drops materially.
-
-**Commit:** `test: adopt t.Context and t.Setenv across the suite`
-
-### A.7 — Deduplicate helpers
-
-- [ ] Extract identical `defaultAuthManager()`/`defaultAuditLogger()` from
-  `pkg/apihttp/server.go:678-695` and `pkg/apigrpc/server.go:317-337` into a shared location
-  (e.g. `pkg/auth/defaults.go` or `pkg/apiutil/`), update both call sites.
-- [ ] Extract the 3× duplicated `~`-expansion helper (`pkg/logging/logger.go:44-50`,
-  `pkg/audit/config.go:235-252`, `cmd/logs.go:~172`) into one exported helper.
-- [ ] Consolidate repeated test server/login helpers across `pkg/apihttp/*_test.go` and
-  `pkg/apigrpc/*_test.go` into a shared test helper file per package (or `internal/testutil`
-  after Phase C).
-
-**Commit:** `refactor: deduplicate auth/audit defaults and path-expansion helpers`
-
-**Gate + full check:** `go build ./... && go test ./... -race && golangci-lint run && bash scripts/security_check.sh`
+**Gate (was run pre-merge):** `go build ./... && go test ./... -race && golangci-lint run && bash scripts/security_check.sh`
 
 ---
 
-## Phase B — CI / release supply chain
+## Phase B — CI / release supply chain ✅ COMPLETE (verified 2026-02)
 
-**Goal:** signed, attested, reproducible releases; CI gates that actually gate. Mostly additive —
-safe to land while later phases proceed.
+**Status:** every item below was verified against the tree (workflows, configs, Dockerfiles).
 
-### B.1 — GoReleaser adoption (replaces `release.yml`)
+| Item | Evidence (verified in tree) |
+|---|---|
+| B.1 GoReleaser | `.goreleaser.yaml` present (cosign sign-blob, SBOMs, checksums); `release.yml` has cosign + `sbom: true`/`provenance: mode=max` on build-push-action, SLSA generic-generator job (SHA-pinned v2.1.0), CHANGELOG-based VERSION build-arg. **Residual:** `cosign verify-blob` / `gh release view` on the *first tagged release* — cannot be done before a tag exists |
+| B.2 Dockerfiles | `alpine:3.24` SHA-pinned runtime (EOL 3.19 gone); `ARG VERSION` + `-trimpath -ldflags` build lines; OCI labels incl. `org.opencontainers.image.version` |
+| B.3 covergate ratchet | `-baseline`/`-update-baseline` flags in `cmd/covergate`; `ci.yml:193` runs it with `.covergate-baseline.json` and no `\|\| echo`; empty benchmark job deleted; documented in `CONTRIBUTING.md` + `docs/guides/testing.md` |
+| B.4 golangci v2 | `.golangci.yml` matches the proposed v2 config — govet + gofmt/goimports formatters enabled |
+| B.5 drift checks | buf lint/breaking + `./scripts/gen_proto.sh && git diff --exit-code` (`ci.yml:160`); eBPF regenerate drift check (`ci.yml:383-384`). `buf.yaml` still v1 — optional v2 migration deferred, fine |
+| B.6 dependabot | docker ecosystems (root + `pkg/anomaly`), 7-day cooldowns, dedicated `k8s` group all present |
+| B.7 supply chain | `scorecard.yml` present with SARIF upload + `publish_results: true`, all actions SHA-pinned with `# vX.Y.Z` comments (0 `TODO: pin to SHA` remain); shellcheck + zizmor jobs in `ci.yml`. Note: the README badge was added, then **deliberately removed** (b274f26 / 71764c2 "Remove badges") — not an open item |
 
-- [ ] Create `.goreleaser.yaml` at repo root:
-  ```yaml
-  version: 2
-  project_name: ztap
-  builds:
-    - id: ztap
-      main: .            # Phase C note: becomes ./cmd/ztap
-      binary: ztap
-      goos: [linux, darwin, windows]
-      goarch: [amd64, arm64]
-      env: [CGO_ENABLED=0]
-      flags: [-trimpath]
-      ldflags:
-        - -s -w -X main.Version={{.Version}}
-  archives:
-    - formats: [tar.gz]
-      format_overrides: [{ goos: windows, formats: [zip] }]
-      name_template: "{{ .ProjectName }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}"
-  checksum:
-    name_template: "checksums.txt"
-  sboms:
-    - artifacts: [archive]
-  signs:
-    - cmd: cosign
-      args: [sign-blob, --bundle, "${artifact}.sigstore.json", "${artifact}"]
-      artifacts: [checksum]
-  release:
-    prerelease: auto
-  ```
-- [ ] Docker: keep the existing `docker-release` job pattern but add to each `build-push-action`
-  step: `sbom: true`, `provenance: mode=max`, and pass the version build-arg
-  (`build-args: VERSION=${{ steps.version.outputs.VERSION }}` — requires B.2). Add keyless
-  `cosign sign` of the three image digests (ghcr OIDC: job needs `id-token: write`,
-  `packages: write`).
-- [ ] SLSA 3 provenance for binaries: add a job using
-  `slsa-framework/slsa-github-generator/.github/workflows/generic-generator.yml`  # TODO: pin to SHA
-  fed by the GoReleaser checksums.
-- [ ] Rewrite `.github/workflows/release.yml` to orchestrate the above; keep: tag trigger
-  `v*.*.*`, `concurrency` with `cancel-in-progress: false`, changelog extraction from
-  `CHANGELOG.md` (GoReleaser `release.footer` or keep the existing sed step), 6-target matrix
-  behavior (GoReleaser handles it), 7-day artifact retention.
-- [ ] Dry-run locally:
-  ```bash
-  go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
-  ls dist/   # expect archives, checksums.txt, *.sbom.json
-  ```
-- [ ] Verify on a test tag after merge: `cosign verify-blob`, `cosign verify` on ghcr digests,
-  and provenance download via `gh release view`.
-
-**Commit:** `build: adopt GoReleaser with cosign signing, SBOMs, and SLSA provenance`
-
-### B.2 — Minimal Dockerfile fixes (required for trustworthy release images)
-
-Both `Dockerfile` and `Dockerfile.operator`:
-- [ ] Runtime base `alpine:3.19` → `alpine:3.22` (3.19 is EOL since 2025-11).
-- [ ] Build line: replace `go build -a -installsuffix cgo -o ztap .` with
-  `ARG VERSION=dev` + `go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o ztap .`
-  (`-a` defeats caching; `-installsuffix` was removed in Go 1.20).
-  Phase C note: build path becomes `./cmd/ztap` / `./cmd/ztap-operator`.
-- [ ] Add OCI labels (`org.opencontainers.image.source/title/description/licenses/version/revision`).
-- [ ] `Dockerfile` only: drop unused `apk add git make` (keep `clang llvm` for the `go generate`
-  step, or drop the step entirely — the eBPF bytecode is inlined into `bpf_bpf*.go`; prefer dropping
-  and rely on the B.5 drift check).
-- [ ] Build check: `docker build --build-arg VERSION=v0.0.0-test -t ztap:test .` then
-  `docker run --rm ztap:test version` shows the injected version.
-
-**Commit:** `build(docker): fix EOL alpine, inject version ldflags, add OCI labels`
-
-### B.3 — Make the coverage gate real
-
-- [ ] `cmd/covergate/main.go`: replace the 100%-per-file gate with a ratchet — add
-  `-baseline <file>` flag; fail only when a file's coverage drops below its baseline entry.
-  Generate the initial baseline from current `coverage-local.out`.
-- [ ] `.github/workflows/ci.yml:131`: extend to `-coverpkg=./pkg/...,./cmd/...`
-  (Phase C note: `./internal/...`).
-- [ ] `ci.yml:136`: drop `|| echo ...` so covergate can fail the job; delete the
-  "Coverage report skipped" advisory step.
-- [ ] Delete the no-op `benchmark` job (`ci.yml:416-443`) — zero benchmarks exist
-  (`rg 'func Benchmark' --type go` is empty). Re-add when benchmarks land.
-- [ ] Document covergate in `CONTRIBUTING.md` and `docs/guides/testing.md`
-  (how to run: `go run ./cmd/covergate -coverprofile coverage.out -repo . -baseline .covergate-baseline.json`).
-
-**Commit:** `ci: enforce coverage ratchet, measure cmd/, drop empty benchmark job`
-
-### B.4 — Fix the lint blind spot (gofmt + govet never run today)
-
-- [ ] `.golangci.yml` →
-  ```yaml
-  version: "2"
-  run:
-    timeout: 5m
-  linters:
-    default: none
-    enable: [errcheck, ineffassign, staticcheck, unused, govet, gocritic, perfsprint, usestdlibvars]
-    exclusions:
-      paths: [^examples/]
-  formatters:
-    enable: [gofmt, goimports]
-  ```
-- [ ] Run `golangci-lint run` and fix new findings (Phase A pre-clears most `perfsprint` items);
-  run `golangci-lint fmt` once.
-- [ ] Remove the stale CHANGELOG claim that golangci covers gofmt/vet via the old config (fix in
-  the same commit's changelog entry).
-
-**Commit:** `ci: enable govet and formatters in golangci-lint v2 config`
-
-### B.5 — Proto + eBPF drift checks
-
-- [ ] New job in `ci.yml` (or `proto.yml`):
-  ```yaml
-  proto:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@<sha> # v7.0.0
-      - uses: bufbuild/buf-action@<sha> # TODO: pin to SHA
-        with:
-          lint: true
-          breaking: true
-          breaking_against: '.git#branch=main'
-      - run: ./scripts/gen_proto.sh && git diff --exit-code
-  ```
-  Optionally migrate `buf.yaml`/`buf.gen.yaml` to v2 format + remote plugins in the same pass.
-- [ ] In the `ebpf-verification` job (`ci.yml:287+`), after `make -C bpf` add:
-  ```yaml
-      - name: Check generated eBPF bindings are up to date
-        run: |
-          go generate ./pkg/enforcer/...
-          git diff --exit-code -- pkg/enforcer/bpf_bpfel.go pkg/enforcer/bpf_bpfeb.go
-  ```
-- [ ] `scripts/gen_proto.sh`: verify versions instead of presence-only (`buf --version` match
-  against pinned `v1.64.0`; same for plugins) or always `go run` the pinned module versions.
-
-**Commit:** `ci: add buf lint/breaking/drift and eBPF regeneration drift checks`
-
-### B.6 — Dependabot hardening
-
-- [ ] `.github/dependabot.yml`: add docker ecosystem (catches stale alpine/prometheus/grafana):
-  ```yaml
-    - package-ecosystem: "docker"
-      directory: "/"
-      schedule: { interval: "weekly", day: "monday", time: "09:00", timezone: "UTC" }
-      labels: ["dependencies", "automated"]
-  ```
-- [ ] Add `cooldown: { default-days: 7 }` to gomod + pip ecosystems.
-- [ ] Add a dedicated `k8s` group (`k8s.io/*`, `sigs.k8s.io/*`) since they move in lockstep.
-
-**Commit:** `build: add docker ecosystem and cooldowns to dependabot`
-
-### B.7 — Supply-chain visibility
-
-- [ ] New `.github/workflows/scorecard.yml`: `ossf/scorecard-action`  # TODO: pin to SHA,
-  `security-events: write`, upload SARIF; add badge to `README.md`.
-- [ ] Add zizmor job to `ci.yml` (Actions security lint): `woodruffw/zizmor-action`  # TODO: pin to SHA
-  or `pipx run zizmor .github/workflows/`.
-- [ ] Add shellcheck to the lint job: `shellcheck scripts/*.sh demo.sh`; fix findings.
-- [ ] Add `# vX.Y.Z` comments to all SHA-pinned actions (only 2/16 have them).
-
-**Commit:** `ci: add OpenSSF Scorecard, zizmor, and shellcheck`
-
-**Gate:** full CI green on the branch; actionlint + zizmor clean; snapshot release verified.
+**Residual to close (small):** cosign/provenance verification on first tagged release.
 
 ---
 
 ## Phase C — Structure: `pkg/` → `internal/` + cmd split
 
 **Goal:** idiomatic layout; `internal/` communicates app-not-library. Big rename — land as one
-focused PR right after Phase A merges (rebase B/D/E/F branches after).
+focused PR (Phases A/B already merged; D/E/F branches stack on top).
 
 ### C.1 — Module path decision
 
-- [ ] Decide: keep bare `ztap`, or rename to `github.com/msaadshabir/ZTAP` (recommended — makes
-  `go install ...@latest` work and pairs with GoReleaser). If renaming:
+- [x] **Decision (2026-02): keep the bare `ztap` module path.** The earlier "recommended" rename
+  to `github.com/msaadshabir/ZTAP` was re-scored: GoReleaser already works with `main: .`, the
+  rename has zero user-visible effect (C.4 proves behavior is identical either way), and it churns
+  Dockerfiles, docs, and `.github/copilot-instructions.md` for a single `go install` convenience.
+  Revisit only if `go install`-from-GitHub becomes a hard requirement:
   ```bash
   go mod edit -module github.com/msaadshabir/ZTAP
   rg -l '"ztap/' --type go | xargs sed -i '' 's|"ztap/|"github.com/msaadshabir/ZTAP/|g'
@@ -369,7 +140,9 @@ focused PR right after Phase A merges (rebase B/D/E/F branches after).
 - [ ] Add a command-tree test: `internal/cli/root_test.go` asserting every expected command is
   registered with the same `Use`/flags as before.
 - [ ] Update build paths: `Dockerfile`, `Dockerfile.operator`, `.goreleaser.yaml` (`main: ./cmd/ztap`),
-  `ci.yml` build-check (`go build -o ... ./cmd/ztap`), docs.
+  `ci.yml` build-check (`go build -o ... ./cmd/ztap`), docs. **Also:** `cmd/covergate`
+  `isGatedPath` hardcodes `pkg/`/`cmd/` prefixes — update to `internal/`/`cmd/` or the gate
+  silently stops gating after the move.
 
 ### C.4 — Verify against baseline
 
@@ -384,9 +157,8 @@ sudo go test -tags=integration ./internal/enforcer -run TestEBPFIntegration -v  
 ```
 
 **Commits (in order):**
-1. `refactor: rename module to canonical GitHub path` (if C.1 accepted)
-2. `refactor: move pkg/ to internal/`
-3. `refactor: split CLI into cmd/ztap entrypoint and internal/cli with command factory`
+1. `refactor: move pkg/ to internal/`
+2. `refactor: split CLI into cmd/ztap entrypoint and internal/cli with command factory`
 
 ---
 
@@ -401,7 +173,10 @@ sudo go test -tags=integration ./internal/enforcer -run TestEBPFIntegration -v  
   `gcp`, `audit`, plus the currently-dead `metrics`, `enforcement`, `policy`, `anomaly`.
 - [ ] One loader: `Load(path string) (*Config, error)` with the existing lookup order
   (`ZTAP_CONFIG` env → `./config.yaml` → none = defaults) and yaml.v3 decoding with
-  `KnownFields(true)` so typos fail loudly.
+  `KnownFields(true)` so typos fail loudly. **Breaking-change note:** `KnownFields` rejects
+  configs containing unknown keys — existing user configs with stale/extra sections will start
+  failing. Announce it in the CHANGELOG as a breaking change and consider a transition window:
+  warn-and-ignore unknown keys by default, `ZTAP_CONFIG_STRICT=1` opts into hard failure.
 - [ ] Table-driven loader tests: defaults, file, env override, precedence, unknown-key rejection.
 
 ### D.2 — Migrate consumers
@@ -446,6 +221,10 @@ round-trips; `rg 'yaml.Unmarshal' internal/cli` returns only the central loader.
   (default true).
 - [ ] Extend `internal/anomaly/detector.go`: add `DetectBatch([]FlowRecord)` hitting `/batch`;
   add `Authorization: Bearer` header when token set; retry with backoff on 5xx.
+  **Ordering:** the Python service currently exposes `/batch_predict`, not `/batch` — land the
+  service-side endpoint (E.2 item) in the **same commit stack** as the Go pipeline, or point
+  `DetectBatch` at the existing `/batch_predict`. The pipeline is untestable end-to-end until
+  both sides exist.
 - [ ] New `internal/anomaly/pipeline.go`: subscribes to `internal/flow.Monitor` events,
   buffers to `batch_size`/`flush_interval`, calls `DetectBatch` **async** — enforcement must
   never sit on the detection path. Service down + `fail_open`: count and continue.
@@ -460,8 +239,12 @@ round-trips; `rg 'yaml.Unmarshal' internal/cli` returns only the central loader.
   `PYTHONHASHSEED`) with `int(ipaddress.ip_address(ip))` — current features are non-reproducible
   across restarts. Update `test_service.py` accordingly.
 - [ ] Auth: `ZTAP_ANOMALY_TOKEN` env; `@require_token` decorator on `/train`, `/detect`, `/batch`.
-- [ ] Bind `127.0.0.1` by default (env override); serve via **gunicorn** not `flask run`
-  (`FLASK_ENV=production` in compose is ignored by modern Flask — remove it there when touched).
+- [ ] Bind address: **`0.0.0.0` in the container image / compose service** — the agent connects
+  from another container on `ztap-net` to `anomaly-detector:5000`; a `127.0.0.1` bind inside the
+  container listens on loopback only and cross-container traffic would be refused. Keep
+  `127.0.0.1` as the default only for host-local dev runs, via env override
+  (`ZTAP_ANOMALY_HOST`). Serve via **gunicorn** not `flask run` (`FLASK_ENV=production` in
+  compose is ignored by modern Flask — remove it there when touched).
 - [ ] Add `/batch` endpoint if used by E.1; model persistence via joblib (load on start, save
   after `/train`) so training survives restarts — this makes the already-pinned `joblib`
   dependency actually used (or drop it).
@@ -511,12 +294,14 @@ round-trips; `rg 'yaml.Unmarshal' internal/cli` returns only the central loader.
 
 | Phase | Build | Unit+race | Lint | Security | Extra |
 |---|---|---|---|---|---|
-| A | ✅ | ✅ | ✅ | `scripts/security_check.sh` | policy round-trip (0.3) |
-| B | — | — | actionlint + zizmor | — | `goreleaser release --snapshot --clean`, cosign verify |
+| A | ✅ | ✅ | ✅ | `scripts/security_check.sh` | ✅ complete — see completed-workstreams table |
+| B | — | — | actionlint + zizmor | — | ✅ complete — residual: cosign verify on first tagged release |
 | C | ✅ | ✅ | ✅ | — | help-output diff (C.4), eBPF integration test |
 | D | ✅ | ✅ | ✅ | — | config round-trip + precedence tests |
 | E | ✅ | ✅ | ✅ | — | live service e2e, `pytest`, `ruff` |
 | F | ✅ | ✅ | ✅ | — | golden log-output tests |
+
+> Rows A and B are historical (completed); the matrix gates C–F going forward.
 
 ## Appendix B — Out of scope (flagged for later)
 

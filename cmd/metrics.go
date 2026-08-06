@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"ztap/pkg/metrics"
+	"ztap/internal/metrics"
 
 	"github.com/spf13/cobra"
 )

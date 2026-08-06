@@ -85,7 +85,7 @@ func inlineObject(goFile, objectFile string) error {
 	b.WriteString("//\n")
 	b.WriteString("// _BpfBytes holds the eBPF object inlined by tools/bpfgen so the\n")
 	b.WriteString("// repository contains no binary artifacts; regenerate with\n")
-	b.WriteString("// `go generate ./pkg/enforcer/...`.\n")
+	b.WriteString("// `go generate ./internal/enforcer/...`.\n")
 	b.WriteString("var _BpfBytes = []byte(\n")
 	line := ""
 	chunk := 0

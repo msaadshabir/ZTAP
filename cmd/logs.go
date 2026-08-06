@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"ztap/pkg/logging"
-	"ztap/pkg/paths"
+	"ztap/internal/logging"
+	"ztap/internal/paths"
 
 	"github.com/spf13/cobra"
 )

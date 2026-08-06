@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"ztap/pkg/cluster"
-	"ztap/pkg/logging"
+	"ztap/internal/cluster"
+	"ztap/internal/logging"
 )
 
 func initPolicyRuntime(ctx context.Context, nodeAddress string) (cluster.LeaderElection, cluster.PolicyManager, func(), error) {

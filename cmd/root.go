@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"ztap/pkg/logging"
+	"ztap/internal/logging"
 
 	"github.com/spf13/cobra"
 )

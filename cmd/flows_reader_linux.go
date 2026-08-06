@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	"ztap/pkg/enforcer"
-	"ztap/pkg/flow"
+	"ztap/internal/enforcer"
+	"ztap/internal/flow"
 
 	"github.com/cilium/ebpf"
 )

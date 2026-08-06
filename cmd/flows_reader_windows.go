@@ -3,7 +3,7 @@
 package cmd
 
 import (
-	"ztap/pkg/flow"
+	"ztap/internal/flow"
 )
 
 func createFlowReader() flow.FlowReader {

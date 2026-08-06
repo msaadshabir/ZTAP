@@ -17,8 +17,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 
-	"ztap/pkg/enforcer"
-	"ztap/pkg/policy"
+	"ztap/internal/enforcer"
+	"ztap/internal/policy"
 )
 
 type k8sSubjectResolver struct {

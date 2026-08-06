@@ -35,12 +35,12 @@ go test ./... -race
 
 ### Coverage gate (ratchet)
 
-CI enforces a per-file coverage ratchet over `pkg/` and `cmd/`: a file may
+CI enforces a per-file coverage ratchet over `internal/` and `cmd/`: a file may
 improve but must not drop below its recorded baseline in
 `.covergate-baseline.json`. Run it locally with:
 
 ```bash
-go test ./... -covermode=atomic -coverpkg=./pkg/...,./cmd/... -coverprofile=coverage.out
+go test ./... -covermode=atomic -coverpkg=./internal/...,./cmd/... -coverprofile=coverage.out
 go run ./cmd/covergate -coverprofile coverage.out -repo . -baseline .covergate-baseline.json
 ```
 

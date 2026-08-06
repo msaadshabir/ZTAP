@@ -5,7 +5,7 @@ package cmd
 import (
 	"time"
 
-	"ztap/pkg/flow"
+	"ztap/internal/flow"
 )
 
 func createFlowReader() flow.FlowReader {

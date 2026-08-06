@@ -10,7 +10,7 @@ ZTAP includes comprehensive test coverage across all critical components with un
 
 ### Unit Tests
 
-#### Policy Package (`pkg/policy/policy_test.go`)
+#### Policy Package (`internal/policy/policy_test.go`)
 
 - **TestLoadFromFile**: Validates YAML policy file loading
 - **TestValidate**: Tests policy validation rules
@@ -21,17 +21,17 @@ ZTAP includes comprehensive test coverage across all critical components with un
   - Invalid protocol types
 - **TestPolicyResolver**: Tests label resolution with service discovery
 
-**Run**: `go test ./pkg/policy/... -v`
+**Run**: `go test ./internal/policy/... -v`
 
-#### Compliance Package (`pkg/compliance`)
+#### Compliance Package (`internal/compliance`)
 
 - Mapping extraction from policy annotations and mapping files
 - Audit evidence evaluation (integrity + `policy.enforced` event presence)
 - JSON/CSV exporters and Markdown report rendering
 
-**Run**: `go test ./pkg/compliance/... -v`
+**Run**: `go test ./internal/compliance/... -v`
 
-#### Audit Package (`pkg/audit`)
+#### Audit Package (`internal/audit`)
 
 - **TestNewAuditLogger**: Logger creation and initialization
 - **TestAuditLogger_Log**: Event logging
@@ -56,17 +56,17 @@ ZTAP includes comprehensive test coverage across all critical components with un
 - **TestEntryHash_ValidEntry**: Valid entry hash computation
 - **TestEntryHash_NonSerializableDetails**: Verifies error return when Details cannot be JSON-serialized
 
-**Run**: `go test ./pkg/audit/... -v`
+**Run**: `go test ./internal/audit/... -v`
 
-#### Flow Package (`pkg/flow`)
+#### Flow Package (`internal/flow`)
 
 - **TestMonitor_SubscriberLifecycle_NoPanic**: Subscribe/unsubscribe without panics or races
 - **TestMonitor_SubscribeAfterStop**: Subscribing after monitor stop returns nil channel
 - **TestMonitor_ConcurrentSubscribeUnsubscribe**: Concurrent subscribe/unsubscribe safety
 
-**Run**: `go test ./pkg/flow/... -v`
+**Run**: `go test ./internal/flow/... -v`
 
-#### Discovery Package (`pkg/discovery/discovery_test.go`)
+#### Discovery Package (`internal/discovery/discovery_test.go`)
 
 - **TestInMemoryDiscovery_RegisterAndResolve**: Service registration and label-based resolution
 - **TestInMemoryDiscovery_NoMatch**: Handling non-existent services
@@ -82,9 +82,9 @@ ZTAP includes comprehensive test coverage across all critical components with un
 - **TestMatchLabels**: Label selector matching logic
 - **TestK8sDiscovery_WatchNoMatchInitialState**: Validates that K8s watcher treats `NoMatchesError` as empty initial state while propagating real errors
 
-**Run**: `go test ./pkg/discovery/... -v`
+**Run**: `go test ./internal/discovery/... -v`
 
-#### Cloud Package (`pkg/cloud/aws_test.go`)
+#### Cloud Package (`internal/cloud/aws_test.go`)
 
 - **TestMatchResourcesByLabels**: Ensures label selectors align with AWS tags
 - **TestDiscoverResources**: Discovers running EC2 instances and captures metadata
@@ -107,7 +107,7 @@ ZTAP includes comprehensive test coverage across all critical components with un
 
 ### Integration Tests
 
-#### Enforcer Package (`pkg/enforcer/ebpf_linux_integration_test.go`)
+#### Enforcer Package (`internal/enforcer/ebpf_linux_integration_test.go`)
 
 > **Note**: These tests require Linux, root privileges, and a kernel supporting eBPF (5.7+).
 
@@ -123,27 +123,27 @@ Run prerequisites (Linux only):
 - kernel 5.7+
 - `make`, `clang`, and `llvm-strip` available (the tests recompile `bpf/filter.o`)
 
-**Run**: `sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v`
+**Run**: `sudo go test -tags=integration ./internal/enforcer -run TestEBPFIntegration -v`
 
 - **TestRevokeAllEgressNotFound**: Detects missing Security Groups
 
-**Run**: `go test ./pkg/cloud/... -v`
+**Run**: `go test ./internal/cloud/... -v`
 
-#### Metrics Package (`pkg/metrics/collector_test.go`)
+#### Metrics Package (`internal/metrics/collector_test.go`)
 
 - **TestGetCollectorSingleton**: Verifies singleton initialization semantics
 - **TestCollectorCounters**: Confirms counter increments for flows
 - **TestCollectorGaugeAndHistogram**: Validates gauge state and histogram buckets
 
-**Run**: `go test ./pkg/metrics/... -v`
+**Run**: `go test ./internal/metrics/... -v`
 
-#### Enforcer Package (`pkg/enforcer/policy_enforcer_test.go`)
+#### Enforcer Package (`internal/enforcer/policy_enforcer_test.go`)
 
 - **TestPolicyEnforcerDryRun**: Verifies that dry-run mode correctly tracks policy versions without applying system changes
 - **TestPolicyEnforcerStartStop**: Validates lifecycle management
 - **TestPolicyEnforcerAppliesUpdates**: End-to-end enforcement logic check
 
-**Run**: `go test ./pkg/enforcer/... -v`
+**Run**: `go test ./internal/enforcer/... -v`
 
 ## Running Tests
 
@@ -153,15 +153,15 @@ Run prerequisites (Linux only):
 go test ./... -v
 ```
 
-This includes the Kubernetes operator/agent packages. Dedicated unit tests for the operator reconcile loop are included in `pkg/operator/controllers/ztapnetworkpolicy_controller_test.go`.
+This includes the Kubernetes operator/agent packages. Dedicated unit tests for the operator reconcile loop are included in `internal/operator/controllers/ztapnetworkpolicy_controller_test.go`.
 
 ### Specific Package
 
 ```bash
-go test ./pkg/policy/... -v
-go test ./pkg/cloud/... -v
-go test ./pkg/discovery/... -v
-go test ./pkg/metrics/... -v
+go test ./internal/policy/... -v
+go test ./internal/cloud/... -v
+go test ./internal/discovery/... -v
+go test ./internal/metrics/... -v
 ```
 
 ### With Coverage
@@ -208,7 +208,7 @@ gitleaks detect --source . --redact --no-banner
 Run the Windows WFP flow integration tests (on Windows, elevated terminal):
 
 ```bash
-go test ./pkg/flow -tags=integration -run TestWFPFlowIntegration -v
+go test ./internal/flow -tags=integration -run TestWFPFlowIntegration -v
 ```
 
 Compile-check WFP codepaths from non-Windows hosts:
@@ -269,8 +269,8 @@ The repository ships with `.github/workflows/ci.yml`, which runs `golangci-lint`
 
 Coverage notes:
 
-- Each matrix job writes `coverage-${{ matrix.os }}.out` with `-coverpkg=./pkg/...,./cmd/...`.
-- The `cmd/covergate` step is a hard gate: it fails the job when any `pkg/` or `cmd/` file drops below its baseline in `.covergate-baseline.json` (ratchet — improvements allowed, regressions are not). See "Coverage gate (ratchet)" in `CONTRIBUTING.md` for local usage and how to regenerate the baseline.
+- Each matrix job writes `coverage-${{ matrix.os }}.out` with `-coverpkg=./internal/...,./cmd/...`.
+- The `cmd/covergate` step is a hard gate: it fails the job when any `internal/` or `cmd/` file drops below its baseline in `.covergate-baseline.json` (ratchet — improvements allowed, regressions are not). See "Coverage gate (ratchet)" in `CONTRIBUTING.md` for local usage and how to regenerate the baseline.
 - Shared matrix `run:` commands must be shell-compatible across bash and PowerShell.
 - CI artifacts (coverage) have a 14-day retention policy.
 
@@ -321,8 +321,8 @@ jobs:
 ### Running Individual Tests
 
 ```bash
-go test ./pkg/policy -run TestLoadFromFile -v
-go test ./pkg/discovery -run TestInMemoryDiscovery_Watch -v
+go test ./internal/policy -run TestLoadFromFile -v
+go test ./internal/discovery -run TestInMemoryDiscovery_Watch -v
 ```
 
 ## Test Maintenance

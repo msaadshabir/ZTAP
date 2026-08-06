@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"ztap/pkg/audit"
+	"ztap/internal/audit"
 
 	"github.com/spf13/cobra"
 )

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"ztap/pkg/discovery"
+	"ztap/internal/discovery"
 )
 
 func resetDiscoveryState() {

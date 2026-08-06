@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"ztap/pkg/compliance"
-	"ztap/pkg/policy"
+	"ztap/internal/compliance"
+	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
 )

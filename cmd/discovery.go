@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"ztap/pkg/discovery"
+	"ztap/internal/discovery"
 
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v3"

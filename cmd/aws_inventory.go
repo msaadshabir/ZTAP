@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"ztap/pkg/cloud"
-	"ztap/pkg/inventory"
-	"ztap/pkg/policy"
+	"ztap/internal/cloud"
+	"ztap/internal/inventory"
+	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/labels"

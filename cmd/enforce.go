@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"ztap/pkg/enforcer"
-	"ztap/pkg/logging"
-	"ztap/pkg/policy"
+	"ztap/internal/enforcer"
+	"ztap/internal/logging"
+	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
 )

@@ -258,7 +258,7 @@ func writeBaseline(p string, summaries map[string]*fileCov) error {
 
 // isGatedPath reports whether a repo-relative path is coverage-gated.
 func isGatedPath(rel string) bool {
-	return strings.HasPrefix(rel, "pkg/") || strings.HasPrefix(rel, "cmd/")
+	return strings.HasPrefix(rel, "internal/") || strings.HasPrefix(rel, "cmd/")
 }
 
 func readModulePath(goModPath string) (string, error) {
@@ -349,7 +349,7 @@ func normalizeCoverPath(rawFile, repoSlash, modulePath string) string {
 
 func isExcludedByPattern(rel string) bool {
 	// Explicitly exclude bpf2go generated enforcement stubs.
-	if strings.HasPrefix(rel, "pkg/enforcer/bpf_bpf") && strings.HasSuffix(rel, ".go") {
+	if strings.HasPrefix(rel, "internal/enforcer/bpf_bpf") && strings.HasSuffix(rel, ".go") {
 		return true
 	}
 	return false

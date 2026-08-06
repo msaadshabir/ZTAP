@@ -220,7 +220,7 @@ import (
     "log"
     "time"
 
-    "ztap/pkg/cluster"
+    "ztap/internal/cluster"
 )
 
 func main() {
@@ -488,10 +488,10 @@ export ZTAP_NODE_ADDRESS=$(hostname -i):9090
 
 ```bash
 # Run unit tests (no etcd required)
-go test ./pkg/cluster -v -short
+go test ./internal/cluster -v -short
 
 # Run with coverage
-go test ./pkg/cluster -coverprofile=coverage.out
+go test ./internal/cluster -coverprofile=coverage.out
 go tool cover -html=coverage.out
 ```
 
@@ -503,7 +503,7 @@ docker run -d -p 2379:2379 --name etcd-test \
     quay.io/coreos/etcd:v3.5.17
 
 # Run integration tests
-go test -tags=integration ./pkg/cluster -v
+go test -tags=integration ./internal/cluster -v
 
 # Cleanup
 docker stop etcd-test && docker rm etcd-test

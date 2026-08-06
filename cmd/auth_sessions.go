@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"ztap/pkg/auth"
+	"ztap/internal/auth"
 
 	yaml "gopkg.in/yaml.v3"
 )

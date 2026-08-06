@@ -72,7 +72,7 @@ services:
   # Anomaly detection microservice
   anomaly-detector:
     build:
-      context: ./pkg/anomaly
+      context: ./internal/anomaly
       dockerfile: Dockerfile
     container_name: ztap-anomaly
     hostname: anomaly-detector

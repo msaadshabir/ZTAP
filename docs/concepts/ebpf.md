@@ -67,12 +67,12 @@ The eBPF bytecode is automatically generated and embedded during the build proce
 
 Notes:
 
-- `go generate ./pkg/enforcer/...` requires a `clang` toolchain that supports the BPF backend.
+- `go generate ./internal/enforcer/...` requires a `clang` toolchain that supports the BPF backend.
 - On macOS, Apple clang typically does not include the BPF backend; run generation on Linux (or in a Linux container/VM).
 
 ```bash
 # Generate the Go wrappers for eBPF bytecode
-go generate ./pkg/enforcer/...
+go generate ./internal/enforcer/...
 
 # Build the binary
 go build -o ztap
@@ -463,10 +463,10 @@ sudo cat /sys/kernel/debug/tracing/trace_pipe
 
 ```bash
 # Run enforcer tests (requires Linux)
-go test ./pkg/enforcer -v
+go test ./internal/enforcer -v
 
 # Run full eBPF verification (requires root + build tags)
-sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v
+sudo go test -tags=integration ./internal/enforcer -run TestEBPFIntegration -v
 ```
 
 The integration test recompiles `bpf/filter.o`, attaches the compiled program to a temporary

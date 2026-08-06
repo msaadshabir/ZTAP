@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"ztap/pkg/cloud"
-	"ztap/pkg/logging"
-	"ztap/pkg/policy"
+	"ztap/internal/cloud"
+	"ztap/internal/logging"
+	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v3"

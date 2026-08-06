@@ -7,25 +7,25 @@ ZTAP (Zero Trust Access Platform) is a Go 1.25+ CLI for zero-trust microsegmenta
 ## Architecture
 
 ```
-CLI (cmd/) / API Server (pkg/apihttp) -> Policy Engine (pkg/policy) -> Enforcer (pkg/enforcer)
-                                                           -> Flow Monitor (pkg/flow)
-                                                           -> Alerting (pkg/alert)
-                                                           -> Cloud Sync (pkg/cloud)
-                                                           -> Cluster Sync (pkg/cluster)
+CLI (cmd/) / API Server (internal/apihttp) -> Policy Engine (internal/policy) -> Enforcer (internal/enforcer)
+                                                           -> Flow Monitor (internal/flow)
+                                                           -> Alerting (internal/alert)
+                                                           -> Cloud Sync (internal/cloud)
+                                                           -> Cluster Sync (internal/cluster)
 ```
 
 - **Policy Engine**: Parses Kubernetes-style YAML (`apiVersion: ztap/v1`), validates CIDR/ports/protocols (offline via `ztap policy validate`), resolves labels via `ServiceDiscovery` interface
 - **API Server**: REST server (`ztap api serve`) and gRPC server (`ztap grpc serve`) exposing auth/status/enforcement/flows plus management plane APIs (policies, users, cluster)
 - **Enforcer**: Platform-specific - Linux eBPF (`ebpf_linux.go`) with iptables fallback (`iptables_linux.go`), macOS pf (`enforcer.go`), and Windows WFP (`wfp_windows.go`)
-- **Flow Monitor**: `pkg/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map); on Windows it streams WFP NetEvents (Admin; ztap-only by default)
-- **Alerting**: `pkg/alert/` provides webhook sinks (Slack, PagerDuty) and async dispatch with optional TTL dedupe (configured via `alerting.*`)
+- **Flow Monitor**: `internal/flow/` provides the monitor + readers; on Linux, `ztap flows --follow` streams real events when `ztap enforce` is active (via the pinned `flow_events` map); on Windows it streams WFP NetEvents (Admin; ztap-only by default)
+- **Alerting**: `internal/alert/` provides webhook sinks (Slack, PagerDuty) and async dispatch with optional TTL dedupe (configured via `alerting.*`)
 - **Cluster**: Leader election + policy sync - `election_memory.go` (dev), `election_etcd.go` (production)
 - **Discovery**: Label-to-IP resolution - `InMemoryDiscovery` (dev), DNS/Consul backends (stubs), Kubernetes backend (WIP)
 
 ## Key Interfaces
 
 ```go
-// pkg/policy/policy.go - All discovery backends implement this
+// internal/policy/policy.go - All discovery backends implement this
 type ServiceDiscovery interface {
     ResolveLabels(labels map[string]string) ([]string, error)
 }
@@ -36,20 +36,20 @@ type ScopedServiceDiscovery interface {
     WatchScoped(ctx context.Context, scope string, labels map[string]string) (<-chan []string, error)
 }
 
-// pkg/cluster/types.go - Leader election backends
+// internal/cluster/types.go - Leader election backends
 type LeaderElection interface {
     Start(ctx context.Context) error
     IsLeader() bool
     GetLeader() *Node
 }
 
-// pkg/cluster/types.go - Policy distribution
+// internal/cluster/types.go - Policy distribution
 type PolicySync interface {
     SyncPolicy(ctx context.Context, policyName string, policyYAML []byte) error
     SubscribePolicies(ctx context.Context) <-chan PolicyUpdate
 }
 
-// pkg/flow/types.go - Flow event monitoring
+// internal/flow/types.go - Flow event monitoring
 type FlowMonitor interface {
     Start(ctx context.Context) error
     Stop() error
@@ -61,11 +61,11 @@ type FlowMonitor interface {
 
 ## Platform-Specific Code
 
-- Linux eBPF: `pkg/enforcer/ebpf_linux.go` with `//go:build linux` tag
+- Linux eBPF: `internal/enforcer/ebpf_linux.go` with `//go:build linux` tag
   - Supports atomic policy updates via `bpf_link` (graceful reload)
-- Linux iptables (fallback): `pkg/enforcer/iptables_linux.go` with `//go:build linux` tag. Automatically used if kernel < 5.7, BPF unavailable, or matching `ZTAP_FORCE_IPTABLES=1`.
-- macOS pf: Falls back to `EnforceWithPF()` in `pkg/enforcer/enforcer.go`
-- Windows WFP: `pkg/enforcer/wfp_windows.go` and `pkg/enforcer/wfp_engine_windows.go` with `//go:build windows` tags
+- Linux iptables (fallback): `internal/enforcer/iptables_linux.go` with `//go:build linux` tag. Automatically used if kernel < 5.7, BPF unavailable, or matching `ZTAP_FORCE_IPTABLES=1`.
+- macOS pf: Falls back to `EnforceWithPF()` in `internal/enforcer/enforcer.go`
+- Windows WFP: `internal/enforcer/wfp_windows.go` and `internal/enforcer/wfp_engine_windows.go` with `//go:build windows` tags
 - Dry-run mode: `enforcer.EnforcementOptions` struct supports `.DryRun = true` for simulated enforcement on all platforms (logs actions instead of applying kernel rules).
 - eBPF requires: compiled `bpf/filter.o`, root/CAP_BPF, kernel 5.7+
 - Linux `ztap enforce` keeps running while enforcement is active; Ctrl+C detaches and exits; atomic updates logic preserves connections
@@ -84,8 +84,8 @@ Windows enforcement constraints (WFP):
 
 ## API Server Notes
 
-- Command: `ztap api serve` (implemented in `cmd/api.go` and `pkg/apihttp/`)
-- Command: `ztap grpc serve` (implemented in `cmd/grpc.go` and `pkg/apigrpc/`)
+- Command: `ztap api serve` (implemented in `cmd/api.go` and `internal/apihttp/`)
+- Command: `ztap grpc serve` (implemented in `cmd/grpc.go` and `internal/apigrpc/`)
 - Probes:
   - REST: `GET /healthz` (liveness) and `GET /readyz` (readiness)
   - gRPC: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch`) and these health RPCs are unauthenticated and never rate-limited
@@ -112,10 +112,10 @@ go test ./...
 
 # eBPF integration (Linux + root only)
 # Note: these tests recompile bpf/filter.o and require make + clang + llvm-strip.
-sudo go test -tags=integration ./pkg/enforcer -run TestEBPFIntegration -v
+sudo go test -tags=integration ./internal/enforcer -run TestEBPFIntegration -v
 
 # iptables coverage (Linux)
-go test ./pkg/enforcer -run TestIptablesRestoreGeneration -v
+go test ./internal/enforcer -run TestIptablesRestoreGeneration -v
 
 # Race detection
 go test ./... -race
@@ -124,7 +124,7 @@ go test ./... -race
 Tests use:
 
 - `t.TempDir()` for file isolation
-- Table-driven tests with descriptive names (see `pkg/policy/policy_test.go`)
+- Table-driven tests with descriptive names (see `internal/policy/policy_test.go`)
 - Mock implementations: `mockDiscovery`, `InMemoryElection`, `InMemoryPolicySync`
 
 ## Error Handling
@@ -133,7 +133,7 @@ Tests use:
 // Wrap errors with context
 return fmt.Errorf("loading policy %s: %w", name, err)
 
-// Custom validation errors (pkg/policy/policy.go)
+// Custom validation errors (internal/policy/policy.go)
 type ValidationError struct {
     PolicyName string
     Field      string
@@ -150,7 +150,7 @@ API error conventions:
 
 ## Audit Logging
 
-`pkg/audit/audit.go` uses SHA-256 hash chaining (optionally signatures/checkpoints) for tamper detection:
+`internal/audit/audit.go` uses SHA-256 hash chaining (optionally signatures/checkpoints) for tamper detection:
 
 ```go
 // resource is typically "tenant/policy" (k8s namespace == tenant)

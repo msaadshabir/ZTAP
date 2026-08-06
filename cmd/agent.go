@@ -8,11 +8,11 @@ import (
 	"strings"
 	"syscall"
 
-	"ztap/pkg/audit"
-	"ztap/pkg/cluster"
-	"ztap/pkg/discovery"
-	"ztap/pkg/enforcer"
-	"ztap/pkg/logging"
+	"ztap/internal/audit"
+	"ztap/internal/cluster"
+	"ztap/internal/discovery"
+	"ztap/internal/enforcer"
+	"ztap/internal/logging"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
