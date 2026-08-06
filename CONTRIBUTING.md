@@ -51,8 +51,10 @@ lock in the improvement), regenerate the baseline and commit it:
 go run ./cmd/covergate -coverprofile coverage.out -repo . -baseline .covergate-baseline.json -update-baseline
 ```
 
-Files not yet in the baseline are reported but not gated; add coverage or
-regenerate the baseline to track them.
+Files not yet in the baseline are reported but not gated **unless they have
+no covered statements at all** — a brand-new file with zero coverage fails the
+gate. Add tests, or regenerate the baseline (`-update-baseline`) once the file
+has coverage.
 
 ### Lint / Format
 
@@ -60,7 +62,14 @@ regenerate the baseline to track them.
 gofmt -w .
 ```
 
-CI runs [`golangci-lint`](https://golangci-lint.run/) as the primary lint tool (which includes `gofmt` and `go vet` checks). See `.github/workflows/ci.yml`.
+CI runs [`golangci-lint`](https://golangci-lint.run/) **v2.12.2** as the primary lint tool:
+`go vet` and the other enabled linters gate every PR, and the gofmt/goimports formatters are
+applied and diff-checked (`fmt: true` in the action), so formatting is enforced, not advisory.
+See `.github/workflows/ci.yml`.
+
+Use the same version locally (`go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.12.2`):
+older builds (e.g. v2.8.0 on go1.25) refuse to load this repo's config with
+"Go language version ... lower than the targeted Go version (1.26.5)".
 
 When editing GitHub Actions, keep `run:` commands shell-agnostic for matrix jobs that include Windows (`pwsh`) and Linux/macOS (bash). Avoid bash-only line continuations (for example trailing `\`) in shared steps.
 

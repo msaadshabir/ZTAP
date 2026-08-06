@@ -23,8 +23,11 @@ type Dispatcher struct {
 	startOnce sync.Once
 	closeOnce sync.Once
 	wg        sync.WaitGroup
-	dropped   atomic.Uint64
-	closed    atomic.Uint32
+	// mu serializes Emit's closed-check+send against Close's channel close,
+	// so Emit can never send on a closed channel (send-on-closed panic).
+	mu      sync.RWMutex
+	closed  bool
+	dropped atomic.Uint64
 }
 
 func NewDispatcher(opts DispatcherOptions) (*Dispatcher, error) {
@@ -67,7 +70,9 @@ func (d *Dispatcher) Start(ctx context.Context) {
 }
 
 func (d *Dispatcher) Emit(a Alert) bool {
-	if d.closed.Load() == 1 {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if d.closed {
 		return false
 	}
 
@@ -90,8 +95,10 @@ func (d *Dispatcher) Dropped() uint64 {
 
 func (d *Dispatcher) Close() {
 	d.closeOnce.Do(func() {
-		d.closed.Store(1)
+		d.mu.Lock()
+		d.closed = true
 		close(d.queue)
+		d.mu.Unlock()
 		d.wg.Wait()
 	})
 }

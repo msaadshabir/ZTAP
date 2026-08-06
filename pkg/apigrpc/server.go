@@ -901,20 +901,20 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			resolvedCgroupPath = defaultCgroupPath
 		} else {
 			if filepath.IsAbs(cgroupPath) || strings.Contains(cgroupPath, "..") {
-				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s", cgroupPath).Error())
+				return nil, status.Error(codes.InvalidArgument, "invalid cgroup path "+cgroupPath)
 			}
 			cleaned := filepath.Clean(cgroupPath)
 			if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
-				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s", cgroupPath).Error())
+				return nil, status.Error(codes.InvalidArgument, "invalid cgroup path "+cgroupPath)
 			}
 			joined := filepath.Join(defaultCgroupPath, cleaned)
 			absCgroupPath, err := filepath.Abs(joined)
 			if err != nil {
-				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s", cgroupPath).Error())
+				return nil, status.Error(codes.InvalidArgument, "invalid cgroup path "+cgroupPath)
 			}
 			rel, err := filepath.Rel(defaultCgroupPath, absCgroupPath)
 			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("invalid cgroup path %s", cgroupPath).Error())
+				return nil, status.Error(codes.InvalidArgument, "invalid cgroup path "+cgroupPath)
 			}
 			resolvedCgroupPath = absCgroupPath
 		}
@@ -946,7 +946,7 @@ func (e *enforcementService) Start(ctx context.Context, req *apiv1.EnforcementSt
 			}
 			rel, err := filepath.Rel(baseDirAbs, absPath)
 			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-				return nil, status.Error(codes.InvalidArgument, fmt.Errorf("bpf_object must be within %s", baseDirAbs).Error())
+				return nil, status.Error(codes.InvalidArgument, "bpf_object must be within "+baseDirAbs)
 			}
 			if _, err := statFn(absPath); err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "invalid bpf_object %s: %v", bpfObject, err)

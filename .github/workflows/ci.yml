@@ -85,6 +85,18 @@ jobs:
         with:
           version: v2.12.2
           args: --timeout=5m
+          # Formatters (gofmt/goimports) are not part of `golangci-lint run` in
+          # v2; `fmt: true` applies them so the diff check below can gate on
+          # formatting.
+          fmt: true
+
+      - name: Fail on unformatted files
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git diff --stat
+            echo "::error::golangci-lint fmt modified files; run 'golangci-lint fmt' locally before pushing"
+            exit 1
+          fi
 
       - name: Run shellcheck
         run: shellcheck scripts/*.sh demo.sh
@@ -185,7 +197,9 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test ./... -v -covermode=atomic -coverpkg=./pkg/...,./cmd/... -coverprofile=coverage-${{ matrix.os }}.out -timeout 10m
+        # -race on the Linux leg only: it covers the race detector where most
+        # platform-specific code lives, without tripling CI runtime.
+        run: go test ./... -v -covermode=atomic -coverpkg=./pkg/...,./cmd/... -coverprofile=coverage-${{ matrix.os }}.out -timeout 10m ${{ matrix.os == 'ubuntu-24.04' && '-race' || '' }}
 
       - name: Coverage gate (ratchet)
         if: ${{ hashFiles(format('coverage-{0}.out', matrix.os)) != '' }}

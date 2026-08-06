@@ -30,6 +30,7 @@ type fileCov struct {
 	totalStmts int
 	coverStmts int
 	uncovered  []block
+	newFile    bool // file absent from the baseline
 }
 
 func main() {
@@ -102,6 +103,7 @@ func main() {
 	}
 
 	newFiles := 0
+	newUncovered := 0
 	var failing []*fileCov
 	if strings.TrimSpace(*baselinePath) != "" {
 		for rel, f := range summaries {
@@ -111,6 +113,13 @@ func main() {
 			min, ok := base.Files[rel]
 			if !ok {
 				newFiles++
+				// A brand-new file must not silently bypass the gate: require at
+				// least one covered statement, or an explicit baseline update.
+				if f.coverStmts == 0 {
+					f.newFile = true
+					newUncovered++
+					failing = append(failing, f)
+				}
 				continue
 			}
 			if cur := coverageFraction(f); cur < min-1e-9 {
@@ -150,7 +159,11 @@ func main() {
 	}
 
 	if strings.TrimSpace(*baselinePath) != "" {
-		fmt.Printf("coverage gate: FAIL (%d files dropped below their baseline coverage)\n", uncFiles)
+		if newUncovered > 0 {
+			fmt.Printf("coverage gate: FAIL (%d files dropped below baseline coverage, %d new files with no coverage)\n", uncFiles-newUncovered, newUncovered)
+		} else {
+			fmt.Printf("coverage gate: FAIL (%d files dropped below their baseline coverage)\n", uncFiles)
+		}
 	} else {
 		fmt.Printf("coverage gate: FAIL (%d uncovered statements across %d/%d pkg files)\n", uncStmts, uncFiles, checked)
 	}
@@ -162,7 +175,11 @@ func main() {
 		f := failing[i]
 		unc := f.totalStmts - f.coverStmts
 		if strings.TrimSpace(*baselinePath) != "" {
-			fmt.Printf("- %s: %.2f%% covered (%.2f%% required)\n", f.file, coverageFraction(f)*100, base.Files[f.file]*100)
+			if f.newFile {
+				fmt.Printf("- %s: NEW file with no covered statements (add tests, or regenerate the baseline with -update-baseline)\n", f.file)
+			} else {
+				fmt.Printf("- %s: %.2f%% covered (%.2f%% required)\n", f.file, coverageFraction(f)*100, base.Files[f.file]*100)
+			}
 		} else {
 			fmt.Printf("- %s: %d/%d uncovered statements\n", f.file, unc, f.totalStmts)
 		}
@@ -191,8 +208,9 @@ func fatalf(format string, args ...any) {
 }
 
 // baselineFile records the minimum accepted per-file statement coverage
-// (covered/total as a fraction in [0,1]). The gate fails only when a file's
-// coverage drops below its recorded entry.
+// (covered/total as a fraction in [0,1]). The gate fails when a file's
+// coverage drops below its recorded entry, or when a file absent from the
+// baseline has no covered statements at all.
 type baselineFile struct {
 	Version int                `json:"version"`
 	Files   map[string]float64 `json:"files"`
