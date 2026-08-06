@@ -115,7 +115,9 @@ func main() {
 				newFiles++
 				// A brand-new file must not silently bypass the gate: require at
 				// least one covered statement, or an explicit baseline update.
-				if f.coverStmts == 0 {
+				// Platform-constrained files (build tags) are exempt — one shared
+				// cross-OS baseline cannot track every OS's conditional files.
+				if f.coverStmts == 0 && !hasBuildConstraint(repoAbs, rel) {
 					f.newFile = true
 					newUncovered++
 					failing = append(failing, f)
@@ -366,6 +368,29 @@ func hasDoNotEdit(repoAbs, rel string, maxLines int) bool {
 	defer func() { _ = f.Close() }()
 
 	return scanFirstLinesFor(f, maxLines, "DO NOT EDIT")
+}
+
+// hasBuildConstraint reports whether the file carries a build constraint
+// (//go:build or legacy // +build) near the top. Constrained files are
+// platform-conditional, so under a single cross-OS baseline they are exempt
+// from the strict new-file rule (but still tracked once in the baseline).
+func hasBuildConstraint(repoAbs, rel string) bool {
+	abspath := filepath.Join(repoAbs, filepath.FromSlash(rel))
+	f, err := os.Open(abspath)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+
+	s := bufio.NewScanner(f)
+	s.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for i := 0; i < 32 && s.Scan(); i++ {
+		line := strings.TrimSpace(s.Text())
+		if strings.HasPrefix(line, "//go:build") || strings.HasPrefix(line, "// +build") {
+			return true
+		}
+	}
+	return false
 }
 
 func scanFirstLinesFor(r io.Reader, maxLines int, needle string) bool {

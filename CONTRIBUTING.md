@@ -51,10 +51,12 @@ lock in the improvement), regenerate the baseline and commit it:
 go run ./cmd/covergate -coverprofile coverage.out -repo . -baseline .covergate-baseline.json -update-baseline
 ```
 
-Files not yet in the baseline are reported but not gated **unless they have
-no covered statements at all** — a brand-new file with zero coverage fails the
-gate. Add tests, or regenerate the baseline (`-update-baseline`) once the file
-has coverage.
+Files not yet in the baseline are reported but not gated **unless they are
+platform-independent and have no covered statements at all** — a brand-new,
+untagged file with zero coverage fails the gate. Platform-constrained files
+(`//go:build` tags) are exempt: one shared cross-OS baseline cannot track
+every OS's conditional files. Add tests, or regenerate the baseline
+(`-update-baseline`) once the file has coverage.
 
 ### Lint / Format
 
