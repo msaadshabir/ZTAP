@@ -197,7 +197,7 @@ func _BpfClose(closers ...io.Closer) error {
 //
 // _BpfBytes holds the eBPF object inlined by tools/bpfgen so the
 // repository contains no binary artifacts; regenerate with
-// `go generate ./pkg/enforcer/...`.
+// `go generate ./internal/enforcer/...`.
 var _BpfBytes = []byte(
 	"\x7f\x45\x4c\x46\x02\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
 		"\x00\x01\x00\xf7\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00" +

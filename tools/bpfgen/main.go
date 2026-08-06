@@ -1,4 +1,4 @@
-// Command bpfgen generates the eBPF Go bindings for pkg/enforcer without
+// Command bpfgen generates the eBPF Go bindings for internal/enforcer without
 // committing binary artifacts: it runs bpf2go to compile bpf/filter.c and
 // then inlines the resulting object bytes into the generated Go source, so
 // the repository contains no *.o files (see Scorecard Binary-Artifacts).
@@ -29,7 +29,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	pkgDir := filepath.Join(repoRoot, "pkg", "enforcer")
+	pkgDir := filepath.Join(repoRoot, "internal", "enforcer")
 
 	args := []string{
 		"run", "github.com/cilium/ebpf/cmd/bpf2go",

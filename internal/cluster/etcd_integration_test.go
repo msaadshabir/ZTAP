@@ -14,7 +14,7 @@ import (
 
 // TestEtcdIntegration_SingleNode tests etcd election with a single node.
 // This test requires a real etcd server and is marked with the "integration" build tag.
-// Run with: go test -tags=integration -v ./pkg/cluster -run TestEtcdIntegration
+// Run with: go test -tags=integration -v ./internal/cluster -run TestEtcdIntegration
 func TestEtcdIntegration_SingleNode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
