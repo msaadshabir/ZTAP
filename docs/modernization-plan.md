@@ -4,10 +4,10 @@
 > Generated from a full codebase audit. Each phase is independently shippable; phases are ordered to
 > minimize merge conflicts (mechanical edits → additive CI work → big rename → deep refactors).
 >
-> **Status (2026-02):** Phases A and B are **complete and verified** against the tree (evidence in
+> **Status (2026-02):** Phases A, B and C are **complete and verified** against the tree (evidence in
 > the completed-workstreams tables below; a handful of residuals are listed there). The active
-> checklist is **C → D → E → F**. Pre-flight 0.2/0.3 baselines must be re-captured immediately
-> before Phase C starts — the `/tmp` snapshots are ephemeral and the binary has since been rebuilt.
+> checklist is **D → E → F**. Path references inside the A/B/C evidence tables reflect the layout
+> at the time of verification (the Phase C tables use the post-move `internal/` paths).
 >
 > **Scope decisions (agreed):**
 > - ✅ In scope: quick code modernization (A), CI/release supply chain (B), `pkg/`→`internal/` + cmd split (C), centralized config (D), anomaly service wire-up + hardening (E), `log/slog` migration (F).
@@ -31,7 +31,7 @@
   git status
   go test ./...
   ```
-- [ ] **0.2** Snapshot CLI surface (used to prove the Phase C restructure changes nothing user-visible):
+- [x] **0.2** Snapshot CLI surface (used to prove the Phase C restructure changes nothing user-visible):
   ```bash
   go build -o /tmp/ztap-baseline .
   /tmp/ztap-baseline --help > /tmp/ztap-help-baseline.txt
@@ -39,16 +39,20 @@
     /tmp/ztap-baseline "$c" --help > "/tmp/ztap-help-${c}-baseline.txt" 2>&1 || true
   done
   ```
-- [ ] **0.3** Snapshot policy round-trip (proves the yaml v2→v3 migration is wire-safe):
+  *(done on `modernization/main` before Phase C — `/tmp/ztap-baseline` sha256 `87907512…`)*
+- [x] **0.3** Snapshot policy round-trip (proves the yaml v2→v3 migration is wire-safe):
   ```bash
   go build -o /tmp/ztap-baseline .
   for f in examples/*.yaml; do /tmp/ztap-baseline policy validate -f "$f" || echo "BASELINE-FAIL: $f"; done
   ```
+  *(done — per-file outputs saved to `/tmp/ztap-policy-*-baseline.txt`; note `examples/deny-all.yaml`
+  intentionally exits 1: its `deny-all-default` policy has `egress: []` and the validator requires at
+  least one rule. That is baseline behavior, preserved byte-for-byte after C.)*
 
 > **Note:** 0.2/0.3 snapshots live in `/tmp` and are ephemeral — re-capture them on the working
 > branch immediately before Phase C starts (the baseline binary has since been rebuilt).
 
-- [ ] **0.4** Working branch: `git checkout -b modernization/main` (each phase merges or stacks; see commit splits).
+- [x] **0.4** Working branch: `git checkout -b modernization/main` (each phase merges or stacks; see commit splits).
 
 ---
 
@@ -89,12 +93,33 @@ items; the original detailed checklist is superseded.
 
 ---
 
-## Phase C — Structure: `pkg/` → `internal/` + cmd split
+## Phase C — Structure: `pkg/` → `internal/` + cmd split ✅ COMPLETE (verified 2026-02)
 
-**Goal:** idiomatic layout; `internal/` communicates app-not-library. Big rename — land as one
-focused PR (Phases A/B already merged; D/E/F branches stack on top).
+**Goal:** idiomatic layout; `internal/` communicates app-not-library. Big rename — landed as a
+focused 3-commit PR on `modernization/main`. Every item below was verified against the tree.
 
-### C.1 — Module path decision
+| Item | Evidence (verified in tree) |
+|---|---|
+| C.1 module path | Kept the bare `ztap` module path (decision recorded below); no `go.mod` churn |
+| C.2 move packages | `git mv pkg internal`; 0 imports of `ztap/pkg/` remain (verified by `rg '"ztap/pkg' --type go`); external deps containing `/pkg/` (`github.com/pkg/browser`, `go.etcd.io/etcd/pkg/v3`, `k8s.io/apimachinery/pkg/...`) untouched; `tools/bpfgen` path fixed |
+| C.2 exception | Not taken: no external importers exist (bare module path) so `internal/operator/api/v1alpha1` + `internal/policy` moved like everything else |
+| C.2 non-Go refs | `README.md`, `CONTRIBUTING.md`, `docs/**` (incl. `architecture.md`), `.github/copilot-instructions.md`, `.github/dependabot.yml` (2× `/pkg/anomaly`), `ci.yml` (coverpkg, eBPF drift check, docker context, fuzz targets), `release.yml` (docker context), `docker-compose.yml` — 0 stale `pkg/` refs outside `go.mod`/`go.sum` |
+| C.3 CLI layout | `cmd/ztap/main.go` entrypoint; flat `cmd` package (36 files) → `internal/cli` (`package cli`); `cmd/ztap-operator` + `cmd/covergate` stay; `Dockerfile` builds `./cmd/ztap`, `.goreleaser.yaml` `main: ./cmd/ztap`, `ci.yml` matrix build uses `./cmd/ztap` |
+| C.3 factory | All 21 `func init()`s in the old `cmd` package removed (`rg 'func init\(' internal/cli cmd/ztap` → 0); `NewRootCmd(version string)` in `internal/cli/root.go` registers the 19 top-level commands in one list; `PersistentPreRunE` logging behavior preserved verbatim; the old cluster-backend package-init side effect moved to `initClusterBackend(root)` called from `NewRootCmd` (runs once per construction, same observable behavior) |
+| C.3 command tree test | `internal/cli/root_test.go`: asserts all 19 top-level + nested commands with expected `Use`, persistent flags, and version propagation (`NewRootCmd("9.9.9-test")` → `ztap version` prints it) |
+| C.3 covergate | `cmd/covergate` `isGatedPath` now `internal/`+`cmd/`; `isExcludedByPattern` updated to `internal/enforcer/bpf_bpf*`; `.covergate-baseline.json` remapped: 84 `internal/` entries kept, 28 `cmd/`→`internal/cli/` paths renamed, `cmd/ztap/main.go` added at 0.0 (same convention as operator/covergate mains) |
+| C.4 help parity | `diff` of root + all 17 subcommand `--help` outputs vs pre-flight baseline: **identical**; nested subcommands (`api serve`, `aws inventory export`, `cluster config set-backend`, …) all present |
+| C.4 policy parity | `policy validate` output diff vs baseline for all 8 `examples/*.yaml` (incl. the intentional `deny-all.yaml` exit-1): **identical** |
+| C.4 tests | `go build ./... && go test ./... -race` green; `golangci-lint run` (CI-pinned v2.12.2) 0 issues; `golangci-lint fmt` clean. eBPF integration test (`TestEBPFIntegration`) not run — Linux-only, macOS host |
+| C.4 generated files | `internal/enforcer/bpf_bpf{el,eb}.go` comment updated to `./internal/enforcer/...` (matches `tools/bpfgen` output; bytecode bytes untouched — regeneration on Linux CI must stay byte-identical) |
+
+**Commits (landed on `main`, 2026-02):**
+1. `refactor: move pkg/ to internal/` (fc4de4e)
+2. `refactor: split CLI into cmd/ztap entrypoint and internal/cli with command factory` (cbd9b57)
+3. `chore: update covergate baseline and eBPF build paths for internal/ move` (76a1739)
+4. `docs: mark Phase C complete in modernization plan` (970961e)
+
+### C.1 — Module path decision (recorded)
 
 - [x] **Decision (2026-02): keep the bare `ztap` module path.** The earlier "recommended" rename
   to `github.com/msaadshabir/ZTAP` was re-scored: GoReleaser already works with `main: .`, the
@@ -106,59 +131,6 @@ focused PR (Phases A/B already merged; D/E/F branches stack on top).
   rg -l '"ztap/' --type go | xargs sed -i '' 's|"ztap/|"github.com/msaadshabir/ZTAP/|g'
   go mod tidy
   ```
-
-### C.2 — Move packages
-
-- [ ] Move everything, rewrite imports:
-  ```bash
-  git mv pkg internal
-  rg -l '/pkg/' --type go | xargs sed -i '' 's|/pkg/|/internal/|g'
-  go mod tidy && go build ./... && go test ./...
-  ```
-- [ ] **Exception decision:** if external tooling should import the CRD/policy types, keep
-  `pkg/operator/api/v1alpha1` + `pkg/policy` public under the new module path; otherwise move all.
-- [ ] Fix non-Go references: `rg '/pkg/' -g '!*.go'` — update `Dockerfile*`, workflows,
-  `scripts/*`, `docs/**`, `.github/copilot-instructions.md`, `pkg/anomaly/Dockerfile`
-  (which copies `detector.go`), `docker-compose.yml`.
-
-### C.3 — CLI restructure
-
-- [ ] Layout: root `main.go` → `cmd/ztap/main.go`; today's flat `cmd` package (41 files) →
-  `internal/cli` (same package, one import path change). Keep `cmd/covergate` and
-  `cmd/ztap-operator` where they are.
-  ```bash
-  mkdir -p cmd/ztap && git mv main.go cmd/ztap/main.go
-  git mv cmd internal/cli   # move the 41 files, not the two sub-commands — move those back:
-  git mv internal/cli/ztap-operator cmd/ztap-operator
-  git mv internal/cli/covergate cmd/covergate
-  # then fix package name + imports in internal/cli/*.go and cmd/ztap/main.go
-  ```
-- [ ] Replace the 20 `init()`-based registrations with an explicit `NewRootCmd(version string)`
-  factory in `internal/cli/root.go` (register subcommands in one list); `cmd/ztap/main.go` calls
-  `cli.NewRootCmd(Version).Execute()`. Preserve `PersistentPreRunE` logging behavior exactly
-  (current `cmd/root.go:17-44`).
-- [ ] Add a command-tree test: `internal/cli/root_test.go` asserting every expected command is
-  registered with the same `Use`/flags as before.
-- [ ] Update build paths: `Dockerfile`, `Dockerfile.operator`, `.goreleaser.yaml` (`main: ./cmd/ztap`),
-  `ci.yml` build-check (`go build -o ... ./cmd/ztap`), docs. **Also:** `cmd/covergate`
-  `isGatedPath` hardcodes `pkg/`/`cmd/` prefixes — update to `internal/`/`cmd/` or the gate
-  silently stops gating after the move.
-
-### C.4 — Verify against baseline
-
-```bash
-go build -o /tmp/ztap-new ./cmd/ztap
-diff <(/tmp/ztap-baseline --help) <(/tmp/ztap-new --help)
-for c in api grpc aws azure gcp agent compliance enforce version status cluster policy flows logs metrics user discovery audit; do
-  diff "/tmp/ztap-help-${c}-baseline.txt" <(/tmp/ztap-new "$c" --help 2>&1) || echo "HELP-DIFF: $c"
-done
-go test ./... -race
-sudo go test -tags=integration ./internal/enforcer -run TestEBPFIntegration -v   # Linux only
-```
-
-**Commits (in order):**
-1. `refactor: move pkg/ to internal/`
-2. `refactor: split CLI into cmd/ztap entrypoint and internal/cli with command factory`
 
 ---
 
@@ -233,7 +205,7 @@ round-trips; `rg 'yaml.Unmarshal' internal/cli` returns only the central loader.
   webhook when score > `threshold`, audit entry for high-severity anomalies.
 - [ ] Tests: mock HTTP server (httptest) for detector + pipeline; fail-open test; batch flush test.
 
-### E.2 — Python hardening (`pkg/anomaly/` → `internal/anomaly/py/` or keep dir, decide in C)
+### E.2 — Python hardening (`internal/anomaly/` — the dir was moved in C, kept in place)
 
 - [ ] **Determinism fix** in `service.py:21-22`: replace built-in `hash()` (randomized per
   `PYTHONHASHSEED`) with `int(ipaddress.ip_address(ip))` — current features are non-reproducible
@@ -251,7 +223,7 @@ round-trips; `rg 'yaml.Unmarshal' internal/cli` returns only the central loader.
 - [ ] Packaging: replace `requirements.txt` with `pyproject.toml` (ruff config inside; pinned
   deps); update dependabot pip path if the dir moved; add `ruff check` + `pytest` steps to the
   `test-python` CI job.
-- [ ] `pkg/anomaly/Dockerfile`: stop copying `detector.go`/`README.md` into the image, add
+- [ ] `internal/anomaly/Dockerfile`: stop copying `detector.go`/`README.md` into the image, add
   non-root `USER`, `HEALTHCHECK` on `/health`, CMD → gunicorn.
 
 **Verify:** end-to-end: start service with token → run `ztap agent --dry-run` with
@@ -296,7 +268,7 @@ round-trips; `rg 'yaml.Unmarshal' internal/cli` returns only the central loader.
 |---|---|---|---|---|---|
 | A | ✅ | ✅ | ✅ | `scripts/security_check.sh` | ✅ complete — see completed-workstreams table |
 | B | — | — | actionlint + zizmor | — | ✅ complete — residual: cosign verify on first tagged release |
-| C | ✅ | ✅ | ✅ | — | help-output diff (C.4), eBPF integration test |
+| C | ✅ | ✅ | ✅ | — | ✅ complete — help diff + policy round-trip vs baseline, eBPF integration test pending Linux CI |
 | D | ✅ | ✅ | ✅ | — | config round-trip + precedence tests |
 | E | ✅ | ✅ | ✅ | — | live service e2e, `pytest`, `ruff` |
 | F | ✅ | ✅ | ✅ | — | golden log-output tests |
