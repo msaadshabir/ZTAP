@@ -2,21 +2,18 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	"ztap/internal/cloud"
+	"ztap/internal/config"
 	"ztap/internal/logging"
 	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v3"
 )
 
-// azureConfig holds Azure-specific settings loaded from config.yaml.
+// azureConfig holds Azure-specific settings from the central config.
 type azureConfig struct {
 	SubscriptionID string
 	ResourceGroup  string
@@ -25,96 +22,33 @@ type azureConfig struct {
 	PriorityBase   int32
 }
 
-type azureConfigFile struct {
-	Azure struct {
-		Enabled        *bool  `yaml:"enabled"`
-		SubscriptionID string `yaml:"subscription_id"`
-		ResourceGroup  string `yaml:"resource_group"`
-		NSG            string `yaml:"nsg"`
-		RulePrefix     string `yaml:"rule_prefix"`
-		PriorityBase   int32  `yaml:"priority_base"`
-	} `yaml:"azure"`
+func loadAzureConfig(cfg *config.Config) azureConfig {
+	return azureConfig{
+		SubscriptionID: string(cfg.Azure.SubscriptionID),
+		ResourceGroup:  string(cfg.Azure.ResourceGroup),
+		NSG:            string(cfg.Azure.NSG),
+		RulePrefix:     string(cfg.Azure.RulePrefix),
+		PriorityBase:   cfg.Azure.PriorityBase,
+	}
 }
 
-func loadAzureConfig() (azureConfig, error) {
-	path := os.Getenv("ZTAP_CONFIG")
-	if path == "" {
-		path = "config.yaml"
-	}
-
-	cfg := azureConfig{}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return applyAzureEnv(cfg), nil
-		}
-		return azureConfig{}, fmt.Errorf("reading config file %s: %w", path, err)
-	}
-
-	var fileCfg azureConfigFile
-	if err := yaml.Unmarshal(data, &fileCfg); err != nil {
-		return azureConfig{}, fmt.Errorf("parsing config file %s: %w", path, err)
-	}
-
-	cfg.SubscriptionID = strings.TrimSpace(fileCfg.Azure.SubscriptionID)
-	cfg.ResourceGroup = strings.TrimSpace(fileCfg.Azure.ResourceGroup)
-	cfg.NSG = strings.TrimSpace(fileCfg.Azure.NSG)
-	cfg.RulePrefix = strings.TrimSpace(fileCfg.Azure.RulePrefix)
-	cfg.PriorityBase = fileCfg.Azure.PriorityBase
-
-	return applyAzureEnv(cfg), nil
-}
-
-func applyAzureEnv(cfg azureConfig) azureConfig {
-	if env := strings.TrimSpace(os.Getenv("ZTAP_AZURE_SUBSCRIPTION_ID")); env != "" {
-		cfg.SubscriptionID = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_AZURE_RESOURCE_GROUP")); env != "" {
-		cfg.ResourceGroup = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_AZURE_NSG")); env != "" {
-		cfg.NSG = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_AZURE_RULE_PREFIX")); env != "" {
-		cfg.RulePrefix = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_AZURE_PRIORITY_BASE")); env != "" {
-		if v, err := parseInt32(env); err == nil {
-			cfg.PriorityBase = v
-		}
-	}
-	return cfg
-}
-
-func parseInt32(s string) (int32, error) {
-	v, err := strconv.ParseInt(s, 10, 32)
-	if err != nil {
-		return 0, err
-	}
-	return int32(v), nil
-}
-
-func newAzureCmd() *cobra.Command {
+func newAzureCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "azure",
 		Short: "Manage Azure NSG synchronization",
 		Long:  "Synchronize ZTAP network policies into Azure Network Security Groups.",
 	}
-	c.AddCommand(newAzureNSGSyncCmd())
+	c.AddCommand(newAzureNSGSyncCmd(app))
 	return c
 }
 
-func newAzureNSGSyncCmd() *cobra.Command {
+func newAzureNSGSyncCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "nsg-sync <policy-file>",
 		Short: "Sync a policy into an Azure NSG",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := loadAzureConfig()
-			if err != nil {
-				logging.Fatalf("Failed to load config: %v", err)
-			}
+			cfg := loadAzureConfig(app.Config())
 
 			flagSub, _ := cmd.Flags().GetString("subscription-id")
 			flagRG, _ := cmd.Flags().GetString("resource-group")

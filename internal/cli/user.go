@@ -10,28 +10,29 @@ import (
 	"text/tabwriter"
 
 	"ztap/internal/auth"
+	"ztap/internal/config"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
-func newUserCmd() *cobra.Command {
+func newUserCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "user",
 		Short: "Manage users and authentication",
 		Long:  `Create, list, and manage users for ZTAP authentication`,
 	}
-	c.AddCommand(newCreateUserCmd())
-	c.AddCommand(newListUsersCmd())
-	c.AddCommand(newChangePasswordCmd())
-	c.AddCommand(newDisableUserCmd())
-	c.AddCommand(newEnableUserCmd())
-	c.AddCommand(newLoginCmd())
-	c.AddCommand(newLogoutCmd())
+	c.AddCommand(newCreateUserCmd(app))
+	c.AddCommand(newListUsersCmd(app))
+	c.AddCommand(newChangePasswordCmd(app))
+	c.AddCommand(newDisableUserCmd(app))
+	c.AddCommand(newEnableUserCmd(app))
+	c.AddCommand(newLoginCmd(app))
+	c.AddCommand(newLogoutCmd(app))
 	return c
 }
 
-func newCreateUserCmd() *cobra.Command {
+func newCreateUserCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "create <username>",
 		Short: "Create a new user",
@@ -41,7 +42,7 @@ func newCreateUserCmd() *cobra.Command {
 			role, _ := cmd.Flags().GetString("role")
 
 			// Get auth manager
-			am, err := getAuthManager()
+			am, err := getAuthManager(app.Config())
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -91,12 +92,12 @@ func newCreateUserCmd() *cobra.Command {
 	return c
 }
 
-func newListUsersCmd() *cobra.Command {
+func newListUsersCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "list",
 		Short: "List all users",
 		Run: func(cmd *cobra.Command, args []string) {
-			am, err := getAuthManager()
+			am, err := getAuthManager(app.Config())
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -138,7 +139,7 @@ func newListUsersCmd() *cobra.Command {
 	return c
 }
 
-func newChangePasswordCmd() *cobra.Command {
+func newChangePasswordCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "change-password <username>",
 		Short: "Change user password",
@@ -146,7 +147,7 @@ func newChangePasswordCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			username := args[0]
 
-			am, err := getAuthManager()
+			am, err := getAuthManager(app.Config())
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -204,7 +205,7 @@ func newChangePasswordCmd() *cobra.Command {
 	return c
 }
 
-func newDisableUserCmd() *cobra.Command {
+func newDisableUserCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "disable <username>",
 		Short: "Disable a user account",
@@ -212,7 +213,7 @@ func newDisableUserCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			username := args[0]
 
-			am, err := getAuthManager()
+			am, err := getAuthManager(app.Config())
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -230,7 +231,7 @@ func newDisableUserCmd() *cobra.Command {
 	return c
 }
 
-func newEnableUserCmd() *cobra.Command {
+func newEnableUserCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "enable <username>",
 		Short: "Enable a user account",
@@ -238,7 +239,7 @@ func newEnableUserCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			username := args[0]
 
-			am, err := getAuthManager()
+			am, err := getAuthManager(app.Config())
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -256,7 +257,7 @@ func newEnableUserCmd() *cobra.Command {
 	return c
 }
 
-func newLoginCmd() *cobra.Command {
+func newLoginCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate and create a session",
@@ -273,7 +274,7 @@ func newLoginCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			am, err := getAuthManager()
+			am, err := getAuthManager(app.Config())
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -300,7 +301,7 @@ func newLoginCmd() *cobra.Command {
 	return c
 }
 
-func newLogoutCmd() *cobra.Command {
+func newLogoutCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "logout",
 		Short: "Logout and invalidate session",
@@ -312,7 +313,7 @@ func newLogoutCmd() *cobra.Command {
 				return
 			}
 
-			am, err := getAuthManager()
+			am, err := getAuthManager(app.Config())
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -333,8 +334,8 @@ func newLogoutCmd() *cobra.Command {
 	return c
 }
 
-func getAuthManager() (*auth.AuthManager, error) {
-	return getAuthManagerFromConfig()
+func getAuthManager(cfg *config.Config) (*auth.AuthManager, error) {
+	return getAuthManagerFromConfig(cfg)
 }
 
 func getTokenFile() string {
@@ -350,7 +351,11 @@ func CheckAuth(perm auth.Permission) error {
 		return errors.New("not authenticated: please run 'ztap login'")
 	}
 
-	am, err := getAuthManager()
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	am, err := getAuthManager(cfg)
 	if err != nil {
 		return err
 	}

@@ -76,7 +76,7 @@ spec:
 			// without refactoring to return an error.
 			// For now, we'll just test that it runs without panic for valid input.
 			if !tt.wantExit {
-				cmd := newPolicyValidateCmd()
+				cmd := newPolicyValidateCmd(&App{})
 				cmd.SetArgs(tt.args[1:]) // skip "validate"
 				if err := cmd.Flags().Set("file", tt.args[2]); err != nil {
 					t.Fatal(err)

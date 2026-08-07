@@ -14,12 +14,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newStatusCmd() *cobra.Command {
+func newStatusCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "status",
 		Short: "Show status of on-premises and cloud resources",
 		Long:  `Display discovered resources from local system and cloud providers (AWS, Azure, GCP)`,
 		Run: func(cmd *cobra.Command, args []string) {
+			central := app.Config()
 			region, _ := cmd.Flags().GetString("region")
 			showAWS, _ := cmd.Flags().GetBool("aws")
 			showAzure, _ := cmd.Flags().GetBool("azure")
@@ -41,10 +42,8 @@ func newStatusCmd() *cobra.Command {
 
 			// Show AWS resources if requested
 			if showAWS {
-				cfg, err := loadAWSConfig()
-				if err != nil {
-					logging.Warnf("Failed to load AWS config: %v", err)
-				} else if cfg.Region != "" && !cmd.Flags().Changed("region") {
+				cfg := loadAWSConfig(central)
+				if cfg.Region != "" && !cmd.Flags().Changed("region") {
 					region = cfg.Region
 				}
 				if region == "" {
@@ -82,10 +81,7 @@ func newStatusCmd() *cobra.Command {
 
 			if showAzure {
 				fmt.Println()
-				cfg, err := loadAzureConfig()
-				if err != nil {
-					logging.Warnf("Failed to load Azure config: %v", err)
-				}
+				cfg := loadAzureConfig(central)
 
 				flagSubID, _ := cmd.Flags().GetString("azure-subscription-id")
 				subscriptionID := firstNonEmpty(strings.TrimSpace(flagSubID), cfg.SubscriptionID)
@@ -149,10 +145,7 @@ func newStatusCmd() *cobra.Command {
 
 			if showGCP {
 				fmt.Println()
-				cfg, err := loadGCPConfig()
-				if err != nil {
-					logging.Warnf("Failed to load GCP config: %v", err)
-				}
+				cfg := loadGCPConfig(central)
 
 				flagProject, _ := cmd.Flags().GetString("project-id")
 				flagNetwork, _ := cmd.Flags().GetString("network")

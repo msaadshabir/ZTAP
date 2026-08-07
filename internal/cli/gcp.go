@@ -2,21 +2,20 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"ztap/internal/cloud"
+	"ztap/internal/config"
 	"ztap/internal/logging"
 	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v3"
 )
 
-// gcpConfig holds GCP-specific settings loaded from config.yaml.
+// gcpConfig holds GCP-specific settings from the central config.
 type gcpConfig struct {
 	ProjectID    string
 	Network      string
@@ -24,83 +23,32 @@ type gcpConfig struct {
 	PriorityBase int32
 }
 
-type gcpConfigFile struct {
-	GCP struct {
-		Enabled      *bool  `yaml:"enabled"`
-		ProjectID    string `yaml:"project_id"`
-		Network      string `yaml:"network"`
-		RulePrefix   string `yaml:"rule_prefix"`
-		PriorityBase int32  `yaml:"priority_base"`
-	} `yaml:"gcp"`
+func loadGCPConfig(cfg *config.Config) gcpConfig {
+	return gcpConfig{
+		ProjectID:    string(cfg.GCP.ProjectID),
+		Network:      string(cfg.GCP.Network),
+		RulePrefix:   string(cfg.GCP.RulePrefix),
+		PriorityBase: cfg.GCP.PriorityBase,
+	}
 }
 
-func loadGCPConfig() (gcpConfig, error) {
-	path := os.Getenv("ZTAP_CONFIG")
-	if path == "" {
-		path = "config.yaml"
-	}
-
-	cfg := gcpConfig{}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return applyGCPEnv(cfg), nil
-		}
-		return gcpConfig{}, fmt.Errorf("reading config file %s: %w", path, err)
-	}
-
-	var fileCfg gcpConfigFile
-	if err := yaml.Unmarshal(data, &fileCfg); err != nil {
-		return gcpConfig{}, fmt.Errorf("parsing config file %s: %w", path, err)
-	}
-
-	cfg.ProjectID = strings.TrimSpace(fileCfg.GCP.ProjectID)
-	cfg.Network = strings.TrimSpace(fileCfg.GCP.Network)
-	cfg.RulePrefix = strings.TrimSpace(fileCfg.GCP.RulePrefix)
-	cfg.PriorityBase = fileCfg.GCP.PriorityBase
-
-	return applyGCPEnv(cfg), nil
-}
-
-func applyGCPEnv(cfg gcpConfig) gcpConfig {
-	if env := strings.TrimSpace(os.Getenv("ZTAP_GCP_PROJECT_ID")); env != "" {
-		cfg.ProjectID = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_GCP_NETWORK")); env != "" {
-		cfg.Network = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_GCP_RULE_PREFIX")); env != "" {
-		cfg.RulePrefix = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_GCP_PRIORITY_BASE")); env != "" {
-		if v, err := parseInt32(env); err == nil {
-			cfg.PriorityBase = v
-		}
-	}
-	return cfg
-}
-
-func newGcpCmd() *cobra.Command {
+func newGcpCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "gcp",
 		Short: "Manage GCP firewall synchronization",
 		Long:  "Synchronize ZTAP network policies into GCP VPC firewall rules.",
 	}
-	c.AddCommand(newGcpFirewallSyncCmd())
+	c.AddCommand(newGcpFirewallSyncCmd(app))
 	return c
 }
 
-func newGcpFirewallSyncCmd() *cobra.Command {
+func newGcpFirewallSyncCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "firewall-sync <policy-file>",
 		Short: "Sync a policy into GCP VPC firewall rules",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := loadGCPConfig()
-			if err != nil {
-				logging.Fatalf("Failed to load config: %v", err)
-			}
+			cfg := loadGCPConfig(app.Config())
 
 			flagProject, _ := cmd.Flags().GetString("project-id")
 			flagNetwork, _ := cmd.Flags().GetString("network")

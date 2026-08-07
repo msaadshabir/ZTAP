@@ -68,12 +68,12 @@ type RateLimitBucket struct {
 
 // APIRateLimit is the REST API rate limiting sub-section.
 type APIRateLimit struct {
-	Enabled           bool              `yaml:"enabled"`
-	TrustProxyHeaders bool              `yaml:"trust_proxy_headers"`
-	Unauthenticated   RateLimitBucket   `yaml:"unauthenticated"`
-	PerIP             RateLimitBucket   `yaml:"per_ip"`
-	PerToken          RateLimitBucket   `yaml:"per_token"`
-	ExemptPaths       []string          `yaml:"exempt_paths"`
+	Enabled           bool            `yaml:"enabled"`
+	TrustProxyHeaders bool            `yaml:"trust_proxy_headers"`
+	Unauthenticated   RateLimitBucket `yaml:"unauthenticated"`
+	PerIP             RateLimitBucket `yaml:"per_ip"`
+	PerToken          RateLimitBucket `yaml:"per_token"`
+	ExemptPaths       []string        `yaml:"exempt_paths"`
 }
 
 // GRPC is the gRPC API server section.
@@ -100,8 +100,8 @@ type Auth struct {
 
 // AuthSessions is the auth.sessions sub-section.
 type AuthSessions struct {
-	Backend String            `yaml:"backend"`
-	TTL     Duration          `yaml:"ttl"`
+	Backend String             `yaml:"backend"`
+	TTL     Duration           `yaml:"ttl"`
 	SQLite  AuthSessionsSQLite `yaml:"sqlite"`
 }
 
@@ -112,11 +112,11 @@ type AuthSessionsSQLite struct {
 
 // Cluster is the cluster coordination section (policy sync + leader election).
 type Cluster struct {
-	Backend     String         `yaml:"backend"`
-	NodeID      String         `yaml:"node_id"`
-	NodeAddress String         `yaml:"node_address"`
+	Backend     String          `yaml:"backend"`
+	NodeID      String          `yaml:"node_id"`
+	NodeAddress String          `yaml:"node_address"`
 	Election    ClusterElection `yaml:"election"`
-	Etcd        Etcd           `yaml:"etcd"`
+	Etcd        Etcd            `yaml:"etcd"`
 }
 
 // ClusterElection is the cluster.election sub-section.
@@ -169,13 +169,13 @@ type Logging struct {
 
 // Alerting is the alerting section.
 type Alerting struct {
-	Enabled     bool      `yaml:"enabled"`
-	QueueSize   int       `yaml:"queue_size"`
-	Workers     int       `yaml:"workers"`
-	Timeout     Duration  `yaml:"timeout"`
-	DedupeTTL   Duration  `yaml:"dedupe_ttl"`
-	Slack       Slack     `yaml:"slack"`
-	PagerDuty   PagerDuty `yaml:"pagerduty"`
+	Enabled   bool      `yaml:"enabled"`
+	QueueSize int       `yaml:"queue_size"`
+	Workers   int       `yaml:"workers"`
+	Timeout   Duration  `yaml:"timeout"`
+	DedupeTTL Duration  `yaml:"dedupe_ttl"`
+	Slack     Slack     `yaml:"slack"`
+	PagerDuty PagerDuty `yaml:"pagerduty"`
 }
 
 // Slack is the alerting.slack sub-section.
@@ -254,14 +254,14 @@ type Policy struct {
 
 // Anomaly is the anomaly detection section (consumed by the agent pipeline).
 type Anomaly struct {
-	Enabled       bool    `yaml:"enabled"`
-	Endpoint      String  `yaml:"endpoint"`
-	Threshold     float64 `yaml:"threshold"`
-	AlertEmail    String  `yaml:"alert_email"`
-	BatchSize     int     `yaml:"batch_size"`
+	Enabled       bool     `yaml:"enabled"`
+	Endpoint      String   `yaml:"endpoint"`
+	Threshold     float64  `yaml:"threshold"`
+	AlertEmail    String   `yaml:"alert_email"`
+	BatchSize     int      `yaml:"batch_size"`
 	FlushInterval Duration `yaml:"flush_interval"`
-	AuthToken     String  `yaml:"auth_token"`
-	FailOpen      bool    `yaml:"fail_open"`
+	AuthToken     String   `yaml:"auth_token"`
+	FailOpen      bool     `yaml:"fail_open"`
 }
 
 // Load resolves the config file path (ZTAP_CONFIG env > path > ./config.yaml),

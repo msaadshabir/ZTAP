@@ -12,29 +12,32 @@ import (
 	"time"
 
 	"ztap/internal/audit"
+	"ztap/internal/config"
 
 	"github.com/spf13/cobra"
 )
 
-func newAuditCmd() *cobra.Command {
+func newAuditCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "audit",
 		Short: "Audit log management",
 		Long:  `View and verify tamper-proof audit logs for all policy and system changes.`,
 	}
-	c.AddCommand(newAuditViewCmd())
-	c.AddCommand(newAuditVerifyCmd())
-	c.AddCommand(newAuditStatsCmd())
+	c.AddCommand(newAuditViewCmd(app))
+	c.AddCommand(newAuditVerifyCmd(app))
+	c.AddCommand(newAuditStatsCmd(app))
 	c.AddCommand(newAuditKeygenCmd())
 	return c
 }
 
-func newAuditViewCmd() *cobra.Command {
+func newAuditViewCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "view",
 		Short: "View audit log entries",
 		Long:  `Query and display audit log entries with optional filtering.`,
-		RunE:  runAuditView,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAuditView(cmd, args, app.Config())
+		},
 	}
 	// View command flags
 	c.Flags().StringVar(&auditEventType, "type", "", "Filter by event type (e.g., policy.created, user.login)")
@@ -47,12 +50,14 @@ func newAuditViewCmd() *cobra.Command {
 	return c
 }
 
-func newAuditVerifyCmd() *cobra.Command {
+func newAuditVerifyCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "verify",
 		Short: "Verify audit log integrity",
 		Long:  `Verify the cryptographic integrity of the audit log to detect tampering.`,
-		RunE:  runAuditVerify,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAuditVerify(cmd, args, app.Config())
+		},
 	}
 	return c
 }
@@ -102,12 +107,14 @@ func newAuditKeygenCmd() *cobra.Command {
 	return c
 }
 
-func newAuditStatsCmd() *cobra.Command {
+func newAuditStatsCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "stats",
 		Short: "Display audit log statistics",
 		Long:  `Show statistics about the audit log including size, entry count, and last modification.`,
-		RunE:  runAuditStats,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAuditStats(cmd, args, app.Config())
+		},
 	}
 	return c
 }
@@ -122,13 +129,13 @@ var (
 	auditFollow    bool
 )
 
-func runAuditView(cmd *cobra.Command, args []string) error {
+func runAuditView(cmd *cobra.Command, args []string, central *config.Config) error {
 	logPath, err := getAuditLogPath()
 	if err != nil {
 		return err
 	}
 
-	opts, _, err := loadAuditConfig()
+	opts, _, err := loadAuditConfig(central)
 	if err != nil {
 		return err
 	}
@@ -199,13 +206,13 @@ func runAuditView(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runAuditVerify(cmd *cobra.Command, args []string) error {
+func runAuditVerify(cmd *cobra.Command, args []string, central *config.Config) error {
 	logPath, err := getAuditLogPath()
 	if err != nil {
 		return err
 	}
 
-	cfg, verifier, err := loadAuditConfig()
+	cfg, verifier, err := loadAuditConfig(central)
 	if err != nil {
 		return err
 	}
@@ -248,13 +255,13 @@ func runAuditVerify(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runAuditStats(cmd *cobra.Command, args []string) error {
+func runAuditStats(cmd *cobra.Command, args []string, central *config.Config) error {
 	logPath, err := getAuditLogPath()
 	if err != nil {
 		return err
 	}
 
-	opts, _, err := loadAuditConfig()
+	opts, _, err := loadAuditConfig(central)
 	if err != nil {
 		return err
 	}

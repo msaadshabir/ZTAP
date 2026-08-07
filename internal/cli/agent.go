@@ -19,11 +19,12 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-func newAgentCmd() *cobra.Command {
+func newAgentCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "agent",
 		Short: "Run ZTAP node agent for Kubernetes enforcement",
 		Run: func(cmd *cobra.Command, args []string) {
+			central := app.Config()
 			namespace, _ := cmd.Flags().GetString("namespace")
 			namespacesCSV, _ := cmd.Flags().GetString("namespaces")
 			allNamespaces, _ := cmd.Flags().GetBool("all-namespaces")
@@ -53,7 +54,7 @@ func newAgentCmd() *cobra.Command {
 				logging.Fatalf("Failed to get in-cluster config: %v", err)
 			}
 
-			auditOpts, _, err := loadAuditConfig()
+			auditOpts, _, err := loadAuditConfig(central)
 			if err != nil {
 				logging.Fatalf("Failed to load audit config: %v", err)
 			}

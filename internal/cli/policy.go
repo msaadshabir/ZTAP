@@ -19,7 +19,7 @@ import (
 // Global policy sync instance (initialized when cluster is initialized)
 var policySync cluster.PolicySync
 
-func newPolicyCmd() *cobra.Command {
+func newPolicyCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "policy",
 		Short: "Manage distributed policy synchronization",
@@ -32,7 +32,7 @@ func newPolicyCmd() *cobra.Command {
 	c.AddCommand(newPolicyShowCmd())
 	c.AddCommand(newPolicyHistoryCmd())
 	c.AddCommand(newPolicyRollbackCmd())
-	c.AddCommand(newPolicyValidateCmd())
+	c.AddCommand(newPolicyValidateCmd(app))
 	return c
 }
 
@@ -330,7 +330,7 @@ func newPolicyRollbackCmd() *cobra.Command {
 	return c
 }
 
-func newPolicyValidateCmd() *cobra.Command {
+func newPolicyValidateCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "validate",
 		Short: "Validate a policy file locally",

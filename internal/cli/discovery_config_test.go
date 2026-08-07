@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"ztap/internal/config"
 	"ztap/internal/discovery"
 )
 
@@ -18,7 +19,11 @@ func TestGetDiscoveryBackendDefaultsToInMemory(t *testing.T) {
 	resetDiscoveryState()
 	t.Setenv("ZTAP_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
 
-	backend, err := getDiscoveryBackend()
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("config.Load returned error: %v", err)
+	}
+	backend, err := getDiscoveryBackend(cfg)
 	if err != nil {
 		t.Fatalf("getDiscoveryBackend returned error: %v", err)
 	}
@@ -48,7 +53,11 @@ discovery:
 
 	t.Setenv("ZTAP_CONFIG", configPath)
 
-	backend, err := getDiscoveryBackend()
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("config.Load returned error: %v", err)
+	}
+	backend, err := getDiscoveryBackend(cfg)
 	if err != nil {
 		t.Fatalf("getDiscoveryBackend returned error: %v", err)
 	}

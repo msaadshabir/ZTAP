@@ -8,6 +8,7 @@ import (
 
 	"ztap/internal/audit"
 	"ztap/internal/auth"
+	"ztap/internal/config"
 )
 
 // DefaultAuthManager returns an AuthManager backed by the per-user store
@@ -24,8 +25,10 @@ func DefaultAuthManager() (*auth.AuthManager, error) {
 // section of the config file, falling back to ~/.ztap/audit.log when no
 // config is present.
 func DefaultAuditLogger() (*audit.AuditLogger, error) {
-	if opts, _, err := audit.LoadConfig(); err == nil {
-		return audit.NewAuditLoggerWithOptions(opts)
+	if cfg, err := config.Load(""); err == nil {
+		if opts, _, err := audit.OptionsFromSection(cfg.Audit); err == nil {
+			return audit.NewAuditLoggerWithOptions(opts)
+		}
 	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {

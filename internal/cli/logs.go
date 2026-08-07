@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"ztap/internal/logging"
+	"ztap/internal/config"
 	"ztap/internal/paths"
 
 	"github.com/spf13/cobra"
@@ -56,7 +56,7 @@ type logFilters struct {
 	Policy   string
 }
 
-func newLogsCmd() *cobra.Command {
+func newLogsCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "logs",
 		Short: "View ZTAP logs",
@@ -74,7 +74,7 @@ func newLogsCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			logFile := resolveLogFilePath()
+			logFile := resolveLogFilePath(app.Config())
 			filters := logFilters{
 				MinLevel: minLevel,
 				Contains: strings.TrimSpace(contains),
@@ -145,20 +145,11 @@ func levelToMinLevel(value string) logsMinLevel {
 	}
 }
 
-func resolveLogFilePath() string {
-	if v := strings.TrimSpace(os.Getenv("ZTAP_LOG_FILE")); v != "" {
-		return paths.Expand(v)
-	}
-
-	configPath := os.Getenv("ZTAP_CONFIG")
-	if configPath == "" {
-		configPath = "config.yaml"
-	}
-	cfg, err := logging.LoadConfig(configPath)
-	if err == nil {
-		if strings.TrimSpace(cfg.File) != "" {
-			return paths.Expand(cfg.File)
-		}
+func resolveLogFilePath(cfg *config.Config) string {
+	// ZTAP_LOG_FILE is applied by the central loader, so cfg.Logging.File
+	// already reflects env > file > default.
+	if strings.TrimSpace(cfg.Logging.File) != "" {
+		return paths.Expand(cfg.Logging.File)
 	}
 
 	home, err := os.UserHomeDir()

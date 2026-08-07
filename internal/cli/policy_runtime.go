@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"ztap/internal/cluster"
+	"ztap/internal/config"
 	"ztap/internal/logging"
 )
 
-func initPolicyRuntime(ctx context.Context, nodeAddress string) (cluster.LeaderElection, cluster.PolicyManager, func(), error) {
+func initPolicyRuntime(ctx context.Context, nodeAddress string, cfg *config.Config) (cluster.LeaderElection, cluster.PolicyManager, func(), error) {
 	nodeAddress = strings.TrimSpace(nodeAddress)
 	if nodeAddress == "" {
 		nodeAddress = "127.0.0.1:0"
@@ -24,10 +25,7 @@ func initPolicyRuntime(ctx context.Context, nodeAddress string) (cluster.LeaderE
 		return nil, nil, nil, fmt.Errorf("getting hostname: %w", err)
 	}
 
-	runtimeCfg, err := loadClusterRuntimeConfig()
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	runtimeCfg := loadClusterRuntimeConfig(cfg)
 
 	nodeID := strings.TrimSpace(runtimeCfg.NodeID)
 	if nodeID == "" {

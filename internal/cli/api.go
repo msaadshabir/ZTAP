@@ -10,118 +10,103 @@ import (
 
 	"ztap/internal/alert"
 	"ztap/internal/apihttp"
+	"ztap/internal/config"
 	"ztap/internal/logging"
 	"ztap/internal/metrics"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v3"
 )
 
-func newApiCmd() *cobra.Command {
+func newApiCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "api",
 		Short: "Run the ZTAP API server",
 	}
-	c.AddCommand(newApiServeCmd())
+	c.AddCommand(newApiServeCmd(app))
 	return c
 }
 
-func newApiServeCmd() *cobra.Command {
+func newApiServeCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the REST API server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadAPIServerConfig()
-			if err != nil {
-				return err
-			}
+			central := app.Config()
+			cfg := apiServerConfig(central)
 
-			alertCfg, err := loadAlertConfig()
-			if err != nil {
-				return err
-			}
-
-			var alertManager *alert.Manager
-			if alertCfg.Enabled {
-				alertManager, err = alert.NewManagerFromConfig(alertCfg)
-				if err != nil {
-					return err
-				}
-			}
-
+			// Flags take precedence over config (flag > env > config > default).
 			listen, _ := cmd.Flags().GetString("listen")
 			if strings.TrimSpace(listen) != "" {
 				cfg.Listen = listen
 			}
-			authEnabled, _ := cmd.Flags().GetBool("auth")
-			cfg.AuthEnabled = authEnabled
+			if cmd.Flags().Changed("auth") {
+				cfg.AuthEnabled, _ = cmd.Flags().GetBool("auth")
+			}
+			if cmd.Flags().Changed("tls") {
+				cfg.TLS.Enabled, _ = cmd.Flags().GetBool("tls")
+			}
+			if v, _ := cmd.Flags().GetString("tls-cert"); strings.TrimSpace(v) != "" {
+				cfg.TLS.CertFile = v
+			}
+			if v, _ := cmd.Flags().GetString("tls-key"); strings.TrimSpace(v) != "" {
+				cfg.TLS.KeyFile = v
+			}
+			if cmd.Flags().Changed("rate-limit") {
+				cfg.RateLimit.Enabled, _ = cmd.Flags().GetBool("rate-limit")
+			}
+			if cmd.Flags().Changed("rate-limit-trust-proxy") {
+				cfg.RateLimit.TrustProxyHeaders, _ = cmd.Flags().GetBool("rate-limit-trust-proxy")
+			}
+			if cmd.Flags().Changed("rate-limit-per-ip-rps") {
+				cfg.RateLimit.PerIP.RPS, _ = cmd.Flags().GetFloat64("rate-limit-per-ip-rps")
+			}
+			if cmd.Flags().Changed("rate-limit-per-ip-burst") {
+				cfg.RateLimit.PerIP.Burst, _ = cmd.Flags().GetInt("rate-limit-per-ip-burst")
+			}
+			if cmd.Flags().Changed("rate-limit-per-token-rps") {
+				cfg.RateLimit.PerToken.RPS, _ = cmd.Flags().GetFloat64("rate-limit-per-token-rps")
+			}
+			if cmd.Flags().Changed("rate-limit-per-token-burst") {
+				cfg.RateLimit.PerToken.Burst, _ = cmd.Flags().GetInt("rate-limit-per-token-burst")
+			}
+			if cmd.Flags().Changed("rate-limit-unauth-rps") {
+				cfg.RateLimit.Unauthenticated.RPS, _ = cmd.Flags().GetFloat64("rate-limit-unauth-rps")
+			}
+			if cmd.Flags().Changed("rate-limit-unauth-burst") {
+				cfg.RateLimit.Unauthenticated.Burst, _ = cmd.Flags().GetInt("rate-limit-unauth-burst")
+			}
 
-			rlEnabled, _ := cmd.Flags().GetBool("rate-limit")
-			if rlEnabled {
-				cfg.RateLimit.Enabled = true
-			}
-			rlTrustProxy, _ := cmd.Flags().GetBool("rate-limit-trust-proxy")
-			if rlTrustProxy {
-				cfg.RateLimit.TrustProxyHeaders = true
-			}
-			rlPerIPRPS, _ := cmd.Flags().GetFloat64("rate-limit-per-ip-rps")
-			if rlPerIPRPS > 0 {
-				cfg.RateLimit.PerIP.RPS = rlPerIPRPS
-			}
-			rlPerIPBurst, _ := cmd.Flags().GetInt("rate-limit-per-ip-burst")
-			if rlPerIPBurst > 0 {
-				cfg.RateLimit.PerIP.Burst = rlPerIPBurst
-			}
-			rlPerTokenRPS, _ := cmd.Flags().GetFloat64("rate-limit-per-token-rps")
-			if rlPerTokenRPS > 0 {
-				cfg.RateLimit.PerToken.RPS = rlPerTokenRPS
-			}
-			rlPerTokenBurst, _ := cmd.Flags().GetInt("rate-limit-per-token-burst")
-			if rlPerTokenBurst > 0 {
-				cfg.RateLimit.PerToken.Burst = rlPerTokenBurst
-			}
-			rlUnauthRPS, _ := cmd.Flags().GetFloat64("rate-limit-unauth-rps")
-			if rlUnauthRPS > 0 {
-				cfg.RateLimit.Unauthenticated.RPS = rlUnauthRPS
-			}
-			rlUnauthBurst, _ := cmd.Flags().GetInt("rate-limit-unauth-burst")
-			if rlUnauthBurst > 0 {
-				cfg.RateLimit.Unauthenticated.Burst = rlUnauthBurst
-			}
+			alertCfg := alertConfig(central)
 
-			tlsEnabled, _ := cmd.Flags().GetBool("tls")
-			if tlsEnabled {
-				cfg.TLS.Enabled = true
-			}
-			tlsCert, _ := cmd.Flags().GetString("tls-cert")
-			if strings.TrimSpace(tlsCert) != "" {
-				cfg.TLS.CertFile = tlsCert
-			}
-			tlsKey, _ := cmd.Flags().GetString("tls-key")
-			if strings.TrimSpace(tlsKey) != "" {
-				cfg.TLS.KeyFile = tlsKey
+			var alertManager *alert.Manager
+			if alertCfg.Enabled {
+				alertManager, err := alert.NewManagerFromConfig(alertCfg)
+				if err != nil {
+					return err
+				}
+				defer alertManager.Close()
 			}
 
 			// Initialize metrics so /metrics includes ZTAP counters.
 			metrics.GetCollector()
 
-			am, err := getAuthManagerFromConfig()
+			am, err := getAuthManagerFromConfig(central)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = am.Close() }()
 
-			clusterElection, policyManager, cleanup, err := initPolicyRuntime(context.Background(), cfg.Listen)
+			clusterElection, policyManager, cleanup, err := initPolicyRuntime(context.Background(), cfg.Listen, central)
 			if err != nil {
 				return err
 			}
 			defer cleanup()
 
-			sessionsPath, err := resolvedSessionsSQLitePath()
+			sessionsPath, err := resolvedSessionsSQLitePath(central)
 			if err != nil {
 				return err
 			}
-			disc, err := getDiscoveryBackend()
+			disc, err := getDiscoveryBackend(central)
 			if err != nil {
 				logging.Warnf("Failed to load discovery backend (podSelector targets via API will not be resolvable): %v", err)
 				disc = nil
@@ -172,117 +157,35 @@ func newApiServeCmd() *cobra.Command {
 	return c
 }
 
-type apiConfigFile struct {
-	API struct {
-		Listen string `yaml:"listen"`
-		Auth   struct {
-			Enabled *bool `yaml:"enabled"`
-		} `yaml:"auth"`
-		TLS struct {
-			Enabled      *bool  `yaml:"enabled"`
-			CertFile     string `yaml:"cert_file"`
-			KeyFile      string `yaml:"key_file"`
-			ClientAuth   *bool  `yaml:"client_auth"`
-			ClientCAFile string `yaml:"client_ca_file"`
-		} `yaml:"tls"`
-		RateLimit struct {
-			Enabled           *bool `yaml:"enabled"`
-			TrustProxyHeaders *bool `yaml:"trust_proxy_headers"`
-
-			Unauthenticated struct {
-				RPS   float64 `yaml:"rps"`
-				Burst int     `yaml:"burst"`
-			} `yaml:"unauthenticated"`
-			PerIP struct {
-				RPS   float64 `yaml:"rps"`
-				Burst int     `yaml:"burst"`
-			} `yaml:"per_ip"`
-			PerToken struct {
-				RPS   float64 `yaml:"rps"`
-				Burst int     `yaml:"burst"`
-			} `yaml:"per_token"`
-
-			ExemptPaths []string `yaml:"exempt_paths"`
-		} `yaml:"rate_limit"`
-	} `yaml:"api"`
-}
-
-func loadAPIServerConfig() (apihttp.Config, error) {
-	path := os.Getenv("ZTAP_CONFIG")
-	if path == "" {
-		path = "config.yaml"
-	}
-
-	cfg := apihttp.Config{
-		Listen:      "127.0.0.1:8080",
-		AuthEnabled: true,
+// apiServerConfig converts the central api section into the API server's own
+// config type.
+func apiServerConfig(cfg *config.Config) apihttp.Config {
+	return apihttp.Config{
+		Listen:      string(cfg.API.Listen),
+		AuthEnabled: cfg.API.Auth.Enabled,
 		TLS: apihttp.TLSConfig{
-			Enabled: false,
+			Enabled:      cfg.API.TLS.Enabled,
+			CertFile:     cfg.API.TLS.CertFile,
+			KeyFile:      cfg.API.TLS.KeyFile,
+			ClientAuth:   cfg.API.TLS.ClientAuth,
+			ClientCAFile: cfg.API.TLS.ClientCAFile,
+		},
+		RateLimit: apihttp.RateLimitConfig{
+			Enabled:           cfg.API.RateLimit.Enabled,
+			TrustProxyHeaders: cfg.API.RateLimit.TrustProxyHeaders,
+			Unauthenticated: apihttp.RateLimitBucketConfig{
+				RPS:   cfg.API.RateLimit.Unauthenticated.RPS,
+				Burst: cfg.API.RateLimit.Unauthenticated.Burst,
+			},
+			PerIP: apihttp.RateLimitBucketConfig{
+				RPS:   cfg.API.RateLimit.PerIP.RPS,
+				Burst: cfg.API.RateLimit.PerIP.Burst,
+			},
+			PerToken: apihttp.RateLimitBucketConfig{
+				RPS:   cfg.API.RateLimit.PerToken.RPS,
+				Burst: cfg.API.RateLimit.PerToken.Burst,
+			},
+			ExemptPaths: append([]string(nil), cfg.API.RateLimit.ExemptPaths...),
 		},
 	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return cfg, nil
-		}
-		return apihttp.Config{}, fmt.Errorf("reading config file %s: %w", path, err)
-	}
-
-	var fileCfg apiConfigFile
-	if err := yaml.Unmarshal(data, &fileCfg); err != nil {
-		return apihttp.Config{}, fmt.Errorf("parsing config file %s: %w", path, err)
-	}
-
-	if strings.TrimSpace(fileCfg.API.Listen) != "" {
-		cfg.Listen = strings.TrimSpace(fileCfg.API.Listen)
-	}
-	if fileCfg.API.Auth.Enabled != nil {
-		cfg.AuthEnabled = *fileCfg.API.Auth.Enabled
-	}
-	if fileCfg.API.TLS.Enabled != nil {
-		cfg.TLS.Enabled = *fileCfg.API.TLS.Enabled
-	}
-	if strings.TrimSpace(fileCfg.API.TLS.CertFile) != "" {
-		cfg.TLS.CertFile = fileCfg.API.TLS.CertFile
-	}
-	if strings.TrimSpace(fileCfg.API.TLS.KeyFile) != "" {
-		cfg.TLS.KeyFile = fileCfg.API.TLS.KeyFile
-	}
-	if fileCfg.API.TLS.ClientAuth != nil {
-		cfg.TLS.ClientAuth = *fileCfg.API.TLS.ClientAuth
-	}
-	if strings.TrimSpace(fileCfg.API.TLS.ClientCAFile) != "" {
-		cfg.TLS.ClientCAFile = fileCfg.API.TLS.ClientCAFile
-	}
-
-	if fileCfg.API.RateLimit.Enabled != nil {
-		cfg.RateLimit.Enabled = *fileCfg.API.RateLimit.Enabled
-	}
-	if fileCfg.API.RateLimit.TrustProxyHeaders != nil {
-		cfg.RateLimit.TrustProxyHeaders = *fileCfg.API.RateLimit.TrustProxyHeaders
-	}
-	if fileCfg.API.RateLimit.Unauthenticated.RPS != 0 {
-		cfg.RateLimit.Unauthenticated.RPS = fileCfg.API.RateLimit.Unauthenticated.RPS
-	}
-	if fileCfg.API.RateLimit.Unauthenticated.Burst != 0 {
-		cfg.RateLimit.Unauthenticated.Burst = fileCfg.API.RateLimit.Unauthenticated.Burst
-	}
-	if fileCfg.API.RateLimit.PerIP.RPS != 0 {
-		cfg.RateLimit.PerIP.RPS = fileCfg.API.RateLimit.PerIP.RPS
-	}
-	if fileCfg.API.RateLimit.PerIP.Burst != 0 {
-		cfg.RateLimit.PerIP.Burst = fileCfg.API.RateLimit.PerIP.Burst
-	}
-	if fileCfg.API.RateLimit.PerToken.RPS != 0 {
-		cfg.RateLimit.PerToken.RPS = fileCfg.API.RateLimit.PerToken.RPS
-	}
-	if fileCfg.API.RateLimit.PerToken.Burst != 0 {
-		cfg.RateLimit.PerToken.Burst = fileCfg.API.RateLimit.PerToken.Burst
-	}
-	if len(fileCfg.API.RateLimit.ExemptPaths) > 0 {
-		cfg.RateLimit.ExemptPaths = append([]string(nil), fileCfg.API.RateLimit.ExemptPaths...)
-	}
-
-	return cfg, nil
 }

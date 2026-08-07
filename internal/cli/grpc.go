@@ -10,106 +10,92 @@ import (
 
 	"ztap/internal/alert"
 	"ztap/internal/apigrpc"
+	"ztap/internal/config"
 	"ztap/internal/logging"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v3"
 )
 
-func newGrpcCmd() *cobra.Command {
+func newGrpcCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "grpc",
 		Short: "Run the ZTAP gRPC server",
 	}
-	c.AddCommand(newGrpcServeCmd())
+	c.AddCommand(newGrpcServeCmd(app))
 	return c
 }
 
-func newGrpcServeCmd() *cobra.Command {
+func newGrpcServeCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the gRPC API server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadGRPCServerConfig()
-			if err != nil {
-				return err
-			}
+			central := app.Config()
+			cfg := grpcServerConfig(central)
 
-			alertCfg, err := loadAlertConfig()
-			if err != nil {
-				return err
-			}
-
-			var alertManager *alert.Manager
-			if alertCfg.Enabled {
-				alertManager, err = alert.NewManagerFromConfig(alertCfg)
-				if err != nil {
-					return err
-				}
-			}
-
+			// Flags take precedence over config (flag > env > config > default).
 			listen, _ := cmd.Flags().GetString("listen")
 			if strings.TrimSpace(listen) != "" {
 				cfg.Listen = listen
 			}
-			authEnabled, _ := cmd.Flags().GetBool("auth")
-			cfg.AuthEnabled = authEnabled
-
-			rlEnabled, _ := cmd.Flags().GetBool("rate-limit")
-			if rlEnabled {
-				cfg.RateLimit.Enabled = true
+			if cmd.Flags().Changed("auth") {
+				cfg.AuthEnabled, _ = cmd.Flags().GetBool("auth")
 			}
-			rlPerIPRPS, _ := cmd.Flags().GetFloat64("rate-limit-per-ip-rps")
-			if rlPerIPRPS > 0 {
-				cfg.RateLimit.PerIP.RPS = rlPerIPRPS
+			if cmd.Flags().Changed("tls") {
+				cfg.TLS.Enabled, _ = cmd.Flags().GetBool("tls")
 			}
-			rlPerIPBurst, _ := cmd.Flags().GetInt("rate-limit-per-ip-burst")
-			if rlPerIPBurst > 0 {
-				cfg.RateLimit.PerIP.Burst = rlPerIPBurst
+			if v, _ := cmd.Flags().GetString("tls-cert"); strings.TrimSpace(v) != "" {
+				cfg.TLS.CertFile = v
 			}
-			rlPerTokenRPS, _ := cmd.Flags().GetFloat64("rate-limit-per-token-rps")
-			if rlPerTokenRPS > 0 {
-				cfg.RateLimit.PerToken.RPS = rlPerTokenRPS
+			if v, _ := cmd.Flags().GetString("tls-key"); strings.TrimSpace(v) != "" {
+				cfg.TLS.KeyFile = v
 			}
-			rlPerTokenBurst, _ := cmd.Flags().GetInt("rate-limit-per-token-burst")
-			if rlPerTokenBurst > 0 {
-				cfg.RateLimit.PerToken.Burst = rlPerTokenBurst
+			if cmd.Flags().Changed("rate-limit") {
+				cfg.RateLimit.Enabled, _ = cmd.Flags().GetBool("rate-limit")
 			}
-			rlUnauthRPS, _ := cmd.Flags().GetFloat64("rate-limit-unauth-rps")
-			if rlUnauthRPS > 0 {
-				cfg.RateLimit.Unauthenticated.RPS = rlUnauthRPS
+			if cmd.Flags().Changed("rate-limit-per-ip-rps") {
+				cfg.RateLimit.PerIP.RPS, _ = cmd.Flags().GetFloat64("rate-limit-per-ip-rps")
 			}
-			rlUnauthBurst, _ := cmd.Flags().GetInt("rate-limit-unauth-burst")
-			if rlUnauthBurst > 0 {
-				cfg.RateLimit.Unauthenticated.Burst = rlUnauthBurst
+			if cmd.Flags().Changed("rate-limit-per-ip-burst") {
+				cfg.RateLimit.PerIP.Burst, _ = cmd.Flags().GetInt("rate-limit-per-ip-burst")
 			}
-
-			tlsEnabled, _ := cmd.Flags().GetBool("tls")
-			if tlsEnabled {
-				cfg.TLS.Enabled = true
+			if cmd.Flags().Changed("rate-limit-per-token-rps") {
+				cfg.RateLimit.PerToken.RPS, _ = cmd.Flags().GetFloat64("rate-limit-per-token-rps")
 			}
-			tlsCert, _ := cmd.Flags().GetString("tls-cert")
-			if strings.TrimSpace(tlsCert) != "" {
-				cfg.TLS.CertFile = tlsCert
+			if cmd.Flags().Changed("rate-limit-per-token-burst") {
+				cfg.RateLimit.PerToken.Burst, _ = cmd.Flags().GetInt("rate-limit-per-token-burst")
 			}
-			tlsKey, _ := cmd.Flags().GetString("tls-key")
-			if strings.TrimSpace(tlsKey) != "" {
-				cfg.TLS.KeyFile = tlsKey
+			if cmd.Flags().Changed("rate-limit-unauth-rps") {
+				cfg.RateLimit.Unauthenticated.RPS, _ = cmd.Flags().GetFloat64("rate-limit-unauth-rps")
+			}
+			if cmd.Flags().Changed("rate-limit-unauth-burst") {
+				cfg.RateLimit.Unauthenticated.Burst, _ = cmd.Flags().GetInt("rate-limit-unauth-burst")
 			}
 
-			am, err := getAuthManagerFromConfig()
+			alertCfg := alertConfig(central)
+
+			var alertManager *alert.Manager
+			if alertCfg.Enabled {
+				alertManager, err := alert.NewManagerFromConfig(alertCfg)
+				if err != nil {
+					return err
+				}
+				defer alertManager.Close()
+			}
+
+			am, err := getAuthManagerFromConfig(central)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = am.Close() }()
 
-			clusterElection, policyManager, cleanup, err := initPolicyRuntime(context.Background(), cfg.Listen)
+			clusterElection, policyManager, cleanup, err := initPolicyRuntime(context.Background(), cfg.Listen, central)
 			if err != nil {
 				return err
 			}
 			defer cleanup()
 
-			disc, err := getDiscoveryBackend()
+			disc, err := getDiscoveryBackend(central)
 			if err != nil {
 				logging.Warnf("Failed to load discovery backend (podSelector targets via gRPC will not be resolvable): %v", err)
 				disc = nil
@@ -159,113 +145,34 @@ func newGrpcServeCmd() *cobra.Command {
 	return c
 }
 
-type grpcConfigFile struct {
-	GRPC struct {
-		Listen string `yaml:"listen"`
-		Auth   struct {
-			Enabled *bool `yaml:"enabled"`
-		} `yaml:"auth"`
-		TLS struct {
-			Enabled      *bool  `yaml:"enabled"`
-			CertFile     string `yaml:"cert_file"`
-			KeyFile      string `yaml:"key_file"`
-			ClientAuth   *bool  `yaml:"client_auth"`
-			ClientCAFile string `yaml:"client_ca_file"`
-		} `yaml:"tls"`
-		RateLimit struct {
-			Enabled *bool `yaml:"enabled"`
-
-			Unauthenticated struct {
-				RPS   float64 `yaml:"rps"`
-				Burst int     `yaml:"burst"`
-			} `yaml:"unauthenticated"`
-			PerIP struct {
-				RPS   float64 `yaml:"rps"`
-				Burst int     `yaml:"burst"`
-			} `yaml:"per_ip"`
-			PerToken struct {
-				RPS   float64 `yaml:"rps"`
-				Burst int     `yaml:"burst"`
-			} `yaml:"per_token"`
-
-			ExemptMethods []string `yaml:"exempt_methods"`
-		} `yaml:"rate_limit"`
-	} `yaml:"grpc"`
-}
-
-func loadGRPCServerConfig() (apigrpc.Config, error) {
-	path := os.Getenv("ZTAP_CONFIG")
-	if path == "" {
-		path = "config.yaml"
-	}
-
-	cfg := apigrpc.Config{
-		Listen:      "127.0.0.1:9092",
-		AuthEnabled: true,
+// grpcServerConfig converts the central grpc section into the gRPC server's
+// own config type.
+func grpcServerConfig(cfg *config.Config) apigrpc.Config {
+	return apigrpc.Config{
+		Listen:      string(cfg.GRPC.Listen),
+		AuthEnabled: cfg.GRPC.Auth.Enabled,
 		TLS: apigrpc.TLSConfig{
-			Enabled: false,
+			Enabled:      cfg.GRPC.TLS.Enabled,
+			CertFile:     cfg.GRPC.TLS.CertFile,
+			KeyFile:      cfg.GRPC.TLS.KeyFile,
+			ClientAuth:   cfg.GRPC.TLS.ClientAuth,
+			ClientCAFile: cfg.GRPC.TLS.ClientCAFile,
+		},
+		RateLimit: apigrpc.RateLimitConfig{
+			Enabled: cfg.GRPC.RateLimit.Enabled,
+			Unauthenticated: apigrpc.RateLimitBucketConfig{
+				RPS:   cfg.GRPC.RateLimit.Unauthenticated.RPS,
+				Burst: cfg.GRPC.RateLimit.Unauthenticated.Burst,
+			},
+			PerIP: apigrpc.RateLimitBucketConfig{
+				RPS:   cfg.GRPC.RateLimit.PerIP.RPS,
+				Burst: cfg.GRPC.RateLimit.PerIP.Burst,
+			},
+			PerToken: apigrpc.RateLimitBucketConfig{
+				RPS:   cfg.GRPC.RateLimit.PerToken.RPS,
+				Burst: cfg.GRPC.RateLimit.PerToken.Burst,
+			},
+			ExemptMethods: append([]string(nil), cfg.GRPC.RateLimit.ExemptMethods...),
 		},
 	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return cfg, nil
-		}
-		return apigrpc.Config{}, fmt.Errorf("reading config file %s: %w", path, err)
-	}
-
-	var fileCfg grpcConfigFile
-	if err := yaml.Unmarshal(data, &fileCfg); err != nil {
-		return apigrpc.Config{}, fmt.Errorf("parsing config file %s: %w", path, err)
-	}
-
-	if strings.TrimSpace(fileCfg.GRPC.Listen) != "" {
-		cfg.Listen = strings.TrimSpace(fileCfg.GRPC.Listen)
-	}
-	if fileCfg.GRPC.Auth.Enabled != nil {
-		cfg.AuthEnabled = *fileCfg.GRPC.Auth.Enabled
-	}
-	if fileCfg.GRPC.TLS.Enabled != nil {
-		cfg.TLS.Enabled = *fileCfg.GRPC.TLS.Enabled
-	}
-	if strings.TrimSpace(fileCfg.GRPC.TLS.CertFile) != "" {
-		cfg.TLS.CertFile = fileCfg.GRPC.TLS.CertFile
-	}
-	if strings.TrimSpace(fileCfg.GRPC.TLS.KeyFile) != "" {
-		cfg.TLS.KeyFile = fileCfg.GRPC.TLS.KeyFile
-	}
-	if fileCfg.GRPC.TLS.ClientAuth != nil {
-		cfg.TLS.ClientAuth = *fileCfg.GRPC.TLS.ClientAuth
-	}
-	if strings.TrimSpace(fileCfg.GRPC.TLS.ClientCAFile) != "" {
-		cfg.TLS.ClientCAFile = fileCfg.GRPC.TLS.ClientCAFile
-	}
-
-	if fileCfg.GRPC.RateLimit.Enabled != nil {
-		cfg.RateLimit.Enabled = *fileCfg.GRPC.RateLimit.Enabled
-	}
-	if fileCfg.GRPC.RateLimit.Unauthenticated.RPS != 0 {
-		cfg.RateLimit.Unauthenticated.RPS = fileCfg.GRPC.RateLimit.Unauthenticated.RPS
-	}
-	if fileCfg.GRPC.RateLimit.Unauthenticated.Burst != 0 {
-		cfg.RateLimit.Unauthenticated.Burst = fileCfg.GRPC.RateLimit.Unauthenticated.Burst
-	}
-	if fileCfg.GRPC.RateLimit.PerIP.RPS != 0 {
-		cfg.RateLimit.PerIP.RPS = fileCfg.GRPC.RateLimit.PerIP.RPS
-	}
-	if fileCfg.GRPC.RateLimit.PerIP.Burst != 0 {
-		cfg.RateLimit.PerIP.Burst = fileCfg.GRPC.RateLimit.PerIP.Burst
-	}
-	if fileCfg.GRPC.RateLimit.PerToken.RPS != 0 {
-		cfg.RateLimit.PerToken.RPS = fileCfg.GRPC.RateLimit.PerToken.RPS
-	}
-	if fileCfg.GRPC.RateLimit.PerToken.Burst != 0 {
-		cfg.RateLimit.PerToken.Burst = fileCfg.GRPC.RateLimit.PerToken.Burst
-	}
-	if len(fileCfg.GRPC.RateLimit.ExemptMethods) > 0 {
-		cfg.RateLimit.ExemptMethods = append([]string(nil), fileCfg.GRPC.RateLimit.ExemptMethods...)
-	}
-
-	return cfg, nil
 }

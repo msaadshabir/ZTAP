@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newMetricsCmd() *cobra.Command {
+func newMetricsCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "metrics",
 		Short: "Start Prometheus metrics server",

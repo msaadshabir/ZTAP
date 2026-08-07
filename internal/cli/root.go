@@ -2,17 +2,39 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
+	"ztap/internal/config"
 	"ztap/internal/logging"
 
 	"github.com/spf13/cobra"
 )
 
+// App carries per-invocation state (currently the single parsed config).
+// NewRootCmd owns one App; PersistentPreRunE parses the config once and the
+// subcommands read it via app.Config(). Precedence is flag > env > file > default.
+type App struct {
+	cfg *config.Config
+}
+
+// Config returns the parsed configuration. When commands are invoked directly
+// (e.g. in unit tests) without going through the root PersistentPreRunE, the
+// config is loaded on first use.
+func (a *App) Config() *config.Config {
+	if a.cfg == nil {
+		cfg, err := config.Load("")
+		if err != nil {
+			logging.Fatalf("Failed to load config: %v", err)
+		}
+		a.cfg = cfg
+	}
+	return a.cfg
+}
+
 // NewRootCmd builds the ztap root command with every subcommand registered.
 // Command construction is explicit (no init() side effects); main calls this
 // once and executes the returned command.
 func NewRootCmd(version string) *cobra.Command {
+	app := &App{}
 	Version = version
 
 	root := &cobra.Command{
@@ -21,29 +43,28 @@ func NewRootCmd(version string) *cobra.Command {
 		Long: `ZTAP enforces zero-trust network policies across on-premises and cloud workloads.
 It uses eBPF on Linux and pf on macOS to enforce fine-grained traffic rules.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			cfgPath := os.Getenv("ZTAP_CONFIG")
-			if cfgPath == "" {
-				cfgPath = "config.yaml"
-			}
-			cfg, err := logging.LoadConfig(cfgPath)
+			cfg, err := config.Load("")
 			if err != nil {
 				return err
 			}
+			app.cfg = cfg
 
-			level, _ := cmd.Flags().GetString("log-level")
-			if level != "" {
-				cfg.Level = level
+			lcfg := logging.Config{
+				Level:  string(cfg.Logging.Level),
+				File:   cfg.Logging.File,
+				Format: string(cfg.Logging.Format),
 			}
-			format, _ := cmd.Flags().GetString("log-format")
-			if format != "" {
-				cfg.Format = format
+			if level, _ := cmd.Flags().GetString("log-level"); level != "" {
+				lcfg.Level = level
 			}
-			file, _ := cmd.Flags().GetString("log-file")
-			if file != "" {
-				cfg.File = file
+			if format, _ := cmd.Flags().GetString("log-format"); format != "" {
+				lcfg.Format = format
+			}
+			if file, _ := cmd.Flags().GetString("log-file"); file != "" {
+				lcfg.File = file
 			}
 
-			if _, err := logging.Configure(cfg); err != nil {
+			if _, err := logging.Configure(lcfg); err != nil {
 				return fmt.Errorf("configure logging: %w", err)
 			}
 			return nil
@@ -55,24 +76,24 @@ It uses eBPF on Linux and pf on macOS to enforce fine-grained traffic rules.`,
 	root.PersistentFlags().String("log-file", "", "Log output file")
 
 	root.AddCommand(
-		newAgentCmd(),
-		newAlertCmd(),
-		newApiCmd(),
-		newAuditCmd(),
-		newAwsCmd(),
-		newAzureCmd(),
+		newAgentCmd(app),
+		newAlertCmd(app),
+		newApiCmd(app),
+		newAuditCmd(app),
+		newAwsCmd(app),
+		newAzureCmd(app),
 		newClusterCmd(),
 		newComplianceCmd(),
-		newDiscoveryCmd(),
-		newEnforceCmd(),
+		newDiscoveryCmd(app),
+		newEnforceCmd(app),
 		newFlowsCmd(),
-		newGcpCmd(),
-		newGrpcCmd(),
-		newLogsCmd(),
-		newMetricsCmd(),
-		newPolicyCmd(),
-		newStatusCmd(),
-		newUserCmd(),
+		newGcpCmd(app),
+		newGrpcCmd(app),
+		newLogsCmd(app),
+		newMetricsCmd(app),
+		newPolicyCmd(app),
+		newStatusCmd(app),
+		newUserCmd(app),
 		newVersionCmd(),
 	)
 

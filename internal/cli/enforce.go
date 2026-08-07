@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newEnforceCmd() *cobra.Command {
+func newEnforceCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "enforce -f policy.yaml",
 		Short: "Enforce zero-trust network policies",
@@ -43,7 +43,7 @@ func newEnforceCmd() *cobra.Command {
 
 			var disc policy.ServiceDiscovery
 			if resolveLabels {
-				disc, err = getDiscoveryBackend()
+				disc, err = getDiscoveryBackend(app.Config())
 				if err != nil {
 					logging.Fatalf("Failed to load discovery backend for label resolution: %v", err)
 				}

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,8 +8,7 @@ import (
 	"time"
 
 	"ztap/internal/auth"
-
-	yaml "gopkg.in/yaml.v3"
+	"ztap/internal/config"
 )
 
 type authSessionsConfig struct {
@@ -19,106 +17,39 @@ type authSessionsConfig struct {
 	SQLitePath string
 }
 
-func resolvedSessionsSQLitePath() (string, error) {
-	cfg, err := loadAuthSessionsConfig()
+func resolvedSessionsSQLitePath(cfg *config.Config) (string, error) {
+	sessCfg, err := loadAuthSessionsConfig(cfg)
 	if err != nil {
 		return "", err
 	}
-	if strings.ToLower(strings.TrimSpace(cfg.Backend)) != "sqlite" && strings.TrimSpace(cfg.Backend) != "" {
+	if strings.ToLower(strings.TrimSpace(sessCfg.Backend)) != "sqlite" && strings.TrimSpace(sessCfg.Backend) != "" {
 		return "", nil
 	}
-	return cfg.SQLitePath, nil
+	return sessCfg.SQLitePath, nil
 }
 
-type authSessionsConfigFile struct {
-	Auth struct {
-		Sessions struct {
-			Backend string `yaml:"backend"`
-			TTL     string `yaml:"ttl"`
-			SQLite  struct {
-				Path string `yaml:"path"`
-			} `yaml:"sqlite"`
-		} `yaml:"sessions"`
-	} `yaml:"auth"`
-}
-
-func loadAuthSessionsConfig() (authSessionsConfig, error) {
-	path := os.Getenv("ZTAP_CONFIG")
-	if path == "" {
-		path = "config.yaml"
-	}
-
+// loadAuthSessionsConfig derives the auth sessions settings from the central
+// config (file + ZTAP_AUTH_SESSIONS_* env overrides already applied).
+func loadAuthSessionsConfig(cfg *config.Config) (authSessionsConfig, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return authSessionsConfig{}, fmt.Errorf("failed to get home directory: %w", err)
 	}
-	cfg := authSessionsConfig{
-		Backend:    "sqlite",
-		TTL:        24 * time.Hour,
-		SQLitePath: filepath.Join(homeDir, ".ztap", "sessions.db"),
-	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			cfg, err = applyAuthSessionsEnv(cfg)
-			if err != nil {
-				return authSessionsConfig{}, err
-			}
-			cfg.SQLitePath, err = expandUserPath(cfg.SQLitePath)
-			if err != nil {
-				return authSessionsConfig{}, err
-			}
-			return cfg, nil
-		}
-		return authSessionsConfig{}, fmt.Errorf("reading config file %s: %w", path, err)
+	c := cfg.Auth.Sessions
+	out := authSessionsConfig{
+		Backend:    string(c.Backend),
+		TTL:        time.Duration(c.TTL),
+		SQLitePath: string(c.SQLite.Path),
 	}
-
-	var fileCfg authSessionsConfigFile
-	if err := yaml.Unmarshal(data, &fileCfg); err != nil {
-		return authSessionsConfig{}, fmt.Errorf("parsing config file %s: %w", path, err)
+	if strings.TrimSpace(out.SQLitePath) == "" {
+		out.SQLitePath = filepath.Join(homeDir, ".ztap", "sessions.db")
 	}
-
-	if v := strings.TrimSpace(fileCfg.Auth.Sessions.Backend); v != "" {
-		cfg.Backend = v
-	}
-	if v := strings.TrimSpace(fileCfg.Auth.Sessions.TTL); v != "" {
-		d, parseErr := time.ParseDuration(v)
-		if parseErr != nil {
-			return authSessionsConfig{}, fmt.Errorf("parsing auth.sessions.ttl: %w", parseErr)
-		}
-		cfg.TTL = d
-	}
-	if v := strings.TrimSpace(fileCfg.Auth.Sessions.SQLite.Path); v != "" {
-		cfg.SQLitePath = v
-	}
-
-	cfg, err = applyAuthSessionsEnv(cfg)
+	out.SQLitePath, err = expandUserPath(out.SQLitePath)
 	if err != nil {
 		return authSessionsConfig{}, err
 	}
-	cfg.SQLitePath, err = expandUserPath(cfg.SQLitePath)
-	if err != nil {
-		return authSessionsConfig{}, err
-	}
-	return cfg, nil
-}
-
-func applyAuthSessionsEnv(cfg authSessionsConfig) (authSessionsConfig, error) {
-	if v := strings.TrimSpace(os.Getenv("ZTAP_AUTH_SESSIONS_BACKEND")); v != "" {
-		cfg.Backend = v
-	}
-	if v := strings.TrimSpace(os.Getenv("ZTAP_AUTH_SESSIONS_TTL")); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return authSessionsConfig{}, fmt.Errorf("parsing ZTAP_AUTH_SESSIONS_TTL: %w", err)
-		}
-		cfg.TTL = d
-	}
-	if v := strings.TrimSpace(os.Getenv("ZTAP_AUTH_SESSIONS_SQLITE_PATH")); v != "" {
-		cfg.SQLitePath = v
-	}
-	return cfg, nil
+	return out, nil
 }
 
 func expandUserPath(p string) (string, error) {
@@ -158,14 +89,14 @@ func newSessionStoreFromConfig(cfg authSessionsConfig) (auth.SessionStore, time.
 	}
 }
 
-func getAuthManagerFromConfig() (*auth.AuthManager, error) {
+func getAuthManagerFromConfig(cfg *config.Config) (*auth.AuthManager, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 	usersPath := filepath.Join(homeDir, ".ztap", "users.json")
 
-	sessCfg, err := loadAuthSessionsConfig()
+	sessCfg, err := loadAuthSessionsConfig(cfg)
 	if err != nil {
 		return nil, err
 	}

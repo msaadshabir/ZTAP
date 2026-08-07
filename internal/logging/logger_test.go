@@ -44,14 +44,3 @@ func TestLoggerWritesToFile(t *testing.T) {
 		t.Fatalf("expected log file to contain entries, got %s", string(data))
 	}
 }
-
-func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
-	t.Setenv("ZTAP_LOG_LEVEL", "debug")
-	cfg, err := LoadConfig("/does/not/exist.yaml")
-	if err != nil {
-		t.Fatalf("unexpected error loading config: %v", err)
-	}
-	if cfg.Level != "debug" {
-		t.Fatalf("expected env override, got %q", cfg.Level)
-	}
-}

@@ -3,99 +3,53 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"ztap/internal/cloud"
+	"ztap/internal/config"
 	"ztap/internal/inventory"
 	"ztap/internal/logging"
 	"ztap/internal/policy"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v3"
 )
 
-// awsConfig holds AWS-specific settings loaded from config.yaml.
+// awsConfig holds AWS-specific settings from the central config.
 type awsConfig struct {
 	Region          string
 	Profile         string
 	SecurityGroupID string
 }
 
-type awsConfigFile struct {
-	AWS struct {
-		Enabled         *bool  `yaml:"enabled"`
-		Region          string `yaml:"region"`
-		Profile         string `yaml:"profile"`
-		SecurityGroupID string `yaml:"security_group_id"`
-	} `yaml:"aws"`
+func loadAWSConfig(cfg *config.Config) awsConfig {
+	return awsConfig{
+		Region:          string(cfg.AWS.Region),
+		Profile:         string(cfg.AWS.Profile),
+		SecurityGroupID: string(cfg.AWS.SecurityGroupID),
+	}
 }
 
-func loadAWSConfig() (awsConfig, error) {
-	path := os.Getenv("ZTAP_CONFIG")
-	if path == "" {
-		path = "config.yaml"
-	}
-
-	cfg := awsConfig{}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return applyAWSEnv(cfg), nil
-		}
-		return awsConfig{}, fmt.Errorf("reading config file %s: %w", path, err)
-	}
-
-	var fileCfg awsConfigFile
-	if err := yaml.Unmarshal(data, &fileCfg); err != nil {
-		return awsConfig{}, fmt.Errorf("parsing config file %s: %w", path, err)
-	}
-
-	cfg.Region = strings.TrimSpace(fileCfg.AWS.Region)
-	cfg.Profile = strings.TrimSpace(fileCfg.AWS.Profile)
-	cfg.SecurityGroupID = strings.TrimSpace(fileCfg.AWS.SecurityGroupID)
-
-	return applyAWSEnv(cfg), nil
-}
-
-func applyAWSEnv(cfg awsConfig) awsConfig {
-	if env := strings.TrimSpace(os.Getenv("ZTAP_AWS_REGION")); env != "" {
-		cfg.Region = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_AWS_PROFILE")); env != "" {
-		cfg.Profile = env
-	}
-	if env := strings.TrimSpace(os.Getenv("ZTAP_AWS_SECURITY_GROUP_ID")); env != "" {
-		cfg.SecurityGroupID = env
-	}
-	return cfg
-}
-
-func newAwsCmd() *cobra.Command {
+func newAwsCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "aws",
 		Short: "Manage AWS Security Group synchronization",
 		Long:  "Synchronize ZTAP network policies into AWS Security Groups.",
 	}
-	c.AddCommand(newAwsSGSyncCmd())
+	c.AddCommand(newAwsSGSyncCmd(app))
 	c.AddCommand(newAwsInventoryCmd())
 	return c
 }
 
-func newAwsSGSyncCmd() *cobra.Command {
+func newAwsSGSyncCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "sg-sync <policy-file>",
 		Short: "Sync a policy into an AWS Security Group",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := loadAWSConfig()
-			if err != nil {
-				logging.Fatalf("Failed to load config: %v", err)
-			}
+			cfg := loadAWSConfig(app.Config())
 
 			flagRegion, _ := cmd.Flags().GetString("region")
 			flagProfile, _ := cmd.Flags().GetString("profile")
