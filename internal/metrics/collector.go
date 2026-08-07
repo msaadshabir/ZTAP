@@ -3,7 +3,6 @@ package metrics
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -107,15 +106,15 @@ func (c *Collector) RecordFlow(action, protocol, direction string) {
 	}
 }
 
-// StartServer starts the Prometheus metrics HTTP server
-func StartServer(port int) error {
-	listen := strings.TrimSpace(os.Getenv("ZTAP_METRICS_LISTEN"))
-	if listen == "" {
-		listen = fmt.Sprintf("127.0.0.1:%d", port)
+// StartServer starts the Prometheus metrics HTTP server on the given listen
+// address (host:port) and path.
+func StartServer(listen, path string) error {
+	if strings.TrimSpace(path) == "" {
+		path = "/metrics"
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle(path, promhttp.Handler())
 
 	srv := &http.Server{
 		Addr:              listen,
@@ -126,6 +125,6 @@ func StartServer(port int) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	fmt.Printf("Starting metrics server on http://%s/metrics\n", listen)
+	fmt.Printf("Starting metrics server on http://%s%s\n", listen, path)
 	return srv.ListenAndServe()
 }

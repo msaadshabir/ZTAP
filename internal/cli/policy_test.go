@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"ztap/internal/config"
 )
 
 func TestPolicyValidateCmd(t *testing.T) {
@@ -87,11 +89,85 @@ spec:
 				_, w, _ := os.Pipe()
 				os.Stdout = w
 
-				runPolicyValidate(cmd, tt.args[1:])
+				runPolicyValidate(cmd, tt.args[1:], &config.Config{Policy: config.Policy{Strict: true}})
 
 				_ = w.Close()
 				os.Stdout = oldStdout
 			}
 		})
 	}
+}
+
+func TestPolicyValidateHonorsAllowEmptyEgressFromConfig(t *testing.T) {
+	tempDir := t.TempDir()
+
+	emptyPolicy := `
+apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector:
+    matchLabels:
+      app: test
+  egress: []
+`
+	policyFile := filepath.Join(tempDir, "empty.yaml")
+	if err := os.WriteFile(policyFile, []byte(emptyPolicy), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// policy.allow_empty_egress: true makes a rules-less policy valid.
+	cfg := &config.Config{Policy: config.Policy{Strict: true, AllowEmptyEgress: true}}
+	cmd := newPolicyValidateCmd(&App{})
+	if err := cmd.Flags().Set("file", policyFile); err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdout := os.Stdout
+	_, w, _ := os.Pipe()
+	os.Stdout = w
+	runPolicyValidate(cmd, nil, cfg) // must not os.Exit
+	_ = w.Close()
+	os.Stdout = oldStdout
+}
+
+func TestPolicyValidateNonStrictWarnsWithoutExiting(t *testing.T) {
+	tempDir := t.TempDir()
+
+	invalidPolicy := `
+apiVersion: ztap/v1
+kind: NetworkPolicy
+metadata:
+  name: bad
+spec:
+  podSelector:
+    matchLabels:
+      app: test
+  egress:
+    - to:
+        ipBlock:
+          cidr: 300.0.0.0/24
+      ports:
+        - protocol: TCP
+          port: 80
+`
+	policyFile := filepath.Join(tempDir, "invalid.yaml")
+	if err := os.WriteFile(policyFile, []byte(invalidPolicy), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// policy.strict: false prints validation errors as warnings and exits 0.
+	cfg := &config.Config{Policy: config.Policy{Strict: false}}
+	cmd := newPolicyValidateCmd(&App{})
+	if err := cmd.Flags().Set("file", policyFile); err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdout := os.Stdout
+	_, w, _ := os.Pipe()
+	os.Stdout = w
+	runPolicyValidate(cmd, nil, cfg) // must not os.Exit
+	_ = w.Close()
+	os.Stdout = oldStdout
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,13 +21,34 @@ func newEnforceCmd(app *App) *cobra.Command {
 		Use:   "enforce -f policy.yaml",
 		Short: "Enforce zero-trust network policies",
 		Run: func(cmd *cobra.Command, args []string) {
+			central := app.Config()
 			policyFile, _ := cmd.Flags().GetString("file")
 			cgroupPath, _ := cmd.Flags().GetString("cgroup")
 			bpfObject, _ := cmd.Flags().GetString("bpf-object")
 			debugEBPF, _ := cmd.Flags().GetBool("debug-ebpf")
-			resolveLabels, _ := cmd.Flags().GetBool("resolve-labels")
+
+			// Flags take precedence over config (flag > env > config > default).
+			dryRun := central.Enforcement.DryRun
+			if cmd.Flags().Changed("dry-run") {
+				dryRun, _ = cmd.Flags().GetBool("dry-run")
+			}
+			resolveLabels := central.Policy.ResolveLabels
+			if cmd.Flags().Changed("resolve-labels") {
+				resolveLabels, _ = cmd.Flags().GetBool("resolve-labels")
+			}
 			resolveLabelsInterval, _ := cmd.Flags().GetDuration("resolve-labels-interval")
-			dryRun, _ := cmd.Flags().GetBool("dry-run")
+
+			defaultAction := strings.ToLower(strings.TrimSpace(string(central.Enforcement.DefaultAction)))
+			if cmd.Flags().Changed("default-action") {
+				defaultAction, _ = cmd.Flags().GetString("default-action")
+				defaultAction = strings.ToLower(strings.TrimSpace(defaultAction))
+			}
+			if defaultAction == "" {
+				defaultAction = "block"
+			}
+			if defaultAction != "block" && defaultAction != "allow" {
+				logging.Fatalf("invalid --default-action %q (expected block or allow)", defaultAction)
+			}
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -91,7 +113,7 @@ func newEnforceCmd(app *App) *cobra.Command {
 			policyName := filepath.Base(policyFile)
 			named := make([]policy.NamedPolicy, 0, len(basePolicies))
 			for _, p := range basePolicies {
-				if err := p.Validate(); err != nil {
+				if err := p.ValidateWithOptions(policy.ValidateOptions{AllowEmptyEgress: central.Policy.AllowEmptyEgress}); err != nil {
 					logging.Fatalf("Invalid policy: %v", err)
 				}
 				named = append(named, policy.NamedPolicy{PolicyName: policyName, Policy: p})
@@ -129,6 +151,7 @@ func newEnforceCmd(app *App) *cobra.Command {
 					CgroupPath:    cgroupPath,
 					BPFObjectPath: bpfObject,
 					DebugEBPF:     debugEBPF,
+					DefaultAction: defaultAction,
 					Context:       ctx,
 				}
 
@@ -171,7 +194,7 @@ func newEnforceCmd(app *App) *cobra.Command {
 
 			if enforcer.IsWindows() {
 				fmt.Println("Enforcing via WFP (Windows)...")
-				opts := enforcer.EnforcementOptions{Policies: policies, DryRun: dryRun, Context: ctx}
+				opts := enforcer.EnforcementOptions{Policies: policies, DryRun: dryRun, DefaultAction: defaultAction, Context: ctx}
 				if err := enforcer.EnforceWithWFP(opts); err != nil {
 					logging.Fatalf("Failed to enforce via WFP: %v", err)
 				}
@@ -207,7 +230,7 @@ func newEnforceCmd(app *App) *cobra.Command {
 			}
 
 			fmt.Println("Enforcing via pf (macOS)...")
-			opts := enforcer.EnforcementOptions{Policies: policies, DryRun: dryRun, Context: ctx}
+			opts := enforcer.EnforcementOptions{Policies: policies, DryRun: dryRun, DefaultAction: defaultAction, Context: ctx}
 			if err := enforcer.EnforceWithPF(opts); err != nil {
 				logging.Fatalf("Failed to enforce via pf: %v", err)
 			}
@@ -224,6 +247,7 @@ func newEnforceCmd(app *App) *cobra.Command {
 	c.Flags().Bool("resolve-labels", false, "Resolve pod selectors to IP blocks using configured discovery backend (auto-enabled when policies use podSelector targets)")
 	c.Flags().Duration("resolve-labels-interval", 5*time.Second, "Re-resolve label selectors at this interval while enforcement is active (0 disables refresh)")
 	c.Flags().Bool("dry-run", false, "Simulate enforcement without making system changes")
+	c.Flags().String("default-action", "", "Default action for traffic not matching any policy (block or allow; enforcement.default_action)")
 	return c
 }
 

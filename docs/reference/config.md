@@ -2,7 +2,7 @@
 
 All ZTAP runtime settings. Source: [`config.yaml.example`](../../config.yaml.example).
 
-ZTAP reads `config.yaml` from the working directory by default, or the path set via the `ZTAP_CONFIG` environment variable.
+ZTAP reads `config.yaml` from the working directory by default, or the path set via the `ZTAP_CONFIG` environment variable. One typed loader (`internal/config`) parses the file once per invocation; precedence is **flag > env > config > default**. Unknown keys are ignored with a warning; set `ZTAP_CONFIG_STRICT=1` to fail on unknown keys instead.
 
 ## Discovery
 
@@ -55,7 +55,7 @@ metrics:
   path: /metrics
 ```
 
-Environment variable: `ZTAP_METRICS_LISTEN` (overrides bind address, e.g. `0.0.0.0:9090`).
+`metrics.enabled` gates `ztap metrics`; `port`/`path` provide its defaults (overridden by the `--port` flag). `ZTAP_METRICS_LISTEN` overrides the full bind address, e.g. `0.0.0.0:9090`.
 
 ## REST API Server
 
@@ -194,16 +194,21 @@ anomaly:
   endpoint: http://localhost:5000
   threshold: 50.0
   alert_email: security@example.com
+  batch_size: 50            # flows per batch sent to the detection service
+  flush_interval: 10s       # max time before flushing a partial batch
+  auth_token: ""            # Bearer token presented to the detection service
+  fail_open: true           # continue enforcement when the service is unreachable
 ```
 
 ## Enforcement
 
 ```yaml
 enforcement:
-  mode: pf              # pf (macOS) | ebpf (Linux)
   dry_run: false
   default_action: block # block | allow
 ```
+
+`enforcement.dry_run` defaults `ztap enforce --dry-run`; `enforcement.default_action` defaults `ztap enforce --default-action` (traffic not matching any policy rule; currently honored by the pf backend — eBPF/WFP are default-deny by design). The enforcement backend itself is OS-determined (pf on macOS, eBPF on Linux), not configurable.
 
 Environment variables: `ZTAP_FORCE_IPTABLES` (set to `1` to force iptables on Linux), `ZTAP_WFP_STRICT` (set to `1` for strict default-deny on Windows), `ZTAP_BPF_OBJECT` (override embedded eBPF bytecode path).
 
@@ -230,6 +235,8 @@ policy:
   allow_empty_egress: false
   resolve_labels: false
 ```
+
+Defaults for `ztap policy validate --strict` / `--allow-empty-egress` and `ztap enforce --resolve-labels`. With `strict: false`, `ztap policy validate` reports errors as warnings and exits 0; with `allow_empty_egress: true`, policies without egress/ingress rules (pure default-deny) validate successfully.
 
 ## Bootstrap
 

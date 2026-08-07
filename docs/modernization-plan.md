@@ -4,10 +4,10 @@
 > Generated from a full codebase audit. Each phase is independently shippable; phases are ordered to
 > minimize merge conflicts (mechanical edits → additive CI work → big rename → deep refactors).
 >
-> **Status (2026-02):** Phases A, B and C are **complete and verified** against the tree (evidence in
+> **Status (2026-02):** Phases A, B, C and D are **complete and verified** against the tree (evidence in
 > the completed-workstreams tables below; a handful of residuals are listed there). The active
-> checklist is **D → E → F**. Path references inside the A/B/C evidence tables reflect the layout
-> at the time of verification (the Phase C tables use the post-move `internal/` paths).
+> checklist is **E → F**. Path references inside the A/B/C/D evidence tables reflect the layout
+> at the time of verification (the Phase C/D tables use the post-move `internal/` paths).
 >
 > **Scope decisions (agreed):**
 > - ✅ In scope: quick code modernization (A), CI/release supply chain (B), `pkg/`→`internal/` + cmd split (C), centralized config (D), anomaly service wire-up + hardening (E), `log/slog` migration (F).
@@ -134,51 +134,33 @@ focused 3-commit PR on `modernization/main`. Every item below was verified again
 
 ---
 
-## Phase D — Centralized config package
+## Phase D — Centralized config package ✅ COMPLETE (verified 2026-02)
 
-**Goal:** one parse, one source of truth; implement the 4 dead sections.
+**Goal:** one parse, one source of truth; implement the 4 dead sections. Landed as 3 commits; every
+item below was verified against the tree.
 
-### D.1 — New package
+| Item | Evidence (verified in tree) |
+|---|---|
+| D.1 new package | `internal/config/config.go`: single typed `Config` with all 15 sections incl. the dead `metrics`, `enforcement`, `policy`, `anomaly`; `Load(path)` resolves `ZTAP_CONFIG` env → `./config.yaml` → defaults; defaults pre-populated so absent keys keep documented values and **present keys override** (no pointer soup); `Duration`/`String` custom YAML types preserve the old "explicit empty = keep default" semantics (`config.go` `UnmarshalYAML`) |
+| D.1 strict mode | `ZTAP_CONFIG_STRICT=1` → `KnownFields(true)` hard failure; default = warn-and-ignore with stderr warning listing unknown keys (probe decode). CHANGELOG announced as breaking change; `config.yaml.example` + `docs/reference/config.md` updated |
+| D.1 loader tests | `internal/config/config_test.go`: defaults, file override, explicit-empty-keeps-default, env precedence, unknown-key warn (captured stderr), strict rejection, invalid duration, **strict round-trip of `config.yaml.example`** (keeps example ↔ struct in sync) |
+| D.2 migrate consumers | `rg 'yaml.Unmarshal' internal/cli` → 0; `rg 'logging.LoadConfig|audit.LoadConfig|LoadConfigFromFile'` → 0. Ad-hoc parsers deleted: `apiConfigFile`, `grpcConfigFile`, `alertConfigFile`, `aws/azure/gcpConfigFile`, `authSessionsConfigFile`, `clusterConfigFile`, inline discovery struct, `audit.fileConfig`, `logging.fileConfig`. `audit.LoadConfigFromFile/LoadConfig` replaced by `audit.OptionsFromSection(cfg.Audit)`; `logging.LoadConfig` deleted (root + `logs` read the central config); `apiutil.DefaultAuditLogger` uses the central loader |
+| D.2 App wiring | `cli.App` struct in `internal/cli/root.go`; `PersistentPreRunE` parses once into `app.cfg`; all 15 config-consuming command constructors take `*App`; `App.Config()` lazily loads for direct-invocation unit tests; `initClusterBackend` unchanged |
+| D.2 precedence | **flag > env > config > default** everywhere: `cmd.Flags().Changed()` gates flag application (API/gRPC `--auth`, rate-limit, TLS; `enforce --dry-run/--resolve-labels/--default-action`; `policy validate --strict/--allow-empty-egress`; `metrics --port`). Side effect: `api.auth.enabled: false` in config is now honored (previously the `--auth` flag default true silently overrode it) — noted in CHANGELOG |
+| D.2 env centralization | All ~40 `ZTAP_*` overrides (logging, alerting, auth sessions, cluster/etcd, aws/azure/gcp, audit, metrics listen) applied once in `applyEnvOverrides`; malformed env durations now fail loudly (CHANGELOG note); `ZTAP_ALERT_SLACK_WEBHOOK_URL`/`PAGERDUTY_ROUTING_KEY` still imply `alerting.enabled: true` |
+| D.3 metrics | `metrics.enabled/port/path` honored by `ztap metrics` (disabled → explicit message; `metrics.StartServer(listen, path)` — no more hardcoded `/metrics`); `ZTAP_METRICS_LISTEN` still wins for the bind address |
+| D.3 enforcement | `enforcement.dry_run` → `ztap enforce --dry-run` default; new `--default-action` flag (block\|allow, validated) backed by `enforcement.default_action`; threaded into `EnforcementOptions.DefaultAction` and honored by the pf backend (allow → catch-all pass rules; block → historical behavior); eBPF/WFP remain default-deny (documented). `enforcement.mode` **removed from example/docs** (OS-determined, never read) — CHANGELOG note |
+| D.3 policy | `policy.strict` → `ztap policy validate --strict` (false = warn + exit 0); `policy.allow_empty_egress` → `--allow-empty-egress` via new `policy.ValidateWithOptions(ValidateOptions{})` (also used by `ztap enforce`); `policy.resolve_labels` → `ztap enforce --resolve-labels` default (auto-enable on podSelector policies preserved) |
+| D.3 anomaly | `anomaly.*` section defined with existing keys + `batch_size` (50), `flush_interval` (10s), `auth_token`, `fail_open` (true) — consumed by Phase E |
+| D.3 docs sync | `config.yaml.example` + `docs/reference/config.md` updated (mode removed, new keys + env documented, `ZTAP_CONFIG_STRICT` documented); round-trip enforced by `TestExampleConfigRoundTrip` |
+| Gate | `go build ./... && go test ./... -race` green; `golangci-lint run` (CI-pinned v2.12.2) 0 issues; manual smoke: `policy validate` exit codes preserved (incl. `deny-all.yaml` exit 1), `metrics` serves custom path/port from config, `--default-action` validation, all subcommand `--help` intact |
 
-- [ ] Create `internal/config/config.go`: single typed `Config` mirroring `config.yaml.example` —
-  sections `api`, `grpc`, `auth`, `cluster`, `discovery`, `logging`, `alerting`, `aws`, `azure`,
-  `gcp`, `audit`, plus the currently-dead `metrics`, `enforcement`, `policy`, `anomaly`.
-- [ ] One loader: `Load(path string) (*Config, error)` with the existing lookup order
-  (`ZTAP_CONFIG` env → `./config.yaml` → none = defaults) and yaml.v3 decoding with
-  `KnownFields(true)` so typos fail loudly. **Breaking-change note:** `KnownFields` rejects
-  configs containing unknown keys — existing user configs with stale/extra sections will start
-  failing. Announce it in the CHANGELOG as a breaking change and consider a transition window:
-  warn-and-ignore unknown keys by default, `ZTAP_CONFIG_STRICT=1` opts into hard failure.
-- [ ] Table-driven loader tests: defaults, file, env override, precedence, unknown-key rejection.
+**Commits (landed on `main`, 2026-02):**
+1. `feat: add centralized internal/config package with typed loader` (b9f2581)
+2. `refactor: migrate all commands to central config (drop ad-hoc parsers)` (1183232)
+3. `feat: honor metrics/enforcement/policy config sections (flag > env > config)` (see log)
 
-### D.2 — Migrate consumers
-
-- [ ] Replace the ~10 ad-hoc parsers: `cmd→internal/cli/{api.go:155, grpc.go, alert.go, aws.go,
-  azure.go, gcp.go, auth_sessions.go, discovery.go, cluster_runtime_config.go, logs.go}` and fold
-  `pkg→internal/{audit/config.go, logging/config.go}` section parsing into the central loader
-  (keep those packages' `Configure(cfg)` APIs; feed them sub-structs).
-- [ ] Wire through `NewRootCmd`: parse once in `PersistentPreRunE`, store on a small
-  `cli.App`-style struct; precedence **flag > env > config > default**.
-
-### D.3 — Implement the dead sections (they're documented; users expect them to work)
-
-- [ ] `metrics.enabled/port/path` → defaults for `ztap metrics` (today: `--port` flag +
-  `ZTAP_METRICS_LISTEN` only).
-- [ ] `enforcement.dry_run` / `enforcement.default_action` → defaults for `ztap enforce` flags.
-  `enforcement.mode` is OS-determined — remove from example/docs (note in changelog).
-- [ ] `policy.strict` / `allow_empty_egress` / `resolve_labels` → defaults for
-  `ztap policy validate` / `ztap enforce`.
-- [ ] `anomaly.*` → consumed by Phase E.
-- [ ] Sync `config.yaml.example` + `docs/reference/config.md` with the final struct (optionally
-  generate the example from the struct in a test to keep them permanently in sync).
-
-**Verify:** every command behaves identically with/without `config.yaml`; `config.yaml.example`
-round-trips; `rg 'yaml.Unmarshal' internal/cli` returns only the central loader.
-
-**Commits:**
-1. `feat: add centralized internal/config package with typed loader`
-2. `refactor: migrate all commands to central config (drop ad-hoc parsers)`
-3. `feat: honor metrics/enforcement/policy config sections (flag > env > config)`
+**Residuals:** `metrics.enabled` only gates `ztap metrics` (API/gRPC servers still always serve `/metrics`); `enforcement.default_action: allow` only affects the pf backend; the config file is read once per invocation, not watched/reloaded — none were in scope for D.
 
 ---
 

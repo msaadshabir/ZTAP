@@ -9,6 +9,9 @@ and Semantic Versioning (https://semver.org/).
 
 ### Added
 
+- **Config: centralized `internal/config` package** (Phase D of the modernization plan). One typed loader replaces ~10 ad-hoc per-command YAML parsers; every command now parses `config.yaml` exactly once with **flag > env > config > default** precedence.
+- **Config: previously-dead sections are now honored**: `metrics.enabled/port/path` (defaults for `ztap metrics`), `enforcement.dry_run`/`enforcement.default_action` (defaults for `ztap enforce`), and `policy.strict`/`policy.allow_empty_egress`/`policy.resolve_labels` (defaults for `ztap policy validate` / `ztap enforce`). New flags: `ztap enforce --default-action`, `ztap policy validate --strict`, `ztap policy validate --allow-empty-egress`.
+- `anomaly.batch_size` (default 50), `anomaly.flush_interval` (default 10s), `anomaly.auth_token`, and `anomaly.fail_open` (default true) config keys for the Phase E detection pipeline.
 - New audit tests: `TestVerifyIntegrityDetailed_EntryCount`, `TestLoadLastHash_ResetsCounterOnReopen`, `TestVerifyIntegrityDetailed_EmptyLog`, `TestEntryHash_NilEntry`, `TestEntryHash_ValidEntry`, `TestEntryHash_NonSerializableDetails`.
 - New flow monitor tests: `TestMonitor_SubscriberLifecycle_NoPanic`, `TestMonitor_SubscribeAfterStop`, `TestMonitor_ConcurrentSubscribeUnsubscribe`.
 - New discovery test: `TestK8sDiscovery_WatchNoMatchInitialState`.
@@ -17,6 +20,10 @@ and Semantic Versioning (https://semver.org/).
 
 ### Changed
 
+- **Breaking: config files with unknown keys now produce a warning** instead of being silently accepted. Set `ZTAP_CONFIG_STRICT=1` to fail hard on unknown keys (e.g. stale sections).
+- **`enforcement.mode` removed from `config.yaml.example` and `docs/reference/config.md`** — the enforcement backend is OS-determined (pf on macOS, eBPF on Linux) and was never read by the CLI. Existing configs containing it still parse (with a warning).
+- **Config: API/gRPC `auth.enabled` and rate-limit/TLS settings in config.yaml are now honored** by `ztap api serve` / `ztap grpc serve`; previously the `--auth` flag default silently overrode the config value. Explicit flags still win.
+- Config: `ZTAP_AUTH_SESSIONS_TTL` and other env duration overrides now fail loudly on malformed values instead of being silently ignored.
 - Lint: enabled `govet`, `gocritic`, `perfsprint`, and `usestdlibvars` linters plus `gofmt`/`goimports` formatters in `.golangci.yml` (golangci-lint v2), closing a blind spot where gofmt/vet had not run in CI; fixed all new findings (mechanical `perfsprint` rewrites, `//go:fix` inlining of pointer helpers, if-else→switch refactors; SA5011 excluded in tests — false positives because `t.Fatal` terminates the test goroutine).
 - Dependencies: upgraded `google.golang.org/grpc` to v1.79.3.
 - Tooling: bumped Go toolchain to 1.25.8 for the security workflow.

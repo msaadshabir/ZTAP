@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ztap/internal/cluster"
+	"ztap/internal/config"
 	"ztap/internal/logging"
 	"ztap/internal/policy"
 
@@ -335,15 +336,29 @@ func newPolicyValidateCmd(app *App) *cobra.Command {
 		Use:   "validate",
 		Short: "Validate a policy file locally",
 		Long:  `Performs static validation of a policy file against the ZTAP specification options.`,
-		Run:   runPolicyValidate,
+		Run: func(cmd *cobra.Command, args []string) {
+			runPolicyValidate(cmd, args, app.Config())
+		},
 	}
 	c.Flags().StringP("file", "f", "", "Path to policy file")
 	_ = c.MarkFlagRequired("file")
+	c.Flags().Bool("strict", true, "Exit non-zero on validation errors (policy.strict)")
+	c.Flags().Bool("allow-empty-egress", false, "Allow policies with no egress/ingress rules (policy.allow_empty_egress)")
 	return c
 }
 
-func runPolicyValidate(cmd *cobra.Command, args []string) {
+func runPolicyValidate(cmd *cobra.Command, args []string, central *config.Config) {
 	policyFile, _ := cmd.Flags().GetString("file")
+
+	// Flags take precedence over config (flag > env > config > default).
+	strict := central.Policy.Strict
+	if cmd.Flags().Changed("strict") {
+		strict, _ = cmd.Flags().GetBool("strict")
+	}
+	allowEmptyEgress := central.Policy.AllowEmptyEgress
+	if cmd.Flags().Changed("allow-empty-egress") {
+		allowEmptyEgress, _ = cmd.Flags().GetBool("allow-empty-egress")
+	}
 
 	// Read policy YAML from file
 	policyYAML, err := os.ReadFile(policyFile)
@@ -360,17 +375,22 @@ func runPolicyValidate(cmd *cobra.Command, args []string) {
 		logging.Fatalf("policy file contains no NetworkPolicy objects")
 	}
 
+	opts := policy.ValidateOptions{AllowEmptyEgress: allowEmptyEgress}
 	hasError := false
 	for _, p := range policies {
-		if err := p.Validate(); err != nil {
-			fmt.Printf("✗ %v\n", err)
+		if err := p.ValidateWithOptions(opts); err != nil {
+			if strict {
+				fmt.Printf("✗ %v\n", err)
+			} else {
+				logging.Warnf("policy %s: %v", p.Metadata.Name, err)
+			}
 			hasError = true
 		} else {
 			fmt.Printf("✓ policy '%s' is valid\n", p.Metadata.Name)
 		}
 	}
 
-	if hasError {
+	if hasError && strict {
 		os.Exit(1)
 	}
 }

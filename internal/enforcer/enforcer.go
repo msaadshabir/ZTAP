@@ -32,7 +32,11 @@ type EnforcementOptions struct {
 	BPFObjectPath string
 	// DebugEBPF enables extra debug logging for eBPF loading/attachment.
 	DebugEBPF bool
-	Context   context.Context
+	// DefaultAction is the action for traffic not matching any policy rule:
+	// "block" (default) or "allow". Currently honored by the pf backend;
+	// the eBPF and WFP backends are default-deny by design.
+	DefaultAction string
+	Context       context.Context
 }
 
 // ScopedPolicy is a network policy paired with subject cgroups.
@@ -184,6 +188,17 @@ func EnforceWithPF(opts EnforcementOptions) error {
 				}
 			}
 		}
+	}
+
+	// Default action for traffic not matched by any policy rule.
+	switch strings.ToLower(strings.TrimSpace(opts.DefaultAction)) {
+	case "allow":
+		anchorContent.WriteString("\n# ZTAP default action: allow (catch-all)\n")
+		anchorContent.WriteString("pass out quick from any to any\n")
+		anchorContent.WriteString("pass in quick from any to any\n")
+	case "", "block":
+		// Default-deny: traffic not matching a policy rule remains subject to
+		// the system pf ruleset (historical behavior).
 	}
 
 	if opts.DryRun {

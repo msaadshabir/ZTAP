@@ -348,6 +348,18 @@ func (e ValidationError) Error() string {
 
 // Validate checks if a policy is valid
 func (p *NetworkPolicy) Validate() error {
+	return p.ValidateWithOptions(ValidateOptions{})
+}
+
+// ValidateOptions controls policy validation.
+type ValidateOptions struct {
+	// AllowEmptyEgress permits policies with no egress or ingress rules
+	// (e.g. default-deny-only policies) instead of failing validation.
+	AllowEmptyEgress bool
+}
+
+// ValidateWithOptions validates the policy with the given options.
+func (p *NetworkPolicy) ValidateWithOptions(opts ValidateOptions) error {
 	// Check API version
 	if p.APIVersion == "" {
 		return ValidationError{p.Metadata.Name, "apiVersion", "missing"}
@@ -380,7 +392,7 @@ func (p *NetworkPolicy) Validate() error {
 	}
 
 	// Must have at least one egress or ingress rule
-	if len(p.Spec.Egress) == 0 && len(p.Spec.Ingress) == 0 {
+	if len(p.Spec.Egress) == 0 && len(p.Spec.Ingress) == 0 && !opts.AllowEmptyEgress {
 		return ValidationError{p.Metadata.Name, "spec", "must have at least one egress or ingress rule"}
 	}
 
