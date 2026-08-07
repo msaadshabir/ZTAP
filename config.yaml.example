@@ -153,12 +153,15 @@ anomaly:
   endpoint: http://localhost:5000
   threshold: 50.0 # Anomaly score threshold (0-100)
   alert_email: security@example.com
+  batch_size: 50 # Flows per batch sent to the detection service
+  flush_interval: 10s # Max time to wait before flushing a partial batch
+  auth_token: "" # Bearer token presented to the detection service
+  fail_open: true # If true, enforcement continues when the service is unreachable
 
 # Enforcement settings
 enforcement:
-  mode: pf # pf (macOS) or ebpf (Linux)
   dry_run: false # If true, log actions but don't enforce
-  default_action: block # block or allow
+  default_action: block # block or allow (default for `ztap enforce --default-action`; pf backend)
 
 # Audit logging settings
 audit:
