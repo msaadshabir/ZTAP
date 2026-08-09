@@ -48,7 +48,11 @@ func newGcpFirewallSyncCmd(app *App) *cobra.Command {
 		Short: "Sync a policy into GCP VPC firewall rules",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg := loadGCPConfig(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				logging.Fatalf("Failed to load config: %v", err)
+			}
+			cfg := loadGCPConfig(central)
 
 			flagProject, _ := cmd.Flags().GetString("project-id")
 			flagNetwork, _ := cmd.Flags().GetString("network")

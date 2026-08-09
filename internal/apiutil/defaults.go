@@ -21,19 +21,20 @@ func DefaultAuthManager() (*auth.AuthManager, error) {
 	return auth.NewAuthManager(filepath.Join(homeDir, ".ztap", "users.json"))
 }
 
-// DefaultAuditLogger returns an AuditLogger configured from the audit
-// section of the config file, falling back to ~/.ztap/audit.log when no
-// config is present.
+// DefaultAuditLogger returns an AuditLogger configured from the central
+// configuration. A missing config file is handled by config.Load using the
+// documented defaults; malformed or invalid audit settings are returned to
+// the caller so the server cannot silently run with unsigned audit logging.
+// CLI commands pass an explicit logger after parsing config once, so this
+// loader is only used by direct server constructors and library callers.
 func DefaultAuditLogger() (*audit.AuditLogger, error) {
-	if cfg, err := config.Load(""); err == nil {
-		if opts, _, err := audit.OptionsFromSection(cfg.Audit); err == nil {
-			return audit.NewAuditLoggerWithOptions(opts)
-		}
-	}
-	homeDir, err := os.UserHomeDir()
+	cfg, err := config.Load("")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, fmt.Errorf("load audit configuration: %w", err)
 	}
-	logPath := filepath.Join(homeDir, ".ztap", "audit.log")
-	return audit.NewAuditLogger(logPath)
+	opts, _, err := audit.OptionsFromSection(cfg.Audit)
+	if err != nil {
+		return nil, fmt.Errorf("configure audit logger: %w", err)
+	}
+	return audit.NewAuditLoggerWithOptions(opts)
 }

@@ -14,14 +14,17 @@ func newMetricsCmd(app *App) *cobra.Command {
 		Use:   "metrics",
 		Short: "Start Prometheus metrics server",
 		Long:  `Start HTTP server exposing ZTAP metrics in Prometheus format`,
-		Run: func(cmd *cobra.Command, args []string) {
-			central := app.Config()
+		RunE: func(cmd *cobra.Command, args []string) error {
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
 
 			// metrics.enabled gates the command; metrics.port/path provide the
 			// defaults (flag > env ZTAP_METRICS_LISTEN > config > default).
 			if !central.Metrics.Enabled {
 				fmt.Println("Metrics server is disabled (metrics.enabled: false). Set it to true or remove the key to enable.")
-				return
+				return nil
 			}
 
 			port := central.Metrics.Port
@@ -31,6 +34,9 @@ func newMetricsCmd(app *App) *cobra.Command {
 			path := string(central.Metrics.Path)
 			if path == "" {
 				path = "/metrics"
+			}
+			if err := metrics.ValidatePath(path); err != nil {
+				return err
 			}
 
 			listen := strings.TrimSpace(central.Metrics.Listen)
@@ -43,8 +49,9 @@ func newMetricsCmd(app *App) *cobra.Command {
 			fmt.Println("Press Ctrl+C to stop")
 
 			if err := metrics.StartServer(listen, path); err != nil {
-				fmt.Printf("Error: Failed to start metrics server: %v\n", err)
+				return fmt.Errorf("failed to start metrics server: %w", err)
 			}
+			return nil
 		},
 	}
 	c.Flags().IntP("port", "p", 9090, "Port for metrics server")

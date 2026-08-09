@@ -106,15 +106,37 @@ func (c *Collector) RecordFlow(action, protocol, direction string) {
 	}
 }
 
-// StartServer starts the Prometheus metrics HTTP server on the given listen
-// address (host:port) and path.
-func StartServer(listen, path string) error {
-	if strings.TrimSpace(path) == "" {
+// ValidatePath checks that path is a valid net/http ServeMux pattern for the
+// metrics endpoint. It prevents user-provided configuration from reaching the
+// panic-based ServeMux.Handle API unchecked.
+func ValidatePath(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
 		path = "/metrics"
+	}
+	if !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("metrics path %q must start with '/'", path)
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(path, promhttp.Handler())
+	return registerMetricsHandler(mux, path, http.NotFoundHandler())
+}
+
+// StartServer starts the Prometheus metrics HTTP server on the given listen
+// address (host:port) and path.
+func StartServer(listen, path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "/metrics"
+	}
+	if err := ValidatePath(path); err != nil {
+		return err
+	}
+
+	mux := http.NewServeMux()
+	if err := registerMetricsHandler(mux, path, promhttp.Handler()); err != nil {
+		return err
+	}
 
 	srv := &http.Server{
 		Addr:              listen,
@@ -127,4 +149,17 @@ func StartServer(listen, path string) error {
 
 	fmt.Printf("Starting metrics server on http://%s%s\n", listen, path)
 	return srv.ListenAndServe()
+}
+
+// registerMetricsHandler converts ServeMux's panic-based registration API into
+// an error for configuration supplied by users. Besides the leading-slash
+// check above, this protects against future ServeMux pattern restrictions.
+func registerMetricsHandler(mux *http.ServeMux, path string, handler http.Handler) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("invalid metrics path %q: %v", path, recovered)
+		}
+	}()
+	mux.Handle(path, handler)
+	return nil
 }

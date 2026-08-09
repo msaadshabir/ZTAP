@@ -41,8 +41,14 @@ func newCreateUserCmd(app *App) *cobra.Command {
 			username := args[0]
 			role, _ := cmd.Flags().GetString("role")
 
+			central, err := app.Config()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
 			// Get auth manager
-			am, err := getAuthManager(app.Config())
+			am, err := getAuthManager(central)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -97,7 +103,12 @@ func newListUsersCmd(app *App) *cobra.Command {
 		Use:   "list",
 		Short: "List all users",
 		Run: func(cmd *cobra.Command, args []string) {
-			am, err := getAuthManager(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			am, err := getAuthManager(central)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -147,7 +158,12 @@ func newChangePasswordCmd(app *App) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			username := args[0]
 
-			am, err := getAuthManager(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			am, err := getAuthManager(central)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -213,7 +229,12 @@ func newDisableUserCmd(app *App) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			username := args[0]
 
-			am, err := getAuthManager(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			am, err := getAuthManager(central)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -239,7 +260,12 @@ func newEnableUserCmd(app *App) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			username := args[0]
 
-			am, err := getAuthManager(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			am, err := getAuthManager(central)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -274,7 +300,12 @@ func newLoginCmd(app *App) *cobra.Command {
 				os.Exit(1)
 			}
 
-			am, err := getAuthManager(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			am, err := getAuthManager(central)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -313,7 +344,12 @@ func newLogoutCmd(app *App) *cobra.Command {
 				return
 			}
 
-			am, err := getAuthManager(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			am, err := getAuthManager(central)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)

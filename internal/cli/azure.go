@@ -48,7 +48,11 @@ func newAzureNSGSyncCmd(app *App) *cobra.Command {
 		Short: "Sync a policy into an Azure NSG",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg := loadAzureConfig(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				logging.Fatalf("Failed to load config: %v", err)
+			}
+			cfg := loadAzureConfig(central)
 
 			flagSub, _ := cmd.Flags().GetString("subscription-id")
 			flagRG, _ := cmd.Flags().GetString("resource-group")

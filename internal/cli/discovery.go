@@ -43,7 +43,11 @@ func newRegisterCmd(app *App) *cobra.Command {
 		Short: "Register a service",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			disc, err := getDiscoveryBackend(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			disc, err := getDiscoveryBackend(central)
 			if err != nil {
 				return fmt.Errorf("failed to load discovery backend: %w", err)
 			}
@@ -72,7 +76,11 @@ func newDeregisterCmd(app *App) *cobra.Command {
 		Short: "Deregister a service",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			disc, err := getDiscoveryBackend(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			disc, err := getDiscoveryBackend(central)
 			if err != nil {
 				return fmt.Errorf("failed to load discovery backend: %w", err)
 			}
@@ -100,7 +108,11 @@ func newResolveCmd(app *App) *cobra.Command {
 				return errors.New("no labels provided")
 			}
 
-			disc, err := getDiscoveryBackend(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			disc, err := getDiscoveryBackend(central)
 			if err != nil {
 				return fmt.Errorf("failed to load discovery backend: %w", err)
 			}
@@ -127,7 +139,11 @@ func newListServicesCmd(app *App) *cobra.Command {
 		Use:   "list",
 		Short: "List all registered services",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			disc, err := getDiscoveryBackend(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			disc, err := getDiscoveryBackend(central)
 			if err != nil {
 				return fmt.Errorf("failed to load discovery backend: %w", err)
 			}

@@ -41,7 +41,11 @@ func newAlertTestCmd(app *App) *cobra.Command {
 		Use:   "test",
 		Short: "Send a test alert using configured sinks",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := alertConfig(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			cfg := alertConfig(central)
 			if !cfg.Enabled {
 				return errors.New("alerting is disabled")
 			}

@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"ztap/internal/cluster"
+	"ztap/internal/config"
 	"ztap/internal/logging"
 
 	"github.com/spf13/cobra"
 )
 
-// Global cluster election instance (initialized on first use)
+// Global cluster election instance (created with the root command and started
+// only for commands that use the configured CLI cluster backend).
 var clusterElection cluster.LeaderElection
+var clusterBackendRunning bool
+var clusterBackendCleanup func()
 
 // Backend type flag (default: memory)
 var clusterBackend string = "memory"
@@ -23,6 +28,10 @@ var clusterBackend string = "memory"
 var etcdEndpoints []string
 
 func newClusterCmd() *cobra.Command {
+	return newClusterCmdWithApp(&App{})
+}
+
+func newClusterCmdWithApp(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "cluster",
 		Short: "Manage cluster coordination and distributed architecture",
@@ -33,8 +42,8 @@ func newClusterCmd() *cobra.Command {
 	c.AddCommand(newClusterJoinCmd())
 	c.AddCommand(newClusterLeaveCmd())
 	c.AddCommand(newClusterListCmd())
-	c.AddCommand(newClusterConfigCmd())
-	c.AddCommand(newClusterTestEtcdCmd())
+	c.AddCommand(newClusterConfigCmdWithApp(app))
+	c.AddCommand(newClusterTestEtcdCmdWithApp(app))
 	return c
 }
 
@@ -179,6 +188,10 @@ func newClusterListCmd() *cobra.Command {
 }
 
 func newClusterConfigCmd() *cobra.Command {
+	return newClusterConfigCmdWithApp(&App{})
+}
+
+func newClusterConfigCmdWithApp(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "config",
 		Short: "Configure cluster backend",
@@ -186,7 +199,7 @@ func newClusterConfigCmd() *cobra.Command {
 	}
 	// Add config subcommands
 	c.AddCommand(newClusterConfigSetCmd())
-	c.AddCommand(newClusterConfigShowCmd())
+	c.AddCommand(newClusterConfigShowCmdWithApp(app))
 	return c
 }
 
@@ -222,43 +235,73 @@ func newClusterConfigSetCmd() *cobra.Command {
 }
 
 func newClusterConfigShowCmd() *cobra.Command {
+	return newClusterConfigShowCmdWithApp(&App{})
+}
+
+func newClusterConfigShowCmdWithApp(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "show",
 		Short: "Show current cluster configuration",
 		Long:  `Display the current cluster backend configuration.`,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			runtimeCfg := loadClusterRuntimeConfig(central)
+			backend, err := resolveClusterBackend(runtimeCfg)
+			if err != nil {
+				return err
+			}
+
 			fmt.Println("Cluster Configuration")
 			fmt.Println("=====================")
-			fmt.Printf("Backend: %s\n", clusterBackend)
+			fmt.Printf("Backend: %s\n", backend)
 
-			if clusterBackend == "etcd" {
-				if len(etcdEndpoints) > 0 {
-					fmt.Printf("Etcd endpoints: %v\n", etcdEndpoints)
+			if backend == clusterBackendEtcd {
+				if len(runtimeCfg.Etcd.Endpoints) > 0 {
+					fmt.Printf("Etcd endpoints: %v\n", runtimeCfg.Etcd.Endpoints)
 				} else {
 					fmt.Println("Etcd endpoints: [localhost:2379] (default)")
 				}
 			}
 
-			if clusterElection != nil {
-				hostname, _ := os.Hostname()
-				fmt.Printf("Node ID: %s\n", hostname)
+			if clusterBackendRunning && clusterElection != nil {
+				nodeID := strings.TrimSpace(runtimeCfg.NodeID)
+				if nodeID == "" {
+					nodeID, _ = os.Hostname()
+				}
+				fmt.Printf("Node ID: %s\n", nodeID)
 				fmt.Printf("Running: yes\n")
 				fmt.Printf("Leader: %v\n", clusterElection.IsLeader())
 			} else {
-				fmt.Println("Status: not initialized")
+				fmt.Println("Status: not running")
 			}
+			return nil
 		},
 	}
 	return c
 }
 
 func newClusterTestEtcdCmd() *cobra.Command {
+	return newClusterTestEtcdCmdWithApp(&App{})
+}
+
+func newClusterTestEtcdCmdWithApp(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "test-etcd",
 		Short: "Test etcd connectivity",
 		Long:  `Test connection to etcd cluster and display status.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			endpoints := etcdEndpoints
+		RunE: func(cmd *cobra.Command, args []string) error {
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			runtimeCfg := loadClusterRuntimeConfig(central)
+			endpoints := append([]string(nil), runtimeCfg.Etcd.Endpoints...)
+			if cmd.Flags().Changed("etcd-endpoints") {
+				endpoints = append([]string(nil), etcdEndpoints...)
+			}
 			if len(endpoints) == 0 {
 				endpoints = []string{"localhost:2379"}
 			}
@@ -266,25 +309,32 @@ func newClusterTestEtcdCmd() *cobra.Command {
 			fmt.Printf("Testing etcd connection to: %v\n", endpoints)
 
 			etcdConfig := &cluster.EtcdConfig{
-				Endpoints:   endpoints,
-				DialTimeout: 5 * time.Second,
+				Endpoints:         endpoints,
+				DialTimeout:       runtimeCfg.Etcd.DialTimeout,
+				Username:          runtimeCfg.Etcd.Username,
+				Password:          runtimeCfg.Etcd.Password,
+				KeyPrefix:         runtimeCfg.Etcd.KeyPrefix,
+				LeaderElectionKey: runtimeCfg.Etcd.LeaderElectionKey,
+				SessionTTL:        runtimeCfg.Etcd.SessionTTL,
 			}
 
 			client, err := etcdConfig.NewEtcdClient()
 			if err != nil {
-				fmt.Printf("Error: Failed to connect to etcd: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("failed to connect to etcd: %w", err)
 			}
 			defer func() { _ = client.Close() }()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			baseCtx := cmd.Context()
+			if baseCtx == nil {
+				baseCtx = context.Background()
+			}
+			ctx, cancel := context.WithTimeout(baseCtx, 5*time.Second)
 			defer cancel()
 
 			// Try to get cluster status
 			resp, err := client.MemberList(ctx)
 			if err != nil {
-				fmt.Printf("Error: Failed to get cluster status: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("failed to get cluster status: %w", err)
 			}
 
 			fmt.Println("\nConnection successful!")
@@ -293,41 +343,104 @@ func newClusterTestEtcdCmd() *cobra.Command {
 				fmt.Printf("  %d. ID=%d, Name=%s, ClientURLs=%v\n",
 					i+1, member.ID, member.Name, member.ClientURLs)
 			}
+			return nil
 		},
 	}
 	c.Flags().StringSliceVar(&etcdEndpoints, "etcd-endpoints", []string{}, "Etcd cluster endpoints to test")
 	return c
 }
 
-// initClusterBackend initializes the in-memory cluster election and policy
-// sync backends. It ran as package init before the CLI factory refactor; it
-// is invoked once per NewRootCmd so `ztap cluster ...` behavior is unchanged.
-func initClusterBackend(root *cobra.Command) {
-	// Initialize cluster election based on backend type
+// commandUsesClusterBackend reports whether the command needs the CLI's
+// configured election and policy-sync backends. They are intentionally started
+// from PersistentPreRunE, after Cobra has installed the command context, rather
+// than while the root command is being constructed.
+func commandUsesClusterBackend(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return false
+	}
+
+	for current := cmd; current != nil; current = current.Parent() {
+		switch current.Name() {
+		case "cluster":
+			switch cmd.Name() {
+			case "status", "join", "leave", "list":
+				return true
+			}
+		case "policy":
+			// policy validate is local-only and does not need the cluster.
+			return cmd.Name() != "validate"
+		}
+	}
+	return false
+}
+
+// initClusterBackend resets the package-level handles used by the legacy CLI
+// command implementations. The actual backend is created from the central
+// configuration when a cluster or policy command is about to run.
+func initClusterBackend() {
+	if clusterBackendRunning {
+		stopClusterBackend()
+	}
+
 	hostname, _ := os.Hostname()
-	config := cluster.LeaderElectionConfig{
-		NodeID:      hostname,
-		NodeAddress: "127.0.0.1:9090", // Default; should be configurable
+	electionConfig := cluster.LeaderElectionConfig{
+		NodeID:            hostname,
+		NodeAddress:       "127.0.0.1:9090",
+		HeartbeatInterval: 50 * time.Millisecond,
+		InitialLeadership: 10 * time.Millisecond,
 	}
 
-	// Default to in-memory backend for now
-	// Users can switch to etcd with "ztap cluster config set-backend etcd"
-	clusterElection = cluster.NewInMemoryElection(config)
-
-	// Initialize policy sync with the cluster election
+	// Keep an unstarted in-memory backend available for direct command tests.
+	// Normal root-command execution replaces it in startClusterBackendWithConfig.
+	clusterElection = cluster.NewInMemoryElection(electionConfig)
 	policySync = cluster.NewInMemoryPolicySync(clusterElection, hostname)
+	clusterBackendCleanup = nil
+	clusterBackendRunning = false
+}
 
-	// Start election and policy sync in background
-	// Note: In a real daemon, this would be managed by the server lifecycle
-	ctx := root.Context()
+// startClusterBackend retains the test/helper API used by direct command
+// invocations and starts the default in-memory runtime.
+func startClusterBackend(ctx context.Context) error {
+	return startClusterBackendWithConfig(ctx, &config.Config{}, "127.0.0.1:9090")
+}
+
+// startClusterBackendWithConfig creates and starts the configured election and
+// policy manager. Keeping this lifecycle in one place ensures `cluster` and
+// `policy` CLI commands use the same etcd/memory backend as API and gRPC.
+func startClusterBackendWithConfig(ctx context.Context, cfg *config.Config, nodeAddress string) error {
 	if ctx == nil {
-		// Fallback for CLI testing
-		return
+		ctx = context.Background()
 	}
-	if err := clusterElection.Start(ctx); err != nil {
-		logging.Warnf("failed to start cluster election: %v", err)
+	if cfg == nil {
+		cfg = &config.Config{}
 	}
-	if err := policySync.(*cluster.InMemoryPolicySync).Start(ctx); err != nil {
-		logging.Warnf("failed to start policy sync: %v", err)
+	if clusterBackendRunning {
+		stopClusterBackend()
 	}
+
+	election, manager, cleanup, err := initPolicyRuntime(ctx, nodeAddress, cfg)
+	if err != nil {
+		return err
+	}
+	clusterElection = election
+	policySync = manager
+	clusterBackendCleanup = cleanup
+	clusterBackendRunning = true
+	return nil
+}
+
+func stopClusterBackend() {
+	if clusterBackendCleanup != nil {
+		clusterBackendCleanup()
+		clusterBackendCleanup = nil
+	} else {
+		// Fallback for an unstarted/directly constructed backend.
+		if stopper, ok := policySync.(interface{ Stop() error }); ok {
+			_ = stopper.Stop()
+		}
+		if clusterElection != nil {
+			_ = clusterElection.Stop()
+		}
+	}
+	clusterBackendRunning = false
 }

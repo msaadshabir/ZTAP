@@ -49,7 +49,11 @@ func newAwsSGSyncCmd(app *App) *cobra.Command {
 		Short: "Sync a policy into an AWS Security Group",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg := loadAWSConfig(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				logging.Fatalf("Failed to load config: %v", err)
+			}
+			cfg := loadAWSConfig(central)
 
 			flagRegion, _ := cmd.Flags().GetString("region")
 			flagProfile, _ := cmd.Flags().GetString("profile")

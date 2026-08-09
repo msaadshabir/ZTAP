@@ -20,7 +20,10 @@ func newStatusCmd(app *App) *cobra.Command {
 		Short: "Show status of on-premises and cloud resources",
 		Long:  `Display discovered resources from local system and cloud providers (AWS, Azure, GCP)`,
 		Run: func(cmd *cobra.Command, args []string) {
-			central := app.Config()
+			central, err := app.Config()
+			if err != nil {
+				logging.Fatalf("Failed to load config: %v", err)
+			}
 			region, _ := cmd.Flags().GetString("region")
 			showAWS, _ := cmd.Flags().GetBool("aws")
 			showAzure, _ := cmd.Flags().GetBool("azure")

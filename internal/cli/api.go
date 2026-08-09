@@ -31,7 +31,10 @@ func newApiServeCmd(app *App) *cobra.Command {
 		Use:   "serve",
 		Short: "Start the REST API server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			central := app.Config()
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
 			cfg := apiServerConfig(central)
 
 			// Flags take precedence over config (flag > env > config > default).
@@ -111,7 +114,11 @@ func newApiServeCmd(app *App) *cobra.Command {
 				logging.Warnf("Failed to load discovery backend (podSelector targets via API will not be resolvable): %v", err)
 				disc = nil
 			}
-			srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, SessionsSQLitePath: sessionsPath, Discovery: disc, ResolveLabelsInterval: 5 * time.Second, PolicyManager: policyManager, ClusterElection: clusterElection})
+			auditLogger, err := auditLoggerFromConfig(central)
+			if err != nil {
+				return err
+			}
+			srv, err := apihttp.NewServer(apihttp.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, AuditLogger: auditLogger, SessionsSQLitePath: sessionsPath, Discovery: disc, ResolveLabelsInterval: 5 * time.Second, PolicyManager: policyManager, ClusterElection: clusterElection})
 			if err != nil {
 				return err
 			}

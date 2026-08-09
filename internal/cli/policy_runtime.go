@@ -108,9 +108,10 @@ func initPolicyRuntime(ctx context.Context, nodeAddress string, cfg *config.Conf
 	if config.HeartbeatInterval == 0 {
 		config.HeartbeatInterval = 200 * time.Millisecond
 	}
-	// CLI runtime should elect a leader quickly on startup; the in-memory
-	// backend's default InitialLeadership delay is tuned for tests.
-	config.InitialLeadership = 0
+	// CLI runtime should elect a leader quickly on startup. A positive value
+	// is required because the in-memory constructor treats zero as "use the
+	// three-second default".
+	config.InitialLeadership = 10 * time.Millisecond
 
 	election := cluster.NewInMemoryElection(config)
 	if err := election.Start(ctx); err != nil {

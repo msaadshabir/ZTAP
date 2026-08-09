@@ -337,7 +337,11 @@ func newPolicyValidateCmd(app *App) *cobra.Command {
 		Short: "Validate a policy file locally",
 		Long:  `Performs static validation of a policy file against the ZTAP specification options.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			runPolicyValidate(cmd, args, app.Config())
+			central, err := app.Config()
+			if err != nil {
+				logging.Fatalf("Failed to load config: %v", err)
+			}
+			runPolicyValidate(cmd, args, central)
 		},
 	}
 	c.Flags().StringP("file", "f", "", "Path to policy file")
@@ -382,7 +386,9 @@ func runPolicyValidate(cmd *cobra.Command, args []string, central *config.Config
 			if strict {
 				fmt.Printf("✗ %v\n", err)
 			} else {
-				logging.Warnf("policy %s: %v", p.Metadata.Name, err)
+				// Validation diagnostics are command output, not background logs.
+				// Keep them visible even when --log-level filters warnings.
+				fmt.Printf("⚠ policy %s: %v\n", p.Metadata.Name, err)
 			}
 			hasError = true
 		} else {

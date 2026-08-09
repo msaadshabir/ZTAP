@@ -36,7 +36,11 @@ func newAuditViewCmd(app *App) *cobra.Command {
 		Short: "View audit log entries",
 		Long:  `Query and display audit log entries with optional filtering.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAuditView(cmd, args, app.Config())
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			return runAuditView(cmd, args, central)
 		},
 	}
 	// View command flags
@@ -56,7 +60,11 @@ func newAuditVerifyCmd(app *App) *cobra.Command {
 		Short: "Verify audit log integrity",
 		Long:  `Verify the cryptographic integrity of the audit log to detect tampering.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAuditVerify(cmd, args, app.Config())
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			return runAuditVerify(cmd, args, central)
 		},
 	}
 	return c
@@ -113,7 +121,11 @@ func newAuditStatsCmd(app *App) *cobra.Command {
 		Short: "Display audit log statistics",
 		Long:  `Show statistics about the audit log including size, entry count, and last modification.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAuditStats(cmd, args, app.Config())
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
+			return runAuditStats(cmd, args, central)
 		},
 	}
 	return c
@@ -227,7 +239,7 @@ func runAuditVerify(cmd *cobra.Command, args []string, central *config.Config) e
 	defer func() { _ = logger.Close() }()
 
 	fmt.Println("Verifying audit log integrity...")
-	fmt.Printf("Log file: %s\n\n", logPath)
+	fmt.Printf("Log file: %s\n\n", cfg.LogPath)
 
 	result := logger.VerifyIntegrityDetailed(verifier)
 

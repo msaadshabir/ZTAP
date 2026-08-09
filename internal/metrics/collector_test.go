@@ -23,6 +23,12 @@ func resetCollector(t *testing.T) {
 	once = sync.Once{}
 }
 
+func TestStartServerRejectsInvalidPath(t *testing.T) {
+	if err := StartServer("127.0.0.1:0", "metrics"); err == nil {
+		t.Fatal("expected invalid metrics path to return an error")
+	}
+}
+
 func TestGetCollectorSingleton(t *testing.T) {
 	resetCollector(t)
 

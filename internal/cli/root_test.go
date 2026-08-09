@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"context"
 	"io"
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"ztap/internal/config"
 )
 
 // expectedTree mirrors the command surface captured as the Phase C baseline
@@ -96,6 +100,50 @@ func TestNewRootCmdSetsVersion(t *testing.T) {
 	_ = r.Close()
 	if !strings.Contains(string(out), "ztap 9.9.9-test") {
 		t.Errorf("version output = %q, want it to contain %q", out, "ztap 9.9.9-test")
+	}
+}
+
+func TestClusterBackendUsesCentralConfig(t *testing.T) {
+	initClusterBackend()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Config{
+		Cluster: config.Cluster{
+			Backend:     "memory",
+			NodeID:      "configured-node",
+			NodeAddress: "127.0.0.1:9191",
+			Election: config.ClusterElection{
+				HeartbeatInterval: config.Duration(10 * time.Millisecond),
+			},
+		},
+	}
+	if err := startClusterBackendWithConfig(ctx, cfg, "127.0.0.1:9090"); err != nil {
+		t.Fatalf("startClusterBackendWithConfig returned error: %v", err)
+	}
+	defer stopClusterBackend()
+
+	node := clusterElection.GetNode("configured-node")
+	if node == nil {
+		t.Fatal("configured node was not registered")
+	}
+	if node.Address != "127.0.0.1:9191" {
+		t.Fatalf("node address = %q, want configured address", node.Address)
+	}
+}
+
+func TestClusterBackendLifecycle(t *testing.T) {
+	initClusterBackend()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := startClusterBackend(ctx); err != nil {
+		t.Fatalf("startClusterBackend returned error: %v", err)
+	}
+	defer stopClusterBackend()
+
+	if clusterElection == nil || !clusterElection.IsLeader() {
+		t.Fatal("cluster backend did not elect the local node")
 	}
 }
 

@@ -12,22 +12,25 @@ import (
 // App carries per-invocation state (currently the single parsed config).
 // NewRootCmd owns one App; PersistentPreRunE parses the config once and the
 // subcommands read it via app.Config(). Precedence is flag > env > file > default.
+// Commands invoked directly (e.g. in unit tests) without the root
+// PersistentPreRunE get a lazy load on first use and must handle the error.
 type App struct {
 	cfg *config.Config
 }
 
-// Config returns the parsed configuration. When commands are invoked directly
-// (e.g. in unit tests) without going through the root PersistentPreRunE, the
-// config is loaded on first use.
-func (a *App) Config() *config.Config {
+// Config returns the parsed configuration, or an error when loading it fails.
+// In the normal CLI path PersistentPreRunE has already loaded and cached the
+// config, so this returns the cached value; the lazy path exists for direct
+// invocations and surfaces the error to the caller instead of exiting.
+func (a *App) Config() (*config.Config, error) {
 	if a.cfg == nil {
 		cfg, err := config.Load("")
 		if err != nil {
-			logging.Fatalf("Failed to load config: %v", err)
+			return nil, err
 		}
 		a.cfg = cfg
 	}
-	return a.cfg
+	return a.cfg, nil
 }
 
 // NewRootCmd builds the ztap root command with every subcommand registered.
@@ -36,6 +39,7 @@ func (a *App) Config() *config.Config {
 func NewRootCmd(version string) *cobra.Command {
 	app := &App{}
 	Version = version
+	clusterStarted := false
 
 	root := &cobra.Command{
 		Use:   "ztap",
@@ -67,7 +71,19 @@ It uses eBPF on Linux and pf on macOS to enforce fine-grained traffic rules.`,
 			if _, err := logging.Configure(lcfg); err != nil {
 				return fmt.Errorf("configure logging: %w", err)
 			}
+			if commandUsesClusterBackend(cmd) {
+				if err := startClusterBackendWithConfig(cmd.Context(), cfg, "127.0.0.1:9090"); err != nil {
+					return err
+				}
+				clusterStarted = true
+			}
 			return nil
+		},
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			if clusterStarted {
+				stopClusterBackend()
+				clusterStarted = false
+			}
 		},
 	}
 
@@ -82,7 +98,7 @@ It uses eBPF on Linux and pf on macOS to enforce fine-grained traffic rules.`,
 		newAuditCmd(app),
 		newAwsCmd(app),
 		newAzureCmd(app),
-		newClusterCmd(),
+		newClusterCmdWithApp(app),
 		newComplianceCmd(),
 		newDiscoveryCmd(app),
 		newEnforceCmd(app),
@@ -97,7 +113,7 @@ It uses eBPF on Linux and pf on macOS to enforce fine-grained traffic rules.`,
 		newVersionCmd(),
 	)
 
-	initClusterBackend(root)
+	initClusterBackend()
 
 	return root
 }

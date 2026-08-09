@@ -24,7 +24,10 @@ func newAgentCmd(app *App) *cobra.Command {
 		Use:   "agent",
 		Short: "Run ZTAP node agent for Kubernetes enforcement",
 		Run: func(cmd *cobra.Command, args []string) {
-			central := app.Config()
+			central, err := app.Config()
+			if err != nil {
+				logging.Fatalf("Failed to load config: %v", err)
+			}
 			namespace, _ := cmd.Flags().GetString("namespace")
 			namespacesCSV, _ := cmd.Flags().GetString("namespaces")
 			allNamespaces, _ := cmd.Flags().GetBool("all-namespaces")

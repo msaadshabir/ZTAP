@@ -21,7 +21,10 @@ func newEnforceCmd(app *App) *cobra.Command {
 		Use:   "enforce -f policy.yaml",
 		Short: "Enforce zero-trust network policies",
 		Run: func(cmd *cobra.Command, args []string) {
-			central := app.Config()
+			central, err := app.Config()
+			if err != nil {
+				logging.Fatalf("Failed to load config: %v", err)
+			}
 			policyFile, _ := cmd.Flags().GetString("file")
 			cgroupPath, _ := cmd.Flags().GetString("cgroup")
 			bpfObject, _ := cmd.Flags().GetString("bpf-object")
@@ -65,7 +68,7 @@ func newEnforceCmd(app *App) *cobra.Command {
 
 			var disc policy.ServiceDiscovery
 			if resolveLabels {
-				disc, err = getDiscoveryBackend(app.Config())
+				disc, err = getDiscoveryBackend(central)
 				if err != nil {
 					logging.Fatalf("Failed to load discovery backend for label resolution: %v", err)
 				}

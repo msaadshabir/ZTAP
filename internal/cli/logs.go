@@ -74,7 +74,12 @@ func newLogsCmd(app *App) *cobra.Command {
 				os.Exit(1)
 			}
 
-			logFile := resolveLogFilePath(app.Config())
+			central, err := app.Config()
+			if err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			logFile := resolveLogFilePath(central)
 			filters := logFilters{
 				MinLevel: minLevel,
 				Contains: strings.TrimSpace(contains),

@@ -30,7 +30,10 @@ func newGrpcServeCmd(app *App) *cobra.Command {
 		Use:   "serve",
 		Short: "Start the gRPC API server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			central := app.Config()
+			central, err := app.Config()
+			if err != nil {
+				return err
+			}
 			cfg := grpcServerConfig(central)
 
 			// Flags take precedence over config (flag > env > config > default).
@@ -100,7 +103,11 @@ func newGrpcServeCmd(app *App) *cobra.Command {
 				logging.Warnf("Failed to load discovery backend (podSelector targets via gRPC will not be resolvable): %v", err)
 				disc = nil
 			}
-			srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, Discovery: disc, ResolveLabelsInterval: 5 * time.Second, PolicyManager: policyManager, ClusterElection: clusterElection})
+			auditLogger, err := auditLoggerFromConfig(central)
+			if err != nil {
+				return err
+			}
+			srv, err := apigrpc.NewServer(apigrpc.ServerOptions{Config: cfg, AuthManager: am, Alerts: alertManager, AuditLogger: auditLogger, Discovery: disc, ResolveLabelsInterval: 5 * time.Second, PolicyManager: policyManager, ClusterElection: clusterElection})
 			if err != nil {
 				return err
 			}
