@@ -18,6 +18,33 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
+func TestLoadEmptyFileUsesDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{name: "empty", content: ""},
+		{name: "comments-only", content: "# defaults\n"},
+	} {
+		for _, strict := range []string{"", "1"} {
+			name := tc.name + "/" + map[string]string{"": "lenient", "1": "strict"}[strict]
+			t.Run(name, func(t *testing.T) {
+				path := writeConfig(t, tc.content)
+				t.Setenv("ZTAP_CONFIG", path)
+				t.Setenv("ZTAP_CONFIG_STRICT", strict)
+
+				cfg, err := Load("")
+				if err != nil {
+					t.Fatalf("Load returned error for empty config: %v", err)
+				}
+				if got := string(cfg.API.Listen); got != "127.0.0.1:8080" {
+					t.Errorf("api.listen = %q, want default", got)
+				}
+			})
+		}
+	}
+}
+
 func TestLoadDefaultsWhenFileMissing(t *testing.T) {
 	t.Setenv("ZTAP_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
 	t.Setenv("ZTAP_LOG_LEVEL", "") // ensure no env leakage
@@ -246,9 +273,9 @@ logging:
 	orig := os.Stderr
 	r, w, _ := os.Pipe()
 	os.Stderr = w
+	defer func() { os.Stderr = orig }()
 	cfg, err := Load("")
 	_ = w.Close()
-	os.Stderr = orig
 	stderr, _ := io.ReadAll(r)
 	_ = r.Close()
 
@@ -288,6 +315,61 @@ alerting:
 
 	if _, err := Load(""); err == nil {
 		t.Fatal("expected error for invalid duration value")
+	}
+}
+
+func TestUnknownKeyWithTypeErrorFails(t *testing.T) {
+	// An unknown key must not mask a real type error on a known key: the
+	// lenient mode warns about unknown keys but still fails on bad values.
+	path := writeConfig(t, `
+api:
+  listen: 127.0.0.1:8080
+bogus_section:
+  whatever: true
+alerting:
+  timeout: 30
+`)
+	t.Setenv("ZTAP_CONFIG", path)
+	t.Setenv("ZTAP_CONFIG_STRICT", "")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error when a known key has a bad type alongside unknown keys")
+	}
+}
+
+func TestStringFieldsAreTrimmed(t *testing.T) {
+	// Pre-centralization loaders applied strings.TrimSpace to every string
+	// value before storing it; the typed loader must preserve that (e.g. a
+	// padded webhook URL would otherwise break outbound HTTP).
+	path := writeConfig(t, `
+logging:
+  level: " debug "
+alerting:
+  slack:
+    webhook_url: " https://hooks.slack.com/xyz "
+cluster:
+  etcd:
+    username: " root "
+    password: " secret "
+`)
+	t.Setenv("ZTAP_CONFIG", path)
+	t.Setenv("ZTAP_CONFIG_STRICT", "")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if got := string(cfg.Logging.Level); got != "debug" {
+		t.Errorf("logging.level = %q, want debug", got)
+	}
+	if got := string(cfg.Alerting.Slack.WebhookURL); got != "https://hooks.slack.com/xyz" {
+		t.Errorf("alerting.slack.webhook_url = %q, want trimmed", got)
+	}
+	if got := string(cfg.Cluster.Etcd.Username); got != "root" {
+		t.Errorf("cluster.etcd.username = %q, want root", got)
+	}
+	if got := string(cfg.Cluster.Etcd.Password); got != "secret" {
+		t.Errorf("cluster.etcd.password = %q, want secret", got)
 	}
 }
 

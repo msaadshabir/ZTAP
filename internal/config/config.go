@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -309,7 +310,7 @@ func decode(data []byte, cfg *Config) error {
 	if strict {
 		dec := yaml.NewDecoder(bytes.NewReader(data))
 		dec.KnownFields(true)
-		if err := dec.Decode(cfg); err != nil {
+		if err := dec.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 		return nil
@@ -320,18 +321,33 @@ func decode(data []byte, cfg *Config) error {
 	probe := defaults()
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(probe); err != nil {
-		if !strings.Contains(err.Error(), "not found in type") {
+	if err := dec.Decode(probe); err != nil && !errors.Is(err, io.EOF) {
+		var typeErr *yaml.TypeError
+		if !errors.As(err, &typeErr) {
+			// Syntax errors and the like are not TypeError; fail loudly.
 			return err
 		}
+		// yaml.v3 reports every problem as one TypeError entry, e.g.
+		// "line 3: field bogus not found in type config.Config". Split
+		// unknown-field entries (warn) from real type errors (fail).
+		var unknown []string
+		var realErrs []string
+		for _, entry := range typeErr.Errors {
+			if strings.Contains(entry, "not found in type") {
+				unknown = append(unknown, entry)
+			} else {
+				realErrs = append(realErrs, entry)
+			}
+		}
+		if len(realErrs) > 0 {
+			return errors.New(strings.Join(realErrs, "; "))
+		}
 		_, _ = fmt.Fprintf(os.Stderr,
-			"ztap: warning: config contains unknown keys (set ZTAP_CONFIG_STRICT=1 to fail on them): %v\n", err)
+			"ztap: warning: config contains unknown keys (set ZTAP_CONFIG_STRICT=1 to fail on them): %s\n",
+			strings.Join(unknown, "; "))
 	}
 
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return err
-	}
-	return nil
+	return yaml.Unmarshal(data, cfg)
 }
 
 // defaults returns a Config populated with the documented defaults. Behavior
@@ -634,7 +650,8 @@ func (d Duration) MarshalYAML() (any, error) {
 
 // String is a string field that keeps its current (default) value when the
 // YAML document sets it to an empty string, matching the pre-centralization
-// loaders' "non-empty wins" semantics.
+// loaders' "non-empty wins" semantics. Values are stored trimmed, as the old
+// ad-hoc loaders did (they applied strings.TrimSpace before assigning).
 type String string
 
 // UnmarshalYAML implements yaml.Unmarshaler.
@@ -647,7 +664,8 @@ func (s *String) UnmarshalYAML(value *yaml.Node) error {
 			return fmt.Errorf("invalid string value: %w", err)
 		}
 	}
-	if strings.TrimSpace(v) == "" && *s != "" {
+	v = strings.TrimSpace(v)
+	if v == "" && *s != "" {
 		return nil // keep the current value (e.g. a default)
 	}
 	*s = String(v)
