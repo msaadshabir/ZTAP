@@ -71,7 +71,7 @@ deployments/grafana-data/
 # eBPF compiled objects
 bpf/*.o
 bpf/*.ll
-pkg/enforcer/bpf_bpf*.o
+internal/enforcer/bpf_bpf*.o
 
 # Temporary files
 *.tmp

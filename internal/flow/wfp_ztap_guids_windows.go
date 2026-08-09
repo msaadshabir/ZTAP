@@ -7,8 +7,8 @@ import "golang.org/x/sys/windows"
 // ZTAP WFP GUIDs.
 //
 // NOTE: These values must remain in sync with the GUIDs used by the Windows
-// enforcer (`pkg/enforcer/wfp_types.go`). They are duplicated here to avoid
-// introducing a dependency from `pkg/flow` to `pkg/enforcer`.
+// enforcer (`internal/enforcer/wfp_types.go`). They are duplicated here to avoid
+// introducing a dependency from `internal/flow` to `internal/enforcer`.
 var (
 	ztapWFPProviderGUID = windows.GUID{
 		Data1: 0x7F8E9D0C,

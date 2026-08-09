@@ -75,7 +75,7 @@ Notes:
 go generate ./internal/enforcer/...
 
 # Build the binary
-go build -o ztap
+go build -o ztap ./cmd/ztap
 ```
 
 ### Manual C Compilation (Optional)

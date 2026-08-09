@@ -207,7 +207,7 @@ struct
     __type(value, struct enforcement_config);
 } enforcement_config_map SEC(".maps");
 
-// Flow event structure for real-time monitoring (must match Go struct in pkg/flow/types.go)
+// Flow event structure for real-time monitoring (must match Go struct in internal/flow/types.go)
 struct flow_event
 {
     __u64 timestamp_ns; // Kernel timestamp in nanoseconds

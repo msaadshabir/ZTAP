@@ -10,7 +10,7 @@ echo ""
 
 # Build ZTAP
 echo "[BUILD] Building ZTAP..."
-go build -o ztap .
+go build -o ztap ./cmd/ztap
 echo "[DONE] Build successful"
 echo ""
 

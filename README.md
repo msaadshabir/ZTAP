@@ -452,7 +452,7 @@ Dashboard auto-provisioned from `deployments/grafana/dashboards/ztap-dashboard.j
 
 ```bash
 # Build
-go build
+go build ./cmd/ztap
 
 # Run tests
 go test ./...

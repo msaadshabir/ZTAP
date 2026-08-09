@@ -59,6 +59,11 @@ jobs:
               - 'internal/anomaly/Dockerfile'
               - 'Dockerfile.operator'
               - '.dockerignore'
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'examples/**'
+              - 'tools/**'
             ebpf:
               - 'bpf/**'
               - 'internal/enforcer/**'
@@ -526,6 +531,7 @@ jobs:
     name: All Checks Passed
     runs-on: ubuntu-24.04
     needs:
+      - changes
       - lint
       - actionlint
       - zizmor
@@ -546,6 +552,7 @@ jobs:
       - name: Check all jobs status
         run: |
           echo "Job Results:"
+          echo "  changes: ${NEEDS_CHANGES_RESULT}"
           echo "  lint: ${NEEDS_LINT_RESULT}"
           echo "  actionlint: ${NEEDS_ACTIONLINT_RESULT}"
           echo "  zizmor: ${NEEDS_ZIZMOR_RESULT}"
@@ -571,6 +578,7 @@ jobs:
             echo "All checks passed!"
           fi
         env:
+          NEEDS_CHANGES_RESULT: ${{ needs.changes.result }}
           NEEDS_LINT_RESULT: ${{ needs.lint.result }}
           NEEDS_ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
           NEEDS_ZIZMOR_RESULT: ${{ needs.zizmor.result }}

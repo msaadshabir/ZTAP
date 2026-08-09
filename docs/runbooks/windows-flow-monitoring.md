@@ -22,7 +22,7 @@ Optional for more logs:
 From the repo root:
 
 ```powershell
-go build -o ztap.exe .
+go build -o ztap.exe ./cmd/ztap
 ```
 
 ## Validate Allowed Egress (ZTAP-only)

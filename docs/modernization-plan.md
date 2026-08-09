@@ -16,7 +16,7 @@
 **Conventions used below:**
 - Commands assume macOS dev shell (`sed -i ''`); on Linux use `sed -i`.
 - Commit messages follow the repo's conventional-commit style (`ci:`, `build:`, `refactor:`, `feat:`, `test:`, `docs:`, `chore:`).
-- New GitHub Actions are written with version tags + `# TODO: pin to SHA` — the repo convention is 100% SHA pinning; resolve and pin before merging.
+- New GitHub Actions are written with version tags + `# TODO: pin to SHA` — the repo convention is 100% SHA pinning; resolve and pin before merging. **Exception:** SLSA's v2.1.0 generic generator requires a semantic tag reference, so the release workflow uses `@v2.1.0` with a documented zizmor exception.
 - Per-phase **gate** (run before every commit unless noted):
   ```bash
   go build ./... && go test ./... -race && golangci-lint run
@@ -81,13 +81,13 @@ items; the original detailed checklist is superseded.
 
 | Item | Evidence (verified in tree) |
 |---|---|
-| B.1 GoReleaser | `.goreleaser.yaml` present (cosign sign-blob, SBOMs, checksums); `release.yml` has cosign + `sbom: true`/`provenance: mode=max` on build-push-action, SLSA generic-generator job (SHA-pinned v2.1.0), CHANGELOG-based VERSION build-arg. **Residual:** `cosign verify-blob` / `gh release view` on the *first tagged release* — cannot be done before a tag exists |
+| B.1 GoReleaser | `.goreleaser.yaml` present (cosign sign-blob, SBOMs, checksums); `release.yml` has cosign + `sbom: true`/`provenance: mode=max` on build-push-action, the correct SLSA `generator_generic_slsa3.yml` job (v2.1.0 semantic tag required upstream), and tag/CHANGELOG release-note handling. **Residual:** `cosign verify-blob` / `gh release view` on the *first tagged release* — cannot be done before a tag exists |
 | B.2 Dockerfiles | `alpine:3.24` SHA-pinned runtime (EOL 3.19 gone); `ARG VERSION` + `-trimpath -ldflags` build lines; OCI labels incl. `org.opencontainers.image.version` |
 | B.3 covergate ratchet | `-baseline`/`-update-baseline` flags in `cmd/covergate`; `ci.yml:193` runs it with `.covergate-baseline.json` and no `\|\| echo`; empty benchmark job deleted; documented in `CONTRIBUTING.md` + `docs/guides/testing.md` |
 | B.4 golangci v2 | `.golangci.yml` matches the proposed v2 config — govet + gofmt/goimports formatters enabled |
 | B.5 drift checks | buf lint/breaking + `./scripts/gen_proto.sh && git diff --exit-code` (`ci.yml:160`); eBPF regenerate drift check (`ci.yml:383-384`). `buf.yaml` still v1 — optional v2 migration deferred, fine |
-| B.6 dependabot | docker ecosystems (root + `pkg/anomaly`), 7-day cooldowns, dedicated `k8s` group all present |
-| B.7 supply chain | `scorecard.yml` present with SARIF upload + `publish_results: true`, all actions SHA-pinned with `# vX.Y.Z` comments (0 `TODO: pin to SHA` remain); shellcheck + zizmor jobs in `ci.yml`. Note: the README badge was added, then **deliberately removed** (b274f26 / 71764c2 "Remove badges") — not an open item |
+| B.6 dependabot | docker ecosystems (root + `internal/anomaly`), 7-day cooldowns on Go, pip, GitHub Actions, and Docker updates, and the dedicated `k8s` group are present |
+| B.7 supply chain | `scorecard.yml` present with SARIF upload + `publish_results: true`, all actions except the upstream-required SLSA semantic tag are SHA-pinned with version comments (the SLSA exception has an explicit zizmor suppression); shellcheck + zizmor jobs in `ci.yml`. Note: the README badge was added, then **deliberately removed** (b274f26 / 71764c2 "Remove badges") — not an open item |
 
 **Residual to close (small):** cosign/provenance verification on first tagged release.
 
@@ -103,9 +103,9 @@ focused 3-commit PR on `modernization/main`. Every item below was verified again
 | C.1 module path | Kept the bare `ztap` module path (decision recorded below); no `go.mod` churn |
 | C.2 move packages | `git mv pkg internal`; 0 imports of `ztap/pkg/` remain (verified by `rg '"ztap/pkg' --type go`); external deps containing `/pkg/` (`github.com/pkg/browser`, `go.etcd.io/etcd/pkg/v3`, `k8s.io/apimachinery/pkg/...`) untouched; `tools/bpfgen` path fixed |
 | C.2 exception | Not taken: no external importers exist (bare module path) so `internal/operator/api/v1alpha1` + `internal/policy` moved like everything else |
-| C.2 non-Go refs | `README.md`, `CONTRIBUTING.md`, `docs/**` (incl. `architecture.md`), `.github/copilot-instructions.md`, `.github/dependabot.yml` (2× `/pkg/anomaly`), `ci.yml` (coverpkg, eBPF drift check, docker context, fuzz targets), `release.yml` (docker context), `docker-compose.yml` — 0 stale `pkg/` refs outside `go.mod`/`go.sum` |
+| C.2 non-Go refs | `README.md`, `CONTRIBUTING.md`, `docs/**` (incl. `architecture.md`), `.github/copilot-instructions.md`, `.github/dependabot.yml`, `ci.yml` (coverpkg, eBPF drift check, docker context, fuzz targets), `release.yml` (docker context), `docker-compose.yml`, and build scripts use the post-move paths. Historical Phase A notes and generated dependency provenance comments may still mention the former `pkg/` layout. |
 | C.3 CLI layout | `cmd/ztap/main.go` entrypoint; flat `cmd` package (36 files) → `internal/cli` (`package cli`); `cmd/ztap-operator` + `cmd/covergate` stay; `Dockerfile` builds `./cmd/ztap`, `.goreleaser.yaml` `main: ./cmd/ztap`, `ci.yml` matrix build uses `./cmd/ztap` |
-| C.3 factory | All 21 `func init()`s in the old `cmd` package removed (`rg 'func init\(' internal/cli cmd/ztap` → 0); `NewRootCmd(version string)` in `internal/cli/root.go` registers the 19 top-level commands in one list; `PersistentPreRunE` logging behavior preserved verbatim; the old cluster-backend package-init side effect moved to `initClusterBackend(root)` called from `NewRootCmd` (runs once per construction, same observable behavior) |
+| C.3 factory | All 21 `func init()`s in the old `cmd` package removed (`rg 'func init\(' internal/cli cmd/ztap` → 0); `NewRootCmd(version string)` in `internal/cli/root.go` registers the 19 top-level commands in one list; `PersistentPreRunE` logging behavior preserved; cluster backends are created during construction but started only from `PersistentPreRunE` for cluster/policy commands, after Cobra installs the command context, and stopped in the persistent post-run hook |
 | C.3 command tree test | `internal/cli/root_test.go`: asserts all 19 top-level + nested commands with expected `Use`, persistent flags, and version propagation (`NewRootCmd("9.9.9-test")` → `ztap version` prints it) |
 | C.3 covergate | `cmd/covergate` `isGatedPath` now `internal/`+`cmd/`; `isExcludedByPattern` updated to `internal/enforcer/bpf_bpf*`; `.covergate-baseline.json` remapped: 84 `internal/` entries kept, 28 `cmd/`→`internal/cli/` paths renamed, `cmd/ztap/main.go` added at 0.0 (same convention as operator/covergate mains) |
 | C.4 help parity | `diff` of root + all 17 subcommand `--help` outputs vs pre-flight baseline: **identical**; nested subcommands (`api serve`, `aws inventory export`, `cluster config set-backend`, …) all present |
@@ -277,7 +277,7 @@ Found during the audit, not covered by the selected workstreams:
   mutex + legacy duplicated flow counters (`collector.go:102-107`); OpenTelemetry is entirely
   indirect/unused — wire it or prune.
 - **Security defaults:** TLS off by default for api/grpc, rate limiting off by default,
-  `audit.integrity_mode: "none"` default, Trivy `continue-on-error` in `security.yml`.
+  `audit.integrity_mode: "none"` default.
 - **Working-dir hygiene:** ~800 MB of ignored local build artifacts (`*.test.exe`, `ztap*`,
   `coverage*.out`) — add a `clean` target when a top-level Makefile/Taskfile lands.
 - **Top-level Makefile/Taskfile:** unify `build/test/lint/generate/security/compose` entry points.

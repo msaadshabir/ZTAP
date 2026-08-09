@@ -210,7 +210,10 @@ export ZTAP_NODE_ID=$(hostname)
 export ZTAP_NODE_ADDRESS=$(hostname -i):9090
 ```
 
-To use etcd in your application:
+To use etcd from code inside the ZTAP repository, see the complete
+[`examples/etcd_election`](../../examples/etcd_election/main.go) example. The
+`internal/cluster` package is intentionally not importable by external Go
+modules. The abbreviated setup is:
 
 ```go
 package main

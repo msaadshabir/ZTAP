@@ -80,10 +80,11 @@ jobs:
           scan-ref: .
           format: sarif
           output: trivy-results.sarif
-        continue-on-error: true
+          exit-code: "1"
+          severity: HIGH,CRITICAL
 
       - name: Upload SARIF to GitHub
+        if: always()
         uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81  # v4.37.3
         with:
           sarif_file: trivy-results.sarif
-        continue-on-error: true

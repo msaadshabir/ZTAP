@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete command reference for the `ztap` binary. Source: [`cmd/`](../../cmd/).
+Complete command reference for the `ztap` binary. Source: [`internal/cli/`](../../internal/cli/); the entrypoint is [`cmd/ztap/`](../../cmd/ztap/).
 
 ## Global Flags
 

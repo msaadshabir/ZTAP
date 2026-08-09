@@ -48,8 +48,36 @@ jobs:
           echo "Generating changelog for ${VERSION}"
 
           # Extract changelog section if exists
+          extract_changelog_section() {
+            local wanted="$1"
+            local alternate="${2:-}"
+            awk -v wanted="$wanted" -v alternate="$alternate" '
+              /^## / {
+                heading = substr($0, 4)
+                if (heading ~ /^\[.*\]$/) {
+                  heading = substr(heading, 2, length(heading) - 2)
+                }
+                if (heading == wanted || (alternate != "" && heading == alternate)) {
+                  found = 1
+                  print
+                  next
+                }
+                if (found) {
+                  exit
+                }
+              }
+              found { print }
+            ' CHANGELOG.md
+          }
+
           if [ -f "CHANGELOG.md" ]; then
-            sed -n "/## ${VERSION}/,/## /p" CHANGELOG.md | sed '$d' > release-notes.md
+            VERSION_SHORT="${VERSION#v}"
+            extract_changelog_section "$VERSION" "$VERSION_SHORT" > release-notes.md
+            # Keep the current Unreleased notes useful until they are promoted
+            # to a versioned section in the changelog.
+            if [ ! -s release-notes.md ]; then
+              extract_changelog_section "Unreleased" > release-notes.md
+            fi
           fi
           if [ ! -s release-notes.md ]; then
             {
@@ -87,7 +115,8 @@ jobs:
       actions: read
       id-token: write
       contents: write
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generic-generator.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    # v2.1.0 requires a semantic tag reference; see the upstream generator docs.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0 # zizmor: ignore[unpinned-uses] upstream requires a semantic tag
     with:
       base64-subjects: ${{ needs.goreleaser.outputs.hashes }}
       upload-assets: true

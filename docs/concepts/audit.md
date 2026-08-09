@@ -200,6 +200,11 @@ The audit logger is automatically integrated into the PolicyEnforcer, logging al
 
 ## Programmatic Usage
 
+The audit package is under Go's `internal/` tree and is not an importable public
+library for external modules. The examples below apply to contributors adding
+code inside this repository; external users should use the `ztap audit` CLI or
+API endpoints.
+
 ### Creating an Audit Logger
 
 ```go

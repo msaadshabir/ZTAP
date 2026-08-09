@@ -7,7 +7,7 @@ ZTAP (Zero Trust Access Platform) is a Go 1.25+ CLI for zero-trust microsegmenta
 ## Architecture
 
 ```
-CLI (cmd/) / API Server (internal/apihttp) -> Policy Engine (internal/policy) -> Enforcer (internal/enforcer)
+CLI (cmd/ztap + internal/cli) / API Server (internal/apihttp) -> Policy Engine (internal/policy) -> Enforcer (internal/enforcer)
                                                            -> Flow Monitor (internal/flow)
                                                            -> Alerting (internal/alert)
                                                            -> Cloud Sync (internal/cloud)
@@ -84,8 +84,8 @@ Windows enforcement constraints (WFP):
 
 ## API Server Notes
 
-- Command: `ztap api serve` (implemented in `cmd/api.go` and `internal/apihttp/`)
-- Command: `ztap grpc serve` (implemented in `cmd/grpc.go` and `internal/apigrpc/`)
+- Command: `ztap api serve` (implemented in `internal/cli/api.go` and `internal/apihttp/`)
+- Command: `ztap grpc serve` (implemented in `internal/cli/grpc.go` and `internal/apigrpc/`)
 - Probes:
   - REST: `GET /healthz` (liveness) and `GET /readyz` (readiness)
   - gRPC: standard `grpc.health.v1.Health` (`/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch`) and these health RPCs are unauthenticated and never rate-limited
@@ -214,7 +214,7 @@ Note: this limitation is specific to kernel enforcement. Cloud sync backends can
 ## Development Commands
 
 ```bash
-go build                  # Build CLI
+go build ./cmd/ztap       # Build CLI
 cd bpf && make           # Compile eBPF (Linux only)
 ./demo.sh                # Interactive demo
 docker compose up -d       # Prometheus + Grafana stack
