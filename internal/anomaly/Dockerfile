@@ -10,34 +10,29 @@ LABEL org.opencontainers.image.source="https://github.com/msaadshabir/ZTAP" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install pinned runtime dependencies (pyproject.toml) together with the
+# application module in one layer. No curl/apt packages: the HEALTHCHECK uses
+# urllib so the base image stays slim.
+COPY pyproject.toml README.md service.py ./
+RUN pip install --no-cache-dir .
 
-# Copy requirements
-COPY requirements.txt .
+# Model persistence directory, owned by the non-root runtime user.
+RUN mkdir -p /app/models && chown -R 65532:65532 /app
+USER 65532
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
-
-# Copy application code
-COPY service.py .
-COPY detector.go .
-COPY README.md .
-
-# Create directories for data and models
-RUN mkdir -p /app/data /app/models
-
-# Expose Flask port
 EXPOSE 5000
 
-# Set environment variables
-ENV FLASK_APP=service.py
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    ZTAP_ANOMALY_HOST=0.0.0.0 \
+    ZTAP_ANOMALY_PORT=5000 \
+    MODEL_PATH=/app/models
 
-# Run the application
-CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=5000"]
+# Serve via gunicorn, not `flask run` (FLASK_ENV is ignored by modern Flask).
+# The container binds 0.0.0.0 so the agent can reach the service from another
+# container on the compose network; `python service.py` stays 127.0.0.1 for
+# host-local dev runs.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "service:app"]

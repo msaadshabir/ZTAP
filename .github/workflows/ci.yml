@@ -284,12 +284,16 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: internal/anomaly/requirements-dev.txt
+          cache-dependency-path: internal/anomaly/pyproject.toml
 
       - name: Install dependencies
         working-directory: internal/anomaly
         run: |
-          python -m pip install --require-hashes -r requirements-dev.txt
+          python -m pip install -e ".[dev]"
+
+      - name: Run ruff lint
+        working-directory: internal/anomaly
+        run: ruff check .
 
       - name: Run Python tests
         working-directory: internal/anomaly
