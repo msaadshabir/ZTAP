@@ -135,7 +135,7 @@ func startAnomalyRunner(parent context.Context, cfg *config.Config, auditLogger 
 	}()
 
 	logging.Info("anomaly detection pipeline started", logging.Fields{
-		"endpoint": string(cfg.Anomaly.Endpoint),
+		"endpoint":   string(cfg.Anomaly.Endpoint),
 		"batch_size": cfg.Anomaly.BatchSize,
 		"threshold":  cfg.Anomaly.Threshold,
 		"fail_open":  cfg.Anomaly.FailOpen,
