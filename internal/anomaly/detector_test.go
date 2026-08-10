@@ -78,6 +78,154 @@ func TestPythonDetectorTrain(t *testing.T) {
 	}
 }
 
+func TestPythonDetectorDetectBatch(t *testing.T) {
+	var got map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/batch" {
+			t.Fatalf("expected /batch, got %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"predictions": []any{
+				map[string]any{"index": 0, "score": 10.0, "is_anomaly": false, "reason": "normal"},
+				map[string]any{"index": 1, "score": 90.0, "is_anomaly": true, "reason": "suspicious port 22"},
+			},
+			"total": 2,
+			"anomalies": 1,
+		})
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL)
+	flows := []FlowRecord{
+		{SourceIP: "10.0.0.1", DestIP: "10.0.0.2", Port: 443, Protocol: "TCP"},
+		{SourceIP: "10.0.0.1", DestIP: "10.0.0.3", Port: 22, Protocol: "TCP"},
+	}
+	scores, err := det.DetectBatch(flows)
+	if err != nil {
+		t.Fatalf("DetectBatch: %v", err)
+	}
+	if len(scores) != 2 {
+		t.Fatalf("expected 2 scores, got %d", len(scores))
+	}
+	if scores[0].Score != 10.0 || scores[0].IsAnomaly {
+		t.Fatalf("unexpected score[0]: %+v", scores[0])
+	}
+	if scores[1].Score != 90.0 || !scores[1].IsAnomaly || scores[1].Reason != "suspicious port 22" {
+		t.Fatalf("unexpected score[1]: %+v", scores[1])
+	}
+
+	flowsAny, ok := got["flows"].([]any)
+	if !ok || len(flowsAny) != 2 {
+		t.Fatalf("expected {\"flows\": [...]} payload, got %+v", got)
+	}
+}
+
+func TestPythonDetectorDetectBatchEmpty(t *testing.T) {
+	det := NewPythonDetector("http://127.0.0.1:1")
+	scores, err := det.DetectBatch(nil)
+	if err != nil {
+		t.Fatalf("DetectBatch(nil): %v", err)
+	}
+	if scores != nil {
+		t.Fatalf("expected nil scores, got %+v", scores)
+	}
+}
+
+func TestPythonDetectorAuthToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer secret-token" {
+			t.Fatalf("expected Bearer secret-token, got %q", got)
+		}
+		_ = json.NewEncoder(w).Encode(AnomalyScore{Score: 5, IsAnomaly: false, Reason: "ok"})
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL, WithAuthToken("secret-token"))
+	if _, err := det.Detect(FlowRecord{}); err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+}
+
+func TestPythonDetectorNoTokenHeaderWhenUnset(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Fatalf("expected no Authorization header, got %q", got)
+		}
+		_ = json.NewEncoder(w).Encode(AnomalyScore{Score: 5, IsAnomaly: false, Reason: "ok"})
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL)
+	if _, err := det.Detect(FlowRecord{}); err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+}
+
+func TestPythonDetectorRetriesOn5xx(t *testing.T) {
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(AnomalyScore{Score: 7, IsAnomaly: false, Reason: "ok"})
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL, WithRetries(2), WithRetryBackoff(time.Millisecond))
+	score, err := det.Detect(FlowRecord{})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected 2 attempts (1 retry), got %d", attempts)
+	}
+	if score.Score != 7 {
+		t.Fatalf("unexpected score: %+v", score)
+	}
+}
+
+func TestPythonDetectorGivesUpAfterRetries(t *testing.T) {
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL, WithRetries(2), WithRetryBackoff(time.Millisecond))
+	if _, err := det.Detect(FlowRecord{}); err == nil {
+		t.Fatalf("expected error after retries")
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 attempts, got %d", attempts)
+	}
+}
+
+func TestPythonDetectorNoRetryOn4xx(t *testing.T) {
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL, WithRetries(2), WithRetryBackoff(time.Millisecond))
+	if _, err := det.Detect(FlowRecord{}); err == nil {
+		t.Fatalf("expected error")
+	}
+	if attempts != 1 {
+		t.Fatalf("expected no retries on 401, got %d attempts", attempts)
+	}
+}
+
 func TestSimpleDetectorScores(t *testing.T) {
 	det := NewSimpleDetector()
 	score, err := det.Detect(FlowRecord{Port: 22, DestGeo: "RU", Bytes: 200 * 1024 * 1024})

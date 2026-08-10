@@ -2,8 +2,10 @@ package anomaly
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -31,68 +33,183 @@ type AnomalyScore struct {
 // Detector interface for anomaly detection
 type Detector interface {
 	Detect(flow FlowRecord) (*AnomalyScore, error)
+	DetectBatch(flows []FlowRecord) ([]AnomalyScore, error)
 	Train(flows []FlowRecord) error
 }
 
 // PythonDetector communicates with Python microservice via HTTP
 type PythonDetector struct {
-	endpoint string
-	client   *http.Client
+	endpoint     string
+	token        string
+	client       *http.Client
+	retries      int           // retries after the initial attempt
+	retryBackoff time.Duration // base backoff, doubled per attempt
+}
+
+// PythonDetectorOption configures a PythonDetector.
+type PythonDetectorOption func(*PythonDetector)
+
+// WithAuthToken sets the Bearer token presented to the detection service.
+// Requests are sent without an Authorization header when token is empty.
+func WithAuthToken(token string) PythonDetectorOption {
+	return func(d *PythonDetector) {
+		d.token = strings.TrimSpace(token)
+	}
+}
+
+// WithHTTPClient overrides the default HTTP client (timeouts, transport).
+func WithHTTPClient(client *http.Client) PythonDetectorOption {
+	return func(d *PythonDetector) {
+		if client != nil {
+			d.client = client
+		}
+	}
+}
+
+// WithRetries sets the number of retries for transient failures (5xx
+// responses and transport errors). The default is 2 retries.
+func WithRetries(n int) PythonDetectorOption {
+	return func(d *PythonDetector) {
+		if n < 0 {
+			n = 0
+		}
+		d.retries = n
+	}
+}
+
+// WithRetryBackoff sets the base backoff between retries; each attempt
+// doubles it (200ms, 400ms, 800ms, ... by default).
+func WithRetryBackoff(d time.Duration) PythonDetectorOption {
+	return func(det *PythonDetector) {
+		if d <= 0 {
+			d = time.Nanosecond
+		}
+		det.retryBackoff = d
+	}
 }
 
 // NewPythonDetector creates a new detector client
-func NewPythonDetector(endpoint string) *PythonDetector {
-	return &PythonDetector{
-		endpoint: endpoint,
+func NewPythonDetector(endpoint string, opts ...PythonDetectorOption) *PythonDetector {
+	d := &PythonDetector{
+		endpoint: strings.TrimRight(strings.TrimSpace(endpoint), "/"),
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
+		retries:      2,
+		retryBackoff: 200 * time.Millisecond,
 	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
 }
 
 // Detect sends a flow to the Python service for anomaly detection
 func (d *PythonDetector) Detect(flow FlowRecord) (*AnomalyScore, error) {
-	data, err := json.Marshal(flow)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal flow: %w", err)
-	}
-
-	resp, err := d.client.Post(d.endpoint+"/detect", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		return nil, fmt.Errorf("failed to call detection service: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("detection service returned status %d", resp.StatusCode)
-	}
-
 	var score AnomalyScore
-	if err := json.NewDecoder(resp.Body).Decode(&score); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := d.doRequest(context.Background(), "/detect", flow, &score); err != nil {
+		return nil, err
+	}
+	return &score, nil
+}
+
+// batchResponse mirrors the /batch endpoint response.
+type batchResponse struct {
+	Predictions []batchPrediction `json:"predictions"`
+	Total       int               `json:"total"`
+	Anomalies   int               `json:"anomalies"`
+}
+
+type batchPrediction struct {
+	Index     int     `json:"index"`
+	Score     float64 `json:"score"`
+	IsAnomaly bool    `json:"is_anomaly"`
+	Reason    string  `json:"reason"`
+}
+
+// DetectBatch sends a batch of flows to the Python service. The returned
+// scores are aligned with the input slice by the response's index field.
+func (d *PythonDetector) DetectBatch(flows []FlowRecord) ([]AnomalyScore, error) {
+	if len(flows) == 0 {
+		return nil, nil
 	}
 
-	return &score, nil
+	var resp batchResponse
+	if err := d.doRequest(context.Background(), "/batch", map[string]any{"flows": flows}, &resp); err != nil {
+		return nil, err
+	}
+
+	scores := make([]AnomalyScore, len(flows))
+	for _, p := range resp.Predictions {
+		if p.Index < 0 || p.Index >= len(scores) {
+			return nil, fmt.Errorf("detection service returned out-of-range index %d", p.Index)
+		}
+		scores[p.Index] = AnomalyScore{Score: p.Score, IsAnomaly: p.IsAnomaly, Reason: p.Reason}
+	}
+	return scores, nil
 }
 
 // Train sends training data to the Python service
 func (d *PythonDetector) Train(flows []FlowRecord) error {
-	data, err := json.Marshal(flows)
+	return d.doRequest(context.Background(), "/train", flows, nil)
+}
+
+// doRequest performs a POST to path with the given payload and decodes the
+// response into out (when non-nil). Transient failures — 5xx responses and
+// transport errors — are retried with exponential backoff.
+func (d *PythonDetector) doRequest(ctx context.Context, path string, payload any, out any) error {
+	data, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal flows: %w", err)
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := d.client.Post(d.endpoint+"/train", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		return fmt.Errorf("failed to call training service: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	var lastErr error
+	for attempt := 0; attempt <= d.retries; attempt++ {
+		if attempt > 0 {
+			backoff := d.retryBackoff * time.Duration(1<<(attempt-1))
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("training service returned status %d", resp.StatusCode)
-	}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.endpoint+path, bytes.NewReader(data))
+		if err != nil {
+			return fmt.Errorf("failed to build request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if d.token != "" {
+			req.Header.Set("Authorization", "Bearer "+d.token)
+		}
 
-	return nil
+		resp, err := d.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to call detection service: %w", err)
+			continue // transient transport error — retry
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			lastErr = fmt.Errorf("failed to read detection service response: %w", readErr)
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("detection service returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			continue // transient server error — retry
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("detection service returned status %d", resp.StatusCode)
+		}
+		if out != nil {
+			if err := json.Unmarshal(body, out); err != nil {
+				return fmt.Errorf("failed to decode response: %w", err)
+			}
+		}
+		return nil
+	}
+	return lastErr
 }
 
 const (
@@ -162,6 +279,19 @@ func (d *SimpleDetector) Detect(flow FlowRecord) (*AnomalyScore, error) {
 		IsAnomaly: score > 50.0,
 		Reason:    reason,
 	}, nil
+}
+
+// DetectBatch applies Detect to each flow.
+func (d *SimpleDetector) DetectBatch(flows []FlowRecord) ([]AnomalyScore, error) {
+	scores := make([]AnomalyScore, 0, len(flows))
+	for _, flow := range flows {
+		score, err := d.Detect(flow)
+		if err != nil {
+			return nil, err
+		}
+		scores = append(scores, *score)
+	}
+	return scores, nil
 }
 
 // Train is a no-op for simple detector (no ML)

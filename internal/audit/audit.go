@@ -34,6 +34,7 @@ const (
 	EventClusterJoined  EventType = "cluster.joined"
 	EventClusterLeft    EventType = "cluster.left"
 	EventLeaderElected  EventType = "cluster.leader_elected"
+	EventAnomalyDetected EventType = "anomaly.detected"
 )
 
 const (

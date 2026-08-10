@@ -145,6 +145,17 @@ func newAgentCmd(app *App) *cobra.Command {
 				logging.Fatalf("Failed to start policy enforcer: %v", err)
 			}
 
+			// Anomaly detection (Phase E): async batched pipeline over the
+			// flow monitor, behind anomaly.enabled. Detection is advisory —
+			// a failure here must not take down enforcement.
+			var anomalyR *anomalyRunner
+			if central.Anomaly.Enabled {
+				anomalyR, err = startAnomalyRunner(ctx, central, auditLogger)
+				if err != nil {
+					logging.Warnf("anomaly detection disabled: %v", err)
+				}
+			}
+
 			fmt.Printf("ZTAP Agent started (%s). Watching for policies...\n", scopeInfo)
 
 			sigCh := make(chan os.Signal, 1)
@@ -153,6 +164,9 @@ func newAgentCmd(app *App) *cobra.Command {
 
 			fmt.Println("Shutting down agent...")
 			cancel()
+			if anomalyR != nil {
+				anomalyR.Stop()
+			}
 			if err := disc.Stop(); err != nil {
 				logging.Warnf("failed to stop discovery: %v", err)
 			}

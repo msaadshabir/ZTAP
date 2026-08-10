@@ -167,6 +167,16 @@ func newEnforceCmd(app *App) *cobra.Command {
 					return
 				}
 
+				// Anomaly detection (Phase E): advisory, batched pipeline over
+				// flow events while enforcement is active.
+				var anomalyR *anomalyRunner
+				if central.Anomaly.Enabled {
+					anomalyR, err = startAnomalyRunner(ctx, central, nil)
+					if err != nil {
+						logging.Warnf("anomaly detection disabled: %v", err)
+					}
+				}
+
 				var wg sync.WaitGroup
 				if needsResolution && resolveLabelsInterval > 0 {
 					wg.Go(func() {
@@ -188,6 +198,9 @@ func newEnforceCmd(app *App) *cobra.Command {
 				stopStopSignals(sigCh)
 				cancel()
 				wg.Wait()
+				if anomalyR != nil {
+					anomalyR.Stop()
+				}
 				if err := enforcer.StopLinuxEnforcement(); err != nil {
 					logging.Warnf("failed to stop enforcement cleanly: %v", err)
 				}
@@ -205,6 +218,16 @@ func newEnforceCmd(app *App) *cobra.Command {
 				if dryRun {
 					fmt.Println("Dry-run complete. No changes were applied.")
 					return
+				}
+
+				// Anomaly detection (Phase E): advisory, batched pipeline over
+				// flow events while enforcement is active.
+				var anomalyR *anomalyRunner
+				if central.Anomaly.Enabled {
+					anomalyR, err = startAnomalyRunner(ctx, central, nil)
+					if err != nil {
+						logging.Warnf("anomaly detection disabled: %v", err)
+					}
 				}
 
 				var wg sync.WaitGroup
@@ -225,6 +248,9 @@ func newEnforceCmd(app *App) *cobra.Command {
 				stopStopSignals(sigCh)
 				cancel()
 				wg.Wait()
+				if anomalyR != nil {
+					anomalyR.Stop()
+				}
 				if err := enforcer.StopWFPEnforcement(); err != nil {
 					logging.Warnf("failed to stop WFP enforcement cleanly: %v", err)
 				}
