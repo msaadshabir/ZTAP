@@ -4,10 +4,10 @@
 > Generated from a full codebase audit. Each phase is independently shippable; phases are ordered to
 > minimize merge conflicts (mechanical edits → additive CI work → big rename → deep refactors).
 >
-> **Status (2026-02):** Phases A, B, C and D are **complete and verified** against the tree (evidence in
+> **Status (2026-02):** Phases A, B, C, D and E are **complete and verified** against the tree (evidence in
 > the completed-workstreams tables below; a handful of residuals are listed there). The active
-> checklist is **E → F**. Path references inside the A/B/C/D evidence tables reflect the layout
-> at the time of verification (the Phase C/D tables use the post-move `internal/` paths).
+> checklist is **F**. Path references inside the A/B/C/D/E evidence tables reflect the layout
+> at the time of verification (the Phase C/D/E tables use the post-move `internal/` paths).
 >
 > **Scope decisions (agreed):**
 > - ✅ In scope: quick code modernization (A), CI/release supply chain (B), `pkg/`→`internal/` + cmd split (C), centralized config (D), anomaly service wire-up + hardening (E), `log/slog` migration (F).
@@ -164,58 +164,33 @@ item below was verified against the tree.
 
 ---
 
-## Phase E — Wire + harden the anomaly service
+## Phase E — Wire + harden the anomaly service ✅ COMPLETE (verified 2026-02)
 
 **Goal:** turn the dead Python service into a real, safe feature. Biggest net-new-code phase.
+Landed as 4 commits on `main`; every item below was verified against the tree.
 
-### E.1 — Go wiring
+| Item | Evidence (verified in tree) |
+|---|---|
+| E.1 config | `anomaly:` section consumed end-to-end: `enabled`, `endpoint`, `threshold` + new `batch_size` (50), `flush_interval` (10s), `auth_token`, `fail_open` (true) already landed in D; `internal/cli/anomaly.go` `startAnomalyRunner` reads every key and passes them into the pipeline/detector options |
+| E.1 detector | `internal/anomaly/detector.go`: `DetectBatch([]FlowRecord)` posts `{"flows": [...]}` to `/batch` and decodes `predictions[].{index,score,is_anomaly,reason}`; `Authorization: Bearer` header when token set (`WithAuthToken`); retry with exponential backoff on 5xx + transport errors (`WithRetries`/`WithRetryBackoff`, defaults 2 retries/200ms). The service-side `/batch` endpoint landed in the **same commit stack** (E.2 fix commit) — no reliance on the legacy `/batch_predict` schema |
+| E.1 pipeline | `internal/anomaly/pipeline.go`: buffers `FlowRecord`s to `batch_size`/`flush_interval`, flushes into a **detached** goroutine — ingestion never blocks on the service. `fail_open` (true): failed batches counted + dropped, pipeline continues; `fail_open` (false): pipeline stops on first detection error (OnError fires either way). `Submit` is lock-free and drops (counted) when the queue is full; shutdown drains queued flows and flushes the partial batch |
+| E.1 wiring | `ztap agent` (always) and `ztap enforce` (Linux + Windows, non-dry-run) start the pipeline behind `anomaly.enabled` via `startAnomalyRunner`; a flow `Monitor` over the platform reader feeds `Submit`; setup failures only warn (detection is advisory). Shutdown order: cancel → pipeline drain/flush → monitor stop → alert manager close |
+| E.1 emit | `metrics.SetAnomalyScore` (was uncalled) via `OnScore` with the batch max; structured `logging.Info` per anomaly; `internal/alert` webhook when score > `threshold` (`SeverityWarning`, dedup key `anomaly:<src>:<port>`); audit entry `anomaly.detected` (new event type in `internal/audit/audit.go`) for high-severity anomalies |
+| E.1 tests | httptest detector tests: `/batch` payload+decode, out-of-range index guard, Bearer header present/absent, 5xx retry succeeds, retries exhausted, no retry on 4xx; pipeline tests: batch-size flush, interval flush, manual `Flush`, fail-open continues + OnError, fail-closed stops, anomaly/score callbacks, queue overflow drops, flush-on-shutdown — all `-race` clean |
+| E.2 determinism | `service.py` `_ip_feature`: `int(ipaddress.ip_address(ip)) % 10000` (was `hash()`, randomized per `PYTHONHASHSEED`); malformed IPs → stable 0; `test_service.py` asserts known values (192.168.1.100 → 5876, 10.0.0.50 → 2210) and repeatability |
+| E.2 auth | `ZTAP_ANOMALY_TOKEN` env; `@require_token` (constant-time `hmac.compare_digest`) on `/train`, `/detect`, `/batch`, `/predict`, `/batch_predict`; `/health` open for container healthchecks; auth suite tests 401/200/wrong-token; Go side presents the configured `anomaly.auth_token` |
+| E.2 bind/serving | Container/compose: gunicorn binds `0.0.0.0` (agent connects cross-container to `anomaly-detector:5000`); host-local dev `python service.py` binds `127.0.0.1` via `ZTAP_ANOMALY_HOST`; `FLASK_ENV=production` removed from compose (ignored by modern Flask); gunicorn entry verified against the pinned versions in a local py3.13 venv |
+| E.2 /batch + persistence | `/batch` returns the `/detect` schema per prediction (index/score/is_anomaly/reason), rule-based fallback when untrained; model persisted with joblib to `$MODEL_PATH/model.joblib` after `/train` and loaded on start (`load_model`/`save_model`) — the pinned joblib dependency is now actually used; persistence round-trip test |
+| E.2 packaging | `requirements*.txt` (uv-compiled, stale `pkg/anomaly/` paths) deleted; `pyproject.toml` with pinned deps (flask 3.1.3, scikit-learn 1.9.0, numpy 2.5.1, joblib 1.5.3, gunicorn 23.0.0), `[dev]` extra (pytest 9.1.1, pytest-cov 7.1.0, ruff 0.16.2), ruff config inside; dependabot pip path already `/internal/anomaly` (post-C) and picks up pyproject.toml; `test-python` CI installs `-e "[dev]"` and runs `ruff check .` before pytest |
+| E.2 Dockerfile | no more `detector.go`/`README.md` copies, no apt/curl layer; `pip install .` from pyproject; non-root `USER 65532` with writable `/app/models`; `HEALTHCHECK` via urllib (no curl in image); CMD gunicorn; `internal/anomaly/.dockerignore` excludes test artifacts from the build context |
 
-- [ ] Consume `anomaly:` config (from D): existing keys `enabled`, `endpoint`, `threshold`;
-  add `batch_size` (default 50), `flush_interval` (default 10s), `auth_token`, `fail_open`
-  (default true).
-- [ ] Extend `internal/anomaly/detector.go`: add `DetectBatch([]FlowRecord)` hitting `/batch`;
-  add `Authorization: Bearer` header when token set; retry with backoff on 5xx.
-  **Ordering:** the Python service currently exposes `/batch_predict`, not `/batch` — land the
-  service-side endpoint (E.2 item) in the **same commit stack** as the Go pipeline, or point
-  `DetectBatch` at the existing `/batch_predict`. The pipeline is untestable end-to-end until
-  both sides exist.
-- [ ] New `internal/anomaly/pipeline.go`: subscribes to `internal/flow.Monitor` events,
-  buffers to `batch_size`/`flush_interval`, calls `DetectBatch` **async** — enforcement must
-  never sit on the detection path. Service down + `fail_open`: count and continue.
-- [ ] Wire into `ztap agent` (and `enforce` when flows active) behind `anomaly.enabled`.
-- [ ] Emit: `metrics.SetAnomalyScore` (currently uncalled), structured log, `internal/alert`
-  webhook when score > `threshold`, audit entry for high-severity anomalies.
-- [ ] Tests: mock HTTP server (httptest) for detector + pipeline; fail-open test; batch flush test.
+**Verify (local, macOS):** `go build ./... && go test ./... -race` green; detector + pipeline tests pass under `-race -count=5`; `pytest` 22 passed / `ruff check .` clean in a py3.13 venv against the pinned versions. Live end-to-end (`ztap agent --dry-run` → `ztap_anomaly_score` + webhook) requires a Linux/Windows host with a flow source and the container service — deferred to the first tagged release, same as Phase B's cosign residual.
 
-### E.2 — Python hardening (`internal/anomaly/` — the dir was moved in C, kept in place)
-
-- [ ] **Determinism fix** in `service.py:21-22`: replace built-in `hash()` (randomized per
-  `PYTHONHASHSEED`) with `int(ipaddress.ip_address(ip))` — current features are non-reproducible
-  across restarts. Update `test_service.py` accordingly.
-- [ ] Auth: `ZTAP_ANOMALY_TOKEN` env; `@require_token` decorator on `/train`, `/detect`, `/batch`.
-- [ ] Bind address: **`0.0.0.0` in the container image / compose service** — the agent connects
-  from another container on `ztap-net` to `anomaly-detector:5000`; a `127.0.0.1` bind inside the
-  container listens on loopback only and cross-container traffic would be refused. Keep
-  `127.0.0.1` as the default only for host-local dev runs, via env override
-  (`ZTAP_ANOMALY_HOST`). Serve via **gunicorn** not `flask run` (`FLASK_ENV=production` in
-  compose is ignored by modern Flask — remove it there when touched).
-- [ ] Add `/batch` endpoint if used by E.1; model persistence via joblib (load on start, save
-  after `/train`) so training survives restarts — this makes the already-pinned `joblib`
-  dependency actually used (or drop it).
-- [ ] Packaging: replace `requirements.txt` with `pyproject.toml` (ruff config inside; pinned
-  deps); update dependabot pip path if the dir moved; add `ruff check` + `pytest` steps to the
-  `test-python` CI job.
-- [ ] `internal/anomaly/Dockerfile`: stop copying `detector.go`/`README.md` into the image, add
-  non-root `USER`, `HEALTHCHECK` on `/health`, CMD → gunicorn.
-
-**Verify:** end-to-end: start service with token → run `ztap agent --dry-run` with
-`anomaly.enabled: true` → generate flows → observe `ztap_anomaly_score` metric + alert webhook.
-`pytest` + `ruff` green; new Go tests green.
-
-**Commits:**
-1. `feat(anomaly): async batched detection pipeline wired into flow monitor`
-2. `fix(anomaly): deterministic features, token auth, gunicorn, model persistence`
-3. `build(anomaly): pyproject packaging, ruff in CI, slim Dockerfile`
+**Commits (landed on `main`, 2026-02):**
+1. `feat(anomaly): async batched detection pipeline wired into flow monitor` (a9e6582)
+2. `fix(anomaly): deterministic features, token auth, gunicorn, model persistence` (217e66a)
+3. `build(anomaly): pyproject packaging, ruff in CI, slim Dockerfile` (d021eeb)
+4. `docs: mark Phase E complete in modernization plan` (this commit)
 
 ---
 
@@ -252,7 +227,7 @@ item below was verified against the tree.
 | B | — | — | actionlint + zizmor | — | ✅ complete — residual: cosign verify on first tagged release |
 | C | ✅ | ✅ | ✅ | — | ✅ complete — help diff + policy round-trip vs baseline, eBPF integration test pending Linux CI |
 | D | ✅ | ✅ | ✅ | — | config round-trip + precedence tests |
-| E | ✅ | ✅ | ✅ | — | live service e2e, `pytest`, `ruff` |
+| E | ✅ | ✅ | ✅ | — | `pytest` 22 passed + `ruff check` clean (py3.13 venv, pinned versions); detector/pipeline tests `-race -count=5`; live e2e deferred to first tagged release (needs Linux/Windows + container service) |
 | F | ✅ | ✅ | ✅ | — | golden log-output tests |
 
 > Rows A and B are historical (completed); the matrix gates C–F going forward.

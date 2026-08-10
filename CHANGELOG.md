@@ -9,6 +9,14 @@ and Semantic Versioning (https://semver.org/).
 
 ### Added
 
+- **Anomaly detection pipeline live** (Phase E of the modernization plan): `ztap agent` and `ztap enforce` (Linux/Windows, non-dry-run) now run an **async batched detection pipeline** behind `anomaly.enabled: true`. Flow events are buffered to `anomaly.batch_size` (default 50) or `anomaly.flush_interval` (default 10s) and scored against the Python service (`internal/anomaly`) in a detached goroutine — enforcement never blocks on detection. New `ztap_anomaly_score` gauge updates (previously never set), structured anomaly logs, alert webhooks, and `anomaly.detected` audit entries for flows above `anomaly.threshold`.
+- **Detection client hardening**: `DetectBatch` hits the service's new `/batch` endpoint; `anomaly.auth_token` is presented as `Authorization: Bearer`; 5xx responses and transport errors are retried with exponential backoff. `anomaly.fail_open: false` stops the detection pipeline (fail closed) when the service is unreachable.
+- **Anomaly service hardening**: deterministic IP features (`hash()` was randomized per process via `PYTHONHASHSEED`), `ZTAP_ANOMALY_TOKEN` bearer auth on all data endpoints, joblib model persistence across restarts, gunicorn serving (container binds 0.0.0.0), and a `/batch` endpoint consumed by the Go pipeline.
+
+### Changed
+
+- **Anomaly service packaging**: `requirements*.txt` replaced by `pyproject.toml` (pinned deps, `[dev]` extra with pytest/ruff); `test-python` CI now runs `ruff check` and installs via `pip install -e ".[dev]"`; the anomaly Dockerfile is slim (no curl/apt, non-root `USER 65532`, urllib `HEALTHCHECK`, gunicorn CMD). Compose sets `ZTAP_ANOMALY_HOST=0.0.0.0` (agent reaches the service cross-container) and no longer sets `FLASK_ENV` (ignored by modern Flask).
+
 - **Config: centralized `internal/config` package** (Phase D of the modernization plan). One typed loader replaces ~10 ad-hoc per-command YAML parsers; every command now parses `config.yaml` exactly once with **flag > env > config > default** precedence.
 - **Config: previously-dead sections are now honored**: `metrics.enabled/port/path` (defaults for `ztap metrics`), `enforcement.dry_run`/`enforcement.default_action` (defaults for `ztap enforce`), and `policy.strict`/`policy.allow_empty_egress`/`policy.resolve_labels` (defaults for `ztap policy validate` / `ztap enforce`). New flags: `ztap enforce --default-action`, `ztap policy validate --strict`, `ztap policy validate --allow-empty-egress`.
 - `anomaly.batch_size` (default 50), `anomaly.flush_interval` (default 10s), `anomaly.auth_token`, and `anomaly.fail_open` (default true) config keys for the Phase E detection pipeline.
