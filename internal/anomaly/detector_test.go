@@ -95,7 +95,7 @@ func TestPythonDetectorDetectBatch(t *testing.T) {
 				map[string]any{"index": 0, "score": 10.0, "is_anomaly": false, "reason": "normal"},
 				map[string]any{"index": 1, "score": 90.0, "is_anomaly": true, "reason": "suspicious port 22"},
 			},
-			"total": 2,
+			"total":     2,
 			"anomalies": 1,
 		})
 	}))

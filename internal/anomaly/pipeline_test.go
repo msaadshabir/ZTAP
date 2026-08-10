@@ -16,7 +16,9 @@ type fakeDetector struct {
 	scores  func(batch []FlowRecord) []AnomalyScore
 }
 
-func (f *fakeDetector) Detect(_ FlowRecord) (*AnomalyScore, error) { return nil, errors.New("not used") }
+func (f *fakeDetector) Detect(_ FlowRecord) (*AnomalyScore, error) {
+	return nil, errors.New("not used")
+}
 
 func (f *fakeDetector) DetectBatch(batch []FlowRecord) ([]AnomalyScore, error) {
 	f.mu.Lock()
