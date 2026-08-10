@@ -226,6 +226,84 @@ func TestPythonDetectorNoRetryOn4xx(t *testing.T) {
 	}
 }
 
+func TestPythonDetectorRetriesOnTransportError(t *testing.T) {
+	// A panicking handler aborts the connection without a response, which
+	// surfaces as a transport error on the client side.
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		panic("connection aborted")
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL, WithRetries(1), WithRetryBackoff(time.Millisecond))
+	if _, err := det.Detect(FlowRecord{}); err == nil {
+		t.Fatalf("expected error after transport failure")
+	}
+	if attempts != 2 {
+		t.Fatalf("expected 2 attempts (1 retry), got %d", attempts)
+	}
+}
+
+func TestPythonDetectorDetectBatchOutOfRangeIndex(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"predictions": []any{map[string]any{"index": 5, "score": 10.0, "is_anomaly": false, "reason": "x"}},
+		})
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL)
+	_, err := det.DetectBatch([]FlowRecord{{SourceIP: "10.0.0.1"}})
+	if err == nil || !strings.Contains(err.Error(), "out-of-range index 5") {
+		t.Fatalf("expected out-of-range error, got %v", err)
+	}
+}
+
+func TestPythonDetectorOptions(t *testing.T) {
+	det := NewPythonDetector(" http://example.com/",
+		WithHTTPClient(&http.Client{Timeout: 3 * time.Second}),
+		WithRetries(-1),
+		WithRetryBackoff(0),
+	)
+	if det.endpoint != "http://example.com" {
+		t.Fatalf("endpoint not trimmed: %q", det.endpoint)
+	}
+	if det.client.Timeout != 3*time.Second {
+		t.Fatalf("custom client not applied: %+v", det.client)
+	}
+	if det.retries != 0 {
+		t.Fatalf("expected negative retries clamped to 0, got %d", det.retries)
+	}
+	if det.retryBackoff != time.Nanosecond {
+		t.Fatalf("expected zero backoff clamped to 1ns, got %v", det.retryBackoff)
+	}
+}
+
+func TestSimpleDetectorDetectBatch(t *testing.T) {
+	det := NewSimpleDetector()
+	scores, err := det.DetectBatch([]FlowRecord{
+		{Port: 22, DestGeo: "RU", Bytes: 200 * 1024 * 1024},
+		{Port: 80, DestGeo: "US", Bytes: 1024},
+	})
+	if err != nil {
+		t.Fatalf("DetectBatch: %v", err)
+	}
+	if len(scores) != 2 {
+		t.Fatalf("expected 2 scores, got %d", len(scores))
+	}
+	if !scores[0].IsAnomaly || scores[1].IsAnomaly {
+		t.Fatalf("unexpected scores: %+v", scores)
+	}
+}
+
+func TestSimpleDetectorTrainNoop(t *testing.T) {
+	det := NewSimpleDetector()
+	if err := det.Train([]FlowRecord{{Port: 80}}); err != nil {
+		t.Fatalf("Train: %v", err)
+	}
+}
+
 func TestSimpleDetectorScores(t *testing.T) {
 	det := NewSimpleDetector()
 	score, err := det.Detect(FlowRecord{Port: 22, DestGeo: "RU", Bytes: 200 * 1024 * 1024})
