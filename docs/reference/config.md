@@ -200,6 +200,18 @@ anomaly:
   fail_open: true           # continue enforcement when the service is unreachable
 ```
 
+Consumed by `ztap agent` and `ztap enforce` when `enabled: true`: flow events
+are buffered to `batch_size` / `flush_interval` and scored asynchronously by
+the Python service (`internal/anomaly`); flows scoring above `threshold` emit
+an alert webhook, an audit entry, and the `ztap_anomaly_score` metric.
+`fail_open: false` stops the detection pipeline (fail closed) when the
+service is unreachable; enforcement itself never blocks on detection.
+
+Service-side environment variables (the Python service): `ZTAP_ANOMALY_TOKEN`
+(shared secret; when set every data endpoint requires the bearer token),
+`ZTAP_ANOMALY_HOST` / `ZTAP_ANOMALY_PORT` (bind address for host-local dev
+runs; the container image binds 0.0.0.0 via gunicorn).
+
 ## Enforcement
 
 ```yaml

@@ -82,13 +82,17 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - FLASK_ENV=production
+      # Gunicorn binds 0.0.0.0 so the agent can reach the service from
+      # another container on ztap-net (see the Dockerfile ENV).
+      - ZTAP_ANOMALY_HOST=0.0.0.0
       - MODEL_PATH=/app/models
+      - ZTAP_ANOMALY_TOKEN=${ZTAP_ANOMALY_TOKEN:-}
     networks:
       - ztap-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      # python:3.14-slim has no curl; probe /health with urllib instead.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
