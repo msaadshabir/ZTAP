@@ -22,6 +22,10 @@ services:
       - "9090:9090" # Metrics endpoint
     environment:
       - ZTAP_METRICS_LISTEN=0.0.0.0:9090
+      # Container-to-container anomaly service address. Host-local development
+      # continues to use http://localhost:5000 from the example config.
+      - ZTAP_ANOMALY_ENDPOINT=http://anomaly-detector:5000
+      - ZTAP_ANOMALY_AUTH_TOKEN=${ZTAP_ANOMALY_TOKEN:-}
     networks:
       - ztap-net
     command: ["metrics", "--port", "9090"]

@@ -150,6 +150,8 @@ gcp:
 # Anomaly Detection
 anomaly:
   enabled: false
+  # Host-local default. Container deployments should set
+  # ZTAP_ANOMALY_ENDPOINT=http://anomaly-detector:5000.
   endpoint: http://localhost:5000
   threshold: 50.0 # Anomaly score threshold (0-100)
   alert_email: security@example.com

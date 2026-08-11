@@ -594,6 +594,14 @@ func applyEnvOverrides(cfg *Config) error {
 		cfg.Audit.CheckpointInterval = Duration(d)
 	}
 
+	// Anomaly detection.
+	if v := strings.TrimSpace(os.Getenv("ZTAP_ANOMALY_ENDPOINT")); v != "" {
+		cfg.Anomaly.Endpoint = String(v)
+	}
+	if v := strings.TrimSpace(os.Getenv("ZTAP_ANOMALY_AUTH_TOKEN")); v != "" {
+		cfg.Anomaly.AuthToken = String(v)
+	}
+
 	// Metrics.
 	if v := strings.TrimSpace(os.Getenv("ZTAP_METRICS_LISTEN")); v != "" {
 		cfg.Metrics.Listen = v

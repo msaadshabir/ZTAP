@@ -18,6 +18,7 @@ import functools
 import hmac
 import ipaddress
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -33,7 +34,8 @@ app = Flask(__name__)
 MODEL_PATH = Path(os.environ.get("MODEL_PATH", "models")) / "model.joblib"
 TOKEN = os.environ.get("ZTAP_ANOMALY_TOKEN", "")
 
-# Global model (in production, use persistent storage)
+# The model is process-local and persisted to MODEL_PATH. The container runs
+# one worker so training and detection observe the same in-memory model.
 model = None
 training_data = []
 
@@ -70,14 +72,34 @@ def load_model():
 
 
 def save_model():
-    """Persist the current model so training survives restarts."""
+    """Persist the current model so training survives restarts.
+
+    Write to a file in the model directory and replace the previous model
+    atomically. A worker that starts while a model is being saved must never
+    observe a partially written joblib file.
+    """
     global model
+    temp_path = None
     try:
         MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(model, MODEL_PATH)
+        with tempfile.NamedTemporaryFile(
+            dir=MODEL_PATH.parent,
+            prefix=f".{MODEL_PATH.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+        joblib.dump(model, temp_path)
+        os.replace(temp_path, MODEL_PATH)
         app.logger.info("saved model to %s", MODEL_PATH)
-    except OSError:
+    except (OSError, ValueError):
         app.logger.warning("failed to save model to %s", MODEL_PATH)
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _ip_feature(ip_str):
@@ -155,6 +177,17 @@ def simple_score(flow):
     }
 
 
+def _normalize_ml_score(anomaly_score):
+    """Map Isolation Forest's decision function to the shared 0-100 scale.
+
+    Isolation Forest returns positive values for normal samples and negative
+    values for anomalies. Mapping zero to 50 makes the Go threshold contract
+    agree with the model's decision boundary: normal traffic is at or below
+    50 and anomalous traffic is above 50.
+    """
+    return float(np.clip(50.0 - float(anomaly_score) * 100.0, 0.0, 100.0))
+
+
 def _ml_score(flow, model):
     """Isolation-Forest score for a single flow (assumes a trained model)."""
     features = extract_features(flow)
@@ -163,10 +196,7 @@ def _ml_score(flow, model):
     # Predict (-1 = anomaly, 1 = normal)
     prediction = model.predict(X)[0]
     anomaly_score = model.decision_function(X)[0]
-
-    # Convert to 0-100 scale (lower anomaly_score = more anomalous)
-    # Typical range is [-0.5, 0.5], normalize to [0, 100]
-    score = max(0.0, min(100.0, (1 - anomaly_score) * 100))
+    score = _normalize_ml_score(anomaly_score)
     is_anomaly = prediction == -1
     reason = "ML-based detection: "
     reason += "flow deviates from normal patterns" if is_anomaly else "flow matches normal patterns"
@@ -179,7 +209,7 @@ def _ml_score(flow, model):
 
 
 def _flows_from_request(data):
-    """Extract the flow list from a request body, or None when invalid.
+    """Extract a non-empty list of flow objects, or None when invalid.
 
     Handles both formats: direct list or {'flows': [...]}.
     """
@@ -187,6 +217,8 @@ def _flows_from_request(data):
         return None
     flows = data.get('flows', data) if isinstance(data, dict) else data
     if not flows or not isinstance(flows, list):
+        return None
+    if any(not isinstance(flow, dict) for flow in flows):
         return None
     return flows
 
@@ -278,7 +310,7 @@ def batch():
         results = []
         for i, (pred, score) in enumerate(zip(predictions, scores, strict=False)):
             is_anomaly = pred == -1
-            normalized = max(0.0, min(100.0, (1 - score) * 100))
+            normalized = _normalize_ml_score(score)
             reason = "ML-based detection: "
             reason += "flow deviates from normal patterns" if is_anomaly else "flow matches normal patterns"
             results.append({
@@ -313,7 +345,7 @@ def predict():
     raw = model.decision_function(features)[0]
 
     is_anomaly = prediction == -1
-    normalized = max(0.0, min(100.0, (1 - raw) * 100))
+    normalized = _normalize_ml_score(raw)
 
     return jsonify({
         'is_anomaly': bool(is_anomaly),
@@ -348,7 +380,7 @@ def batch_predict():
     results = []
     for i, (pred, score) in enumerate(zip(predictions, scores, strict=False)):
         is_anomaly = pred == -1
-        normalized_score = max(0.0, min(100.0, (1 - score) * 100))
+        normalized_score = _normalize_ml_score(score)
 
         results.append({
             'index': i,

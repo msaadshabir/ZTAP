@@ -1,13 +1,81 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"strings"
+	"sync"
+	"time"
 
+	"ztap/internal/config"
+	"ztap/internal/logging"
 	"ztap/internal/metrics"
 
 	"github.com/spf13/cobra"
 )
+
+// startMetricsServer embeds the Prometheus endpoint in a long-running
+// agent/enforcement process. The standalone `ztap metrics` command remains
+// available, but anomaly scores must be exported by the process that receives
+// and scores the flows.
+func startMetricsServer(ctx context.Context, cfg *config.Config) (func(), error) {
+	if !cfg.Metrics.Enabled {
+		return nil, nil
+	}
+
+	path := strings.TrimSpace(string(cfg.Metrics.Path))
+	if path == "" {
+		path = "/metrics"
+	}
+	if err := metrics.ValidatePath(path); err != nil {
+		return nil, err
+	}
+
+	listen := strings.TrimSpace(cfg.Metrics.Listen)
+	if listen == "" {
+		port := cfg.Metrics.Port
+		if port <= 0 {
+			port = 9090
+		}
+		listen = fmt.Sprintf("127.0.0.1:%d", port)
+	}
+
+	srv, err := metrics.NewServer(listen, path)
+	if err != nil {
+		return nil, err
+	}
+	listener, err := net.Listen("tcp", listen)
+	if err != nil {
+		return nil, fmt.Errorf("listen for metrics on %s: %w", listen, err)
+	}
+
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logging.Warnf("failed to stop metrics server: %v", err)
+			}
+		})
+	}
+
+	go func() {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logging.Warnf("metrics server stopped unexpectedly: %v", err)
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+
+	logging.Infof("metrics server started on %s%s", listen, path)
+	return stop, nil
+}
 
 func newMetricsCmd(app *App) *cobra.Command {
 	c := &cobra.Command{

@@ -122,31 +122,47 @@ func ValidatePath(path string) error {
 	return registerMetricsHandler(mux, path, http.NotFoundHandler())
 }
 
-// StartServer starts the Prometheus metrics HTTP server on the given listen
-// address (host:port) and path.
-func StartServer(listen, path string) error {
+// NewServer builds a Prometheus metrics HTTP server on the given listen
+// address (host:port) and path. The collector is initialized here so callers
+// embedding the server in agent/enforcement processes expose the same metrics
+// as the standalone `ztap metrics` command.
+func NewServer(listen, path string) (*http.Server, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		path = "/metrics"
 	}
 	if err := ValidatePath(path); err != nil {
-		return err
+		return nil, err
 	}
+	GetCollector()
 
 	mux := http.NewServeMux()
 	if err := registerMetricsHandler(mux, path, promhttp.Handler()); err != nil {
-		return err
+		return nil, err
 	}
 
-	srv := &http.Server{
+	return &http.Server{
 		Addr:              listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
+	}, nil
+}
+
+// StartServer starts the Prometheus metrics HTTP server on the given listen
+// address (host:port) and path.
+func StartServer(listen, path string) error {
+	srv, err := NewServer(listen, path)
+	if err != nil {
+		return err
 	}
 
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "/metrics"
+	}
 	fmt.Printf("Starting metrics server on http://%s%s\n", listen, path)
 	return srv.ListenAndServe()
 }

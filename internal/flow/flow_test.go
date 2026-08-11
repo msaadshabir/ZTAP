@@ -251,6 +251,59 @@ func (r *testReader) Available() bool {
 	return true
 }
 
+func TestMonitorIsRunning(t *testing.T) {
+	monitor := NewMonitor(&testReader{})
+	if monitor.IsRunning() {
+		t.Fatal("new monitor should not be running")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := monitor.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if !monitor.IsRunning() {
+		t.Fatal("started monitor should be running")
+	}
+	if err := monitor.Stop(); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if monitor.IsRunning() {
+		t.Fatal("stopped monitor should not be running")
+	}
+}
+
+func TestMonitorSubscribeBeforeStart(t *testing.T) {
+	reader := &testReader{events: []RawFlowEvent{{
+		SrcIP:     [4]uint32{0x0A000101},
+		DestIP:    [4]uint32{0x0A000201},
+		DestPort:  443,
+		Protocol:  ProtocolTCP,
+		Direction: DirectionEgress,
+		Action:    ActionAllowed,
+		Family:    4,
+	}}}
+	monitor := NewMonitor(reader)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// Register before Start so an immediately-emitting reader cannot race the
+	// subscriber setup.
+	events := monitor.SubscribeBeforeStart(ctx)
+	if err := monitor.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() { _ = monitor.Stop() }()
+
+	select {
+	case event := <-events:
+		if event.DestPort != 443 {
+			t.Fatalf("unexpected startup event: %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for startup event")
+	}
+}
+
 func TestMonitorSubscription(t *testing.T) {
 	// Create a mock reader that sends events with delay
 	events := []RawFlowEvent{

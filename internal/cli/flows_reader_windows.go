@@ -9,3 +9,7 @@ import (
 func createFlowReader() flow.FlowReader {
 	return flow.NewWindowsReader()
 }
+
+func createAnomalyFlowReader() (flow.FlowReader, error) {
+	return flow.NewWindowsReader(), nil
+}

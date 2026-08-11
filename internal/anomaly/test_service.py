@@ -221,6 +221,44 @@ class TestAnomalyDetectionService(unittest.TestCase):
         service.load_model()
         self.assertIsNotNone(service.model, "model did not reload from disk")
 
+    def test_ml_score_calibration(self):
+        """Normal trained traffic must remain at or below the default threshold."""
+        normal_flow = {
+            'source_ip': '10.0.0.1',
+            'dest_ip': '10.0.0.2',
+            'protocol': 'TCP',
+            'port': 443,
+            'bytes': 1000,
+            'timestamp': '2025-01-01T12:00:00',
+        }
+        training_flows = [normal_flow.copy() for _ in range(20)]
+
+        response = self.client.post(
+            '/train',
+            data=json.dumps({'flows': training_flows}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            '/detect',
+            data=json.dumps(normal_flow),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()
+        self.assertFalse(result['is_anomaly'])
+        self.assertLessEqual(result['score'], 50.0)
+
+    def test_batch_rejects_non_object_flow(self):
+        """Batch endpoints must return 400 instead of raising on malformed items."""
+        response = self.client.post(
+            '/batch',
+            data=json.dumps({'flows': [{}, 'not-a-flow']}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_predict_endpoint_no_model(self):
         """Test prediction without training first"""
         flow = {

@@ -52,7 +52,9 @@ The Docker Compose stack includes:
 - **Capabilities**: Requires privileged mode for eBPF on Linux (or `NET_ADMIN` for iptables fallback)
 - **Volumes**: Policy examples, logs, and data
 - **Self-Contained**: The container image embeds the pre-compiled eBPF bytecode. No C source code or compiler toolchain is required at runtime.
-- **Command**: Runs metrics server by default
+- **Command**: Runs metrics server by default. `ztap agent` and non-dry-run
+  `ztap enforce` embed the metrics endpoint while they run, so anomaly scores
+  are exported by the same process that receives the flows.
 
 ZTAP can also run a REST API server (see `ztap api serve`). If you run it in a container, publish the configured listen port (default `127.0.0.1:8080` in `config.yaml.example`). Secure it using TLS by mounting certificates into the container and configuring `config.yaml`.
 
@@ -78,6 +80,9 @@ ZTAP can also run a gRPC API server (see `ztap grpc serve`). If you run it in a 
 - **Purpose**: ML-based traffic anomaly detection
 - **Technology**: Python + Flask + scikit-learn
 - **Health Check**: `/health` endpoint
+- **Container address**: `http://anomaly-detector:5000` from the ZTAP network;
+  host-local `python service.py` uses `http://localhost:5000`
+- **Workers**: One Gunicorn worker so training and detection share model state
 
 ## Architecture
 
@@ -272,7 +277,7 @@ sudo usermod -aG docker $USER
 ### Anomaly Detector Not Training
 
 1. Verify Python dependencies are installed
-2. Check for sufficient training data (minimum 10 samples)
+2. Check for sufficient training data (minimum 2 samples)
 3. Review logs: `docker compose logs anomaly-detector`
 
 ## Development
@@ -338,7 +343,8 @@ For production deployments:
 1. Use container orchestration (Kubernetes, Docker Swarm)
 2. Separate ZTAP agents across multiple nodes
 3. Use external Prometheus and Grafana instances
-4. Scale anomaly detector horizontally behind a load balancer
+4. Scale anomaly detector horizontally behind a load balancer only after
+   adding shared model-state coordination (the default image uses one worker)
 
 ## Multi-Platform Support
 

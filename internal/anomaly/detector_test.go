@@ -249,6 +249,8 @@ func TestPythonDetectorDetectBatchOutOfRangeIndex(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"predictions": []any{map[string]any{"index": 5, "score": 10.0, "is_anomaly": false, "reason": "x"}},
+			"total":       1,
+			"anomalies":   0,
 		})
 	}))
 	t.Cleanup(ts.Close)
@@ -257,6 +259,66 @@ func TestPythonDetectorDetectBatchOutOfRangeIndex(t *testing.T) {
 	_, err := det.DetectBatch([]FlowRecord{{SourceIP: "10.0.0.1"}})
 	if err == nil || !strings.Contains(err.Error(), "out-of-range index 5") {
 		t.Fatalf("expected out-of-range error, got %v", err)
+	}
+}
+
+func TestPythonDetectorDetectBatchRejectsDuplicateIndex(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"predictions": []any{
+				map[string]any{"index": 0, "score": 10.0, "is_anomaly": false, "reason": "normal"},
+				map[string]any{"index": 0, "score": 90.0, "is_anomaly": true, "reason": "anomaly"},
+			},
+			"total":     2,
+			"anomalies": 1,
+		})
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL)
+	_, err := det.DetectBatch([]FlowRecord{{}, {}})
+	if err == nil || !strings.Contains(err.Error(), "duplicate index 0") {
+		t.Fatalf("expected duplicate-index error, got %v", err)
+	}
+}
+
+func TestPythonDetectorDetectBatchRejectsMissingPrediction(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"predictions": []any{
+				map[string]any{"index": 0, "score": 10.0, "is_anomaly": false, "reason": "normal"},
+			},
+			"total":     2,
+			"anomalies": 0,
+		})
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL)
+	_, err := det.DetectBatch([]FlowRecord{{}, {}})
+	if err == nil || !strings.Contains(err.Error(), "predictions for 2 flows") {
+		t.Fatalf("expected prediction-count error, got %v", err)
+	}
+}
+
+func TestPythonDetectorRetriesOn429(t *testing.T) {
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(AnomalyScore{Score: 7, IsAnomaly: false, Reason: "ok"})
+	}))
+	t.Cleanup(ts.Close)
+
+	det := NewPythonDetector(ts.URL, WithRetries(1), WithRetryBackoff(time.Millisecond))
+	if _, err := det.Detect(FlowRecord{}); err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected one retry after 429, got %d attempts", attempts)
 	}
 }
 

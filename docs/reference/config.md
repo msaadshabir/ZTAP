@@ -55,7 +55,10 @@ metrics:
   path: /metrics
 ```
 
-`metrics.enabled` gates `ztap metrics`; `port`/`path` provide its defaults (overridden by the `--port` flag). `ZTAP_METRICS_LISTEN` overrides the full bind address, e.g. `0.0.0.0:9090`.
+`metrics.enabled` gates the metrics endpoint in `ztap metrics`, `ztap agent`,
+and `ztap enforce`; `port`/`path` provide its defaults (overridden by the
+`--port` flag for the standalone command). `ZTAP_METRICS_LISTEN` overrides
+the full bind address, e.g. `0.0.0.0:9090`.
 
 ## REST API Server
 
@@ -191,6 +194,7 @@ Environment variables: `ZTAP_GCP_PROJECT_ID`, `ZTAP_GCP_NETWORK`, `ZTAP_GCP_RULE
 ```yaml
 anomaly:
   enabled: false
+  # Host-local default; containers use ZTAP_ANOMALY_ENDPOINT.
   endpoint: http://localhost:5000
   threshold: 50.0
   alert_email: security@example.com
@@ -203,14 +207,21 @@ anomaly:
 Consumed by `ztap agent` and `ztap enforce` when `enabled: true`: flow events
 are buffered to `batch_size` / `flush_interval` and scored asynchronously by
 the Python service (`internal/anomaly`); flows scoring above `threshold` emit
-an alert webhook, an audit entry, and the `ztap_anomaly_score` metric.
+an alert webhook, an audit entry, and the `ztap_anomaly_score` metric. The
+agent and enforcement commands expose that metric from their own process
+when anomaly detection and `metrics.enabled` are true; the standalone
+`ztap metrics` command is for processes that do not run enforcement.
 `fail_open: false` stops the detection pipeline (fail closed) when the
 service is unreachable; enforcement itself never blocks on detection.
 
 Service-side environment variables (the Python service): `ZTAP_ANOMALY_TOKEN`
 (shared secret; when set every data endpoint requires the bearer token),
 `ZTAP_ANOMALY_HOST` / `ZTAP_ANOMALY_PORT` (bind address for host-local dev
-runs; the container image binds 0.0.0.0 via gunicorn).
+runs; the container image binds 0.0.0.0 via gunicorn). The Go process accepts
+`ZTAP_ANOMALY_ENDPOINT` and `ZTAP_ANOMALY_AUTH_TOKEN` overrides; use
+`http://anomaly-detector:5000` for an agent running in the Compose network.
+The anomaly container runs one Gunicorn worker so training and detection share
+model state.
 
 ## Enforcement
 

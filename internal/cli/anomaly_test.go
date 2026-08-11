@@ -55,10 +55,9 @@ func TestFlowToAnomalyRecord(t *testing.T) {
 }
 
 // TestStartAnomalyRunnerEndToEnd starts the full runner (monitor -> pipeline
-// -> httptest detector) with the simulated flow reader and verifies that
-// batches reach the service and the pipeline shuts down cleanly. On Linux CI
-// without a pinned eBPF map (and on Windows without WFP access) the reader
-// degrades to simulated flows, so this exercises the same path everywhere.
+// -> httptest detector) with an explicitly injected simulated reader and
+// verifies that batches reach the service and the pipeline shuts down cleanly.
+// Production anomaly detection never falls back to synthetic events.
 func TestStartAnomalyRunnerEndToEnd(t *testing.T) {
 	batches := make(chan int, 16)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,9 +73,18 @@ func TestStartAnomalyRunnerEndToEnd(t *testing.T) {
 		case batches <- len(flows):
 		default:
 		}
+		predictions := make([]map[string]any, len(flows))
+		for i := range flows {
+			predictions[i] = map[string]any{
+				"index":      i,
+				"score":      10.0,
+				"is_anomaly": false,
+				"reason":     "normal",
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"predictions": []any{},
-			"total":       0,
+			"predictions": predictions,
+			"total":       len(flows),
 			"anomalies":   0,
 		})
 	}))
@@ -93,7 +101,7 @@ func TestStartAnomalyRunnerEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	r, err := startAnomalyRunner(ctx, cfg, nil)
+	r, err := startAnomalyRunnerWithReader(ctx, cfg, nil, flow.NewSimulatedReader(generateRawDemoFlows(), 20*time.Millisecond))
 	if err != nil {
 		t.Fatalf("startAnomalyRunner: %v", err)
 	}
@@ -101,7 +109,7 @@ func TestStartAnomalyRunnerEndToEnd(t *testing.T) {
 		t.Fatalf("expected fully wired runner, got %+v", r)
 	}
 
-	// Simulated flows are generated every 500ms; with batch size 2 the first
+	// Simulated flows are generated every 20ms; with batch size 2 the first
 	// flush should arrive well within the timeout.
 	select {
 	case n := <-batches:

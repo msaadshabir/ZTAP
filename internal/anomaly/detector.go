@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -25,8 +26,8 @@ type FlowRecord struct {
 
 // AnomalyScore represents the detection result
 type AnomalyScore struct {
-	Score     float64 `json:"score"`      // 0-100
-	IsAnomaly bool    `json:"is_anomaly"` // True if score > threshold
+	Score     float64 `json:"score"`      // 0-100; pipeline applies its threshold
+	IsAnomaly bool    `json:"is_anomaly"` // Service/model classification
 	Reason    string  `json:"reason"`     // Human-readable explanation
 }
 
@@ -110,21 +111,24 @@ func (d *PythonDetector) Detect(flow FlowRecord) (*AnomalyScore, error) {
 	if err := d.doRequest(context.Background(), "/detect", flow, &score); err != nil {
 		return nil, err
 	}
+	if err := validateAnomalyScore(score); err != nil {
+		return nil, err
+	}
 	return &score, nil
 }
 
 // batchResponse mirrors the /batch endpoint response.
 type batchResponse struct {
 	Predictions []batchPrediction `json:"predictions"`
-	Total       int               `json:"total"`
-	Anomalies   int               `json:"anomalies"`
+	Total       *int              `json:"total"`
+	Anomalies   *int              `json:"anomalies"`
 }
 
 type batchPrediction struct {
-	Index     int     `json:"index"`
-	Score     float64 `json:"score"`
-	IsAnomaly bool    `json:"is_anomaly"`
-	Reason    string  `json:"reason"`
+	Index     *int     `json:"index"`
+	Score     *float64 `json:"score"`
+	IsAnomaly *bool    `json:"is_anomaly"`
+	Reason    *string  `json:"reason"`
 }
 
 // DetectBatch sends a batch of flows to the Python service. The returned
@@ -139,12 +143,51 @@ func (d *PythonDetector) DetectBatch(flows []FlowRecord) ([]AnomalyScore, error)
 		return nil, err
 	}
 
+	if resp.Total == nil {
+		return nil, fmt.Errorf("detection service response is missing total")
+	}
+	if *resp.Total != len(flows) {
+		return nil, fmt.Errorf("detection service returned total %d for %d flows", *resp.Total, len(flows))
+	}
+	if resp.Anomalies == nil {
+		return nil, fmt.Errorf("detection service response is missing anomalies")
+	}
+	if len(resp.Predictions) != len(flows) {
+		return nil, fmt.Errorf("detection service returned %d predictions for %d flows", len(resp.Predictions), len(flows))
+	}
+
 	scores := make([]AnomalyScore, len(flows))
+	seen := make([]bool, len(scores))
+	anomalyCount := 0
 	for _, p := range resp.Predictions {
-		if p.Index < 0 || p.Index >= len(scores) {
-			return nil, fmt.Errorf("detection service returned out-of-range index %d", p.Index)
+		if p.Index == nil {
+			return nil, fmt.Errorf("detection service prediction is missing index")
 		}
-		scores[p.Index] = AnomalyScore{Score: p.Score, IsAnomaly: p.IsAnomaly, Reason: p.Reason}
+		if *p.Index < 0 || *p.Index >= len(scores) {
+			return nil, fmt.Errorf("detection service returned out-of-range index %d", *p.Index)
+		}
+		if seen[*p.Index] {
+			return nil, fmt.Errorf("detection service returned duplicate index %d", *p.Index)
+		}
+		if p.Score == nil || p.IsAnomaly == nil || p.Reason == nil {
+			return nil, fmt.Errorf("detection service prediction at index %d is missing fields", *p.Index)
+		}
+		if err := validateAnomalyScore(AnomalyScore{Score: *p.Score}); err != nil {
+			return nil, fmt.Errorf("invalid prediction at index %d: %w", *p.Index, err)
+		}
+		seen[*p.Index] = true
+		if *p.IsAnomaly {
+			anomalyCount++
+		}
+		scores[*p.Index] = AnomalyScore{Score: *p.Score, IsAnomaly: *p.IsAnomaly, Reason: *p.Reason}
+	}
+	for i, ok := range seen {
+		if !ok {
+			return nil, fmt.Errorf("detection service response is missing prediction for index %d", i)
+		}
+	}
+	if *resp.Anomalies != anomalyCount {
+		return nil, fmt.Errorf("detection service returned anomalies %d, counted %d", *resp.Anomalies, anomalyCount)
 	}
 	return scores, nil
 }
@@ -188,16 +231,19 @@ func (d *PythonDetector) doRequest(ctx context.Context, path string, payload any
 			lastErr = fmt.Errorf("failed to call detection service: %w", err)
 			continue // transient transport error — retry
 		}
-		body, readErr := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxDetectionResponseBytes+1))
 		_ = resp.Body.Close()
 		if readErr != nil {
 			lastErr = fmt.Errorf("failed to read detection service response: %w", readErr)
 			continue
 		}
+		if len(body) > maxDetectionResponseBytes {
+			return fmt.Errorf("detection service response exceeds %d bytes", maxDetectionResponseBytes)
+		}
 
-		if resp.StatusCode >= 500 {
+		if resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 			lastErr = fmt.Errorf("detection service returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-			continue // transient server error — retry
+			continue // transient server/rate-limit error — retry
 		}
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("detection service returned status %d", resp.StatusCode)
@@ -215,7 +261,20 @@ func (d *PythonDetector) doRequest(ctx context.Context, path string, payload any
 const (
 	// Maximum number of anomaly reasons we track
 	maxAnomalyReasons = 3
+	// Bound response memory usage even if a service returns an unexpectedly
+	// large body. Normal batches are far smaller than this limit.
+	maxDetectionResponseBytes = 10 << 20
 )
+
+func validateAnomalyScore(score AnomalyScore) error {
+	if math.IsNaN(score.Score) || math.IsInf(score.Score, 0) {
+		return fmt.Errorf("score must be finite")
+	}
+	if score.Score < 0 || score.Score > 100 {
+		return fmt.Errorf("score %.6f is outside 0-100", score.Score)
+	}
+	return nil
+}
 
 // SimpleDetector provides basic rule-based anomaly detection (no ML)
 type SimpleDetector struct {

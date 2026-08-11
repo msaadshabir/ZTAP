@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -62,6 +63,25 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("condition not met within %s", timeout)
+}
+
+func TestPipelineRejectsInvalidThreshold(t *testing.T) {
+	if _, err := NewPipeline(PipelineOptions{Detector: &fakeDetector{}, Threshold: 101, ThresholdSet: true}); err == nil {
+		t.Fatal("expected invalid threshold error")
+	}
+}
+
+func TestPipelineDefaults(t *testing.T) {
+	p, err := NewPipeline(PipelineOptions{Detector: &fakeDetector{}})
+	if err != nil {
+		t.Fatalf("NewPipeline: %v", err)
+	}
+	if p.batchSize != defaultBatchSize || p.flushInterval != defaultFlushInterval || p.threshold != defaultThreshold {
+		t.Fatalf("unexpected defaults: batch=%d interval=%s threshold=%v", p.batchSize, p.flushInterval, p.threshold)
+	}
+	if !p.failOpen {
+		t.Fatal("expected fail-open by default")
+	}
 }
 
 func TestPipelineBatchSizeFlush(t *testing.T) {
@@ -166,7 +186,7 @@ func TestPipelineFailOpen(t *testing.T) {
 
 func TestPipelineFailClosedStops(t *testing.T) {
 	det := &fakeDetector{err: errors.New("service down")}
-	p, err := NewPipeline(PipelineOptions{Detector: det, BatchSize: 1, Threshold: 50, FailOpen: false})
+	p, err := NewPipeline(PipelineOptions{Detector: det, BatchSize: 1, Threshold: 50, FailOpen: false, FailOpenSet: true})
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}
@@ -186,6 +206,43 @@ func TestPipelineFailClosedStops(t *testing.T) {
 			return false
 		}
 	})
+}
+
+func TestPipelineFailClosedConcurrentFailures(t *testing.T) {
+	det := &fakeDetector{err: errors.New("service down")}
+	var callbackCount atomic.Int32
+	callbacksReady := make(chan struct{})
+	release := make(chan struct{})
+	p, err := NewPipeline(PipelineOptions{
+		Detector:    det,
+		BatchSize:   1,
+		FailOpen:    false,
+		FailOpenSet: true,
+		OnError: func(error) {
+			if callbackCount.Add(1) == 2 {
+				close(callbacksReady)
+			}
+			<-release
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPipeline: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.Start(ctx)
+
+	p.Submit(FlowRecord{SourceIP: "10.0.0.1"})
+	p.Submit(FlowRecord{SourceIP: "10.0.0.2"})
+	select {
+	case <-callbacksReady:
+	case <-time.After(2 * time.Second):
+		cancel()
+		p.Wait()
+		t.Fatal("expected two concurrent error callbacks")
+	}
+	close(release)
+	p.Wait()
+	cancel()
 }
 
 func TestPipelineAnomalyCallbacks(t *testing.T) {

@@ -48,6 +48,8 @@ func TestLoadEmptyFileUsesDefaults(t *testing.T) {
 func TestLoadDefaultsWhenFileMissing(t *testing.T) {
 	t.Setenv("ZTAP_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
 	t.Setenv("ZTAP_LOG_LEVEL", "") // ensure no env leakage
+	t.Setenv("ZTAP_ANOMALY_ENDPOINT", "")
+	t.Setenv("ZTAP_ANOMALY_AUTH_TOKEN", "")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -215,6 +217,8 @@ aws:
 	t.Setenv("ZTAP_LOG_LEVEL", "debug")
 	t.Setenv("ZTAP_AWS_REGION", "ap-south-1")
 	t.Setenv("ZTAP_METRICS_LISTEN", "0.0.0.0:9999")
+	t.Setenv("ZTAP_ANOMALY_ENDPOINT", "http://anomaly-detector:5000")
+	t.Setenv("ZTAP_ANOMALY_AUTH_TOKEN", "secret")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -229,6 +233,12 @@ aws:
 	}
 	if got := cfg.Metrics.Listen; got != "0.0.0.0:9999" {
 		t.Errorf("metrics.listen = %q, want 0.0.0.0:9999", got)
+	}
+	if got := string(cfg.Anomaly.Endpoint); got != "http://anomaly-detector:5000" {
+		t.Errorf("anomaly.endpoint = %q, want container endpoint", got)
+	}
+	if got := string(cfg.Anomaly.AuthToken); got != "secret" {
+		t.Errorf("anomaly.auth_token = %q, want env override", got)
 	}
 }
 

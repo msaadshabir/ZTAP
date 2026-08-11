@@ -29,6 +29,20 @@ func TestStartServerRejectsInvalidPath(t *testing.T) {
 	}
 }
 
+func TestNewServer(t *testing.T) {
+	resetCollector(t)
+	srv, err := NewServer("127.0.0.1:0", "/metrics")
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	if srv == nil || srv.Handler == nil {
+		t.Fatalf("expected configured HTTP server, got %+v", srv)
+	}
+	if err := srv.Close(); err != nil {
+		t.Fatalf("close server: %v", err)
+	}
+}
+
 func TestGetCollectorSingleton(t *testing.T) {
 	resetCollector(t)
 

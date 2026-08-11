@@ -35,4 +35,7 @@ ENV PYTHONUNBUFFERED=1 \
 # host-local dev runs.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "service:app"]
+# Keep one worker because the trained model is process-local. The persisted
+# model is loaded on startup and /train updates this worker's in-memory model.
+# Scale the service only after adding shared model-state coordination.
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "60", "service:app"]

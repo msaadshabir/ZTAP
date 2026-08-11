@@ -23,7 +23,9 @@ python3 service.py
 Binds `127.0.0.1:5000` by default. Override with `ZTAP_ANOMALY_HOST` /
 `ZTAP_ANOMALY_PORT`. In the container image the service runs under gunicorn
 and binds `0.0.0.0` so the agent can reach it from another container on the
-compose network (`docker-compose.yml`).
+compose network (`docker-compose.yml`). The image intentionally runs one
+Gunicorn worker because the trained model is process-local; the model is
+reloaded from the persisted file on restart.
 
 ## Authentication
 
@@ -36,8 +38,11 @@ token configured as `anomaly.auth_token` in `config.yaml`.
 
 Training data is fit into an Isolation Forest; the model is saved with
 `joblib` to `$MODEL_PATH/model.joblib` (default `./models`) after every
-`/train` and loaded on start, so training survives restarts. The compose
-service mounts `anomaly-models` at `/app/models`.
+`/train` and loaded on start, so training survives restarts. Saves replace the
+previous model atomically. The compose service mounts `anomaly-models` at
+`/app/models`. The container uses one worker so `/train` and detection share
+one in-memory model; add shared model-state coordination before scaling
+workers.
 
 ## API
 
@@ -49,7 +54,7 @@ All data endpoints require the bearer token when `ZTAP_ANOMALY_TOKEN` is set.
 curl -X POST http://localhost:5000/train \
   -H "Authorization: Bearer $ZTAP_ANOMALY_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"flows":[{"source_ip":"10.0.0.1","dest_ip":"10.0.0.2","port":443,"protocol":"TCP","bytes":1024,"timestamp":"2025-10-09T10:00:00"}]}'
+  -d '{"flows":[{"source_ip":"10.0.0.1","dest_ip":"10.0.0.2","port":443,"protocol":"TCP","bytes":1024,"timestamp":"2025-10-09T10:00:00"},{"source_ip":"10.0.0.3","dest_ip":"10.0.0.4","port":443,"protocol":"TCP","bytes":2048,"timestamp":"2025-10-09T10:00:00"}]}'
 ```
 
 ### Detect Anomaly (single flow)
@@ -73,6 +78,10 @@ curl -X POST http://localhost:5000/batch \
 ```json
 {"predictions": [{"index": 0, "score": 73.2, "is_anomaly": true, "reason": "..."}], "total": 1, "anomalies": 1}
 ```
+
+ML scores map the Isolation Forest decision boundary to 50: normal samples
+score at or below 50 and anomalous samples score above 50. The Go pipeline applies
+its configured `anomaly.threshold` to this shared 0-100 score.
 
 ### Health Check
 

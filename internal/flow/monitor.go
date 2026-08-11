@@ -19,6 +19,8 @@ type subscriber struct {
 type Monitor struct {
 	mu          sync.RWMutex
 	running     bool
+	started     bool
+	stopped     bool
 	stopCh      chan struct{}
 	subscribers map[uint64]*subscriber
 	nextSubID   uint64
@@ -53,6 +55,8 @@ func (m *Monitor) Start(ctx context.Context) error {
 		return nil
 	}
 	m.running = true
+	m.started = true
+	m.stopped = false
 	m.stats.MonitorStarted = time.Now()
 	// Capture stopCh under lock to avoid race with Stop()
 	stopCh := m.stopCh
@@ -87,10 +91,19 @@ func (m *Monitor) Start(ctx context.Context) error {
 func (m *Monitor) Stop() error {
 	m.mu.Lock()
 	if !m.running {
+		m.stopped = true
+		for _, sub := range m.subscribers {
+			if !sub.closed {
+				sub.closed = true
+				close(sub.ch)
+			}
+		}
+		m.subscribers = make(map[uint64]*subscriber)
 		m.mu.Unlock()
 		return nil
 	}
 	m.running = false
+	m.stopped = true
 
 	// Close stopCh to signal processEvents to exit
 	select {
@@ -121,12 +134,26 @@ func (m *Monitor) Stop() error {
 	return nil
 }
 
-// Subscribe returns a channel that receives flow events.
+// Subscribe returns a channel that receives flow events. The monitor must
+// already be running; use SubscribeBeforeStart when a subscriber must be
+// registered before the reader is started.
 func (m *Monitor) Subscribe(ctx context.Context) <-chan FlowEvent {
+	return m.subscribe(ctx, false)
+}
+
+// SubscribeBeforeStart registers a subscriber before Start launches the
+// reader. This prevents fast readers from dropping startup events between
+// Start and a subsequent Subscribe call. It is closed if the monitor has
+// already been stopped.
+func (m *Monitor) SubscribeBeforeStart(ctx context.Context) <-chan FlowEvent {
+	return m.subscribe(ctx, true)
+}
+
+func (m *Monitor) subscribe(ctx context.Context, allowBeforeStart bool) <-chan FlowEvent {
 	ch := make(chan FlowEvent, 100)
 
 	m.mu.Lock()
-	if !m.running {
+	if !m.running && (!allowBeforeStart || m.started || m.stopped) {
 		m.mu.Unlock()
 		close(ch)
 		return ch
@@ -136,13 +163,13 @@ func (m *Monitor) Subscribe(ctx context.Context) <-chan FlowEvent {
 	m.subscribers[sub.id] = sub
 	m.mu.Unlock()
 
-	// Handle context cancellation
+	// Handle context cancellation.
 	go func() {
 		<-ctx.Done()
 		m.mu.Lock()
 		defer m.mu.Unlock()
 
-		// Remove this subscriber and close the channel if not already closed
+		// Remove this subscriber and close the channel if not already closed.
 		if tracked, ok := m.subscribers[sub.id]; ok {
 			delete(m.subscribers, sub.id)
 			if !tracked.closed {
