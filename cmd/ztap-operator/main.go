@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	ztapv1alpha1 "ztap/internal/operator/api/v1alpha1"
 	"ztap/internal/logging"
+	ztapv1alpha1 "ztap/internal/operator/api/v1alpha1"
 	"ztap/internal/operator/controllers"
 )
 
