@@ -22,14 +22,7 @@ var clusterBackendRunning bool
 var clusterBackendCleanup func()
 
 // Backend type flag (default: memory)
-var clusterBackend string = "memory"
-
-// Etcd endpoints flag
 var etcdEndpoints []string
-
-func newClusterCmd() *cobra.Command {
-	return newClusterCmdWithApp(&App{})
-}
 
 func newClusterCmdWithApp(app *App) *cobra.Command {
 	c := &cobra.Command{
@@ -187,10 +180,6 @@ func newClusterListCmd() *cobra.Command {
 	return c
 }
 
-func newClusterConfigCmd() *cobra.Command {
-	return newClusterConfigCmdWithApp(&App{})
-}
-
 func newClusterConfigCmdWithApp(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "config",
@@ -216,7 +205,6 @@ func newClusterConfigSetCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			clusterBackend = backend
 			fmt.Printf("Cluster backend set to: %s\n", backend)
 
 			if backend == "etcd" {
@@ -232,10 +220,6 @@ func newClusterConfigSetCmd() *cobra.Command {
 	// Add flags to commands that need them
 	c.Flags().StringSliceVar(&etcdEndpoints, "etcd-endpoints", []string{}, "Etcd cluster endpoints (comma-separated)")
 	return c
-}
-
-func newClusterConfigShowCmd() *cobra.Command {
-	return newClusterConfigShowCmdWithApp(&App{})
 }
 
 func newClusterConfigShowCmdWithApp(app *App) *cobra.Command {
@@ -281,10 +265,6 @@ func newClusterConfigShowCmdWithApp(app *App) *cobra.Command {
 		},
 	}
 	return c
-}
-
-func newClusterTestEtcdCmd() *cobra.Command {
-	return newClusterTestEtcdCmdWithApp(&App{})
 }
 
 func newClusterTestEtcdCmdWithApp(app *App) *cobra.Command {

@@ -2,6 +2,7 @@ package anomaly
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -96,7 +97,7 @@ type Pipeline struct {
 // NewPipeline validates the options and returns a ready pipeline.
 func NewPipeline(opts PipelineOptions) (*Pipeline, error) {
 	if opts.Detector == nil {
-		return nil, fmt.Errorf("anomaly pipeline: detector is required")
+		return nil, errors.New("anomaly pipeline: detector is required")
 	}
 
 	batchSize := opts.BatchSize

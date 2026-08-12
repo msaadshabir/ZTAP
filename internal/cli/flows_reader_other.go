@@ -3,7 +3,7 @@
 package cli
 
 import (
-	"fmt"
+	"errors"
 	"time"
 
 	"ztap/internal/flow"
@@ -14,5 +14,5 @@ func createFlowReader() flow.FlowReader {
 }
 
 func createAnomalyFlowReader() (flow.FlowReader, error) {
-	return nil, fmt.Errorf("real flow monitoring is unavailable on this platform")
+	return nil, errors.New("real flow monitoring is unavailable on this platform")
 }

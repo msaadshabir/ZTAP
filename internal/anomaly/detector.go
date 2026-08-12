@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -144,13 +145,13 @@ func (d *PythonDetector) DetectBatch(flows []FlowRecord) ([]AnomalyScore, error)
 	}
 
 	if resp.Total == nil {
-		return nil, fmt.Errorf("detection service response is missing total")
+		return nil, errors.New("detection service response is missing total")
 	}
 	if *resp.Total != len(flows) {
 		return nil, fmt.Errorf("detection service returned total %d for %d flows", *resp.Total, len(flows))
 	}
 	if resp.Anomalies == nil {
-		return nil, fmt.Errorf("detection service response is missing anomalies")
+		return nil, errors.New("detection service response is missing anomalies")
 	}
 	if len(resp.Predictions) != len(flows) {
 		return nil, fmt.Errorf("detection service returned %d predictions for %d flows", len(resp.Predictions), len(flows))
@@ -161,7 +162,7 @@ func (d *PythonDetector) DetectBatch(flows []FlowRecord) ([]AnomalyScore, error)
 	anomalyCount := 0
 	for _, p := range resp.Predictions {
 		if p.Index == nil {
-			return nil, fmt.Errorf("detection service prediction is missing index")
+			return nil, errors.New("detection service prediction is missing index")
 		}
 		if *p.Index < 0 || *p.Index >= len(scores) {
 			return nil, fmt.Errorf("detection service returned out-of-range index %d", *p.Index)
@@ -268,7 +269,7 @@ const (
 
 func validateAnomalyScore(score AnomalyScore) error {
 	if math.IsNaN(score.Score) || math.IsInf(score.Score, 0) {
-		return fmt.Errorf("score must be finite")
+		return errors.New("score must be finite")
 	}
 	if score.Score < 0 || score.Score > 100 {
 		return fmt.Errorf("score %.6f is outside 0-100", score.Score)
