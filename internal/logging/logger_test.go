@@ -8,15 +8,20 @@ import (
 )
 
 func TestLoggerRespectsLevels(t *testing.T) {
-	logger := &Logger{out: &strings.Builder{}, level: levelWarn, format: formatJSON}
+	var out strings.Builder
+	logger, err := New(Config{Level: "warn", Format: "json"})
+	if err != nil {
+		t.Fatalf("unexpected error creating logger: %v", err)
+	}
+	logger.SetOutput(&out)
+
 	logger.Info("ignored", nil)
 	logger.Warn("kept", nil)
 
-	builder := logger.out.(*strings.Builder)
-	if strings.Contains(builder.String(), "ignored") {
+	if strings.Contains(out.String(), "ignored") {
 		t.Fatalf("expected info message to be filtered")
 	}
-	if !strings.Contains(builder.String(), "kept") {
+	if !strings.Contains(out.String(), "kept") {
 		t.Fatalf("expected warn message to be logged")
 	}
 }

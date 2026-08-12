@@ -1,15 +1,16 @@
 package logging
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
+
 	"ztap/internal/paths"
 )
 
@@ -30,12 +31,15 @@ const (
 // Fields represents structured fields attached to log entries.
 type Fields map[string]any
 
-// Logger writes structured logs with basic filtering.
+// Logger writes structured logs with basic filtering. Internals are
+// implemented over log/slog; the public API is a thin shim so existing call
+// sites are untouched.
 type Logger struct {
 	mu     sync.Mutex
 	out    io.Writer
-	level  level
 	format string
+	lvl    slog.LevelVar
+	slog   *slog.Logger
 }
 
 // New creates a logger with the given config.
@@ -59,13 +63,15 @@ func New(cfg Config) (*Logger, error) {
 		return nil, err
 	}
 
-	format := normalizeFormat(cfg.Format)
 	logger := &Logger{
 		out:    out,
-		level:  lvl,
-		format: format,
+		format: normalizeFormat(cfg.Format),
 	}
+	logger.lvl.Set(toSlogLevel(lvl))
+	logger.rebuildLocked()
 
+	// Preserve the historical stdlib-log hijack: etcd/client-go output is
+	// routed through this logger's Write method.
 	log.SetFlags(0)
 	log.SetOutput(logger)
 
@@ -95,15 +101,38 @@ func parseLevel(value string) (level, error) {
 	}
 }
 
+func toSlogLevel(lvl level) slog.Level {
+	switch lvl {
+	case levelDebug:
+		return slog.LevelDebug
+	case levelWarn:
+		return slog.LevelWarn
+	case levelError:
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// attrs converts a Fields map into the key/value pairs expected by slog.
+func attrs(fields Fields) []any {
+	if len(fields) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(fields)*2)
+	for key, value := range fields {
+		args = append(args, key, value)
+	}
+	return args
+}
+
 // SetLevel overrides the logger level.
 func (l *Logger) SetLevel(levelName string) error {
 	lvl, err := parseLevel(levelName)
 	if err != nil {
 		return err
 	}
-	l.mu.Lock()
-	l.level = lvl
-	l.mu.Unlock()
+	l.lvl.Set(toSlogLevel(lvl))
 	return nil
 }
 
@@ -111,6 +140,7 @@ func (l *Logger) SetLevel(levelName string) error {
 func (l *Logger) SetFormat(format string) {
 	l.mu.Lock()
 	l.format = normalizeFormat(format)
+	l.rebuildLocked()
 	l.mu.Unlock()
 }
 
@@ -121,6 +151,7 @@ func (l *Logger) SetOutput(w io.Writer) {
 	}
 	l.mu.Lock()
 	l.out = w
+	l.rebuildLocked()
 	l.mu.Unlock()
 	log.SetOutput(l)
 }
@@ -130,6 +161,14 @@ func (l *Logger) Output() io.Writer {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.out
+}
+
+// Handler returns the underlying slog handler, for embedding this logger in
+// third-party logging stacks (e.g. the operator's logr bridge).
+func (l *Logger) Handler() slog.Handler {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.slog.Handler()
 }
 
 // Debug logs a debug entry.
@@ -174,100 +213,20 @@ func (l *Logger) Write(p []byte) (int, error) {
 
 func (l *Logger) log(entryLevel level, msg string, fields Fields) {
 	l.mu.Lock()
-	lvl := l.level
-	format := l.format
-	out := l.out
+	logger := l.slog
 	l.mu.Unlock()
 
-	if entryLevel < lvl {
-		return
-	}
+	logger.Log(context.Background(), toSlogLevel(entryLevel), sanitizeMessage(msg), attrs(fields)...)
+}
 
-	sanitized := sanitizeMessage(msg)
-	if format == formatText {
-		writeText(out, entryLevel, sanitized, fields)
-		return
-	}
-	writeJSON(out, entryLevel, sanitized, fields)
+// rebuildLocked rebuilds the underlying slog logger after output or format
+// changes. Callers must hold l.mu.
+func (l *Logger) rebuildLocked() {
+	l.slog = slog.New(&ztapHandler{out: l.out, lvl: &l.lvl, mode: l.format})
 }
 
 func sanitizeMessage(value string) string {
 	value = strings.ReplaceAll(value, "\n", " ")
 	value = strings.ReplaceAll(value, "\r", " ")
 	return strings.TrimSpace(value)
-}
-
-func levelString(lvl level) string {
-	switch lvl {
-	case levelDebug:
-		return "debug"
-	case levelInfo:
-		return "info"
-	case levelWarn:
-		return "warn"
-	case levelError:
-		return "error"
-	default:
-		return "info"
-	}
-}
-
-type jsonEntry struct {
-	Timestamp string `json:"timestamp"`
-	Level     string `json:"level"`
-	Message   string `json:"message"`
-	Fields    Fields `json:"fields,omitempty"`
-}
-
-func writeJSON(out io.Writer, lvl level, msg string, fields Fields) {
-	entry := jsonEntry{
-		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-		Level:     levelString(lvl),
-		Message:   msg,
-		Fields:    sanitizeFields(fields),
-	}
-	data, err := json.Marshal(entry)
-	if err != nil {
-		fallback := fmt.Sprintf("{\"timestamp\":%q,\"level\":%q,\"message\":%q}", entry.Timestamp, entry.Level, entry.Message)
-		_, _ = io.WriteString(out, fallback+"\n")
-		return
-	}
-	_, _ = out.Write(data)
-	_, _ = out.Write([]byte("\n"))
-}
-
-func writeText(out io.Writer, lvl level, msg string, fields Fields) {
-	timestamp := time.Now().UTC().Format(time.RFC3339)
-	line := fmt.Sprintf("%s [%s] %s", timestamp, strings.ToUpper(levelString(lvl)), msg)
-	fields = sanitizeFields(fields)
-	if len(fields) > 0 {
-		line = fmt.Sprintf("%s %s", line, renderFields(fields))
-	}
-	_, _ = io.WriteString(out, line+"\n")
-}
-
-func sanitizeFields(fields Fields) Fields {
-	if len(fields) == 0 {
-		return nil
-	}
-	clean := make(Fields, len(fields))
-	for key, value := range fields {
-		cleanKey := strings.TrimSpace(key)
-		if cleanKey == "" {
-			continue
-		}
-		clean[cleanKey] = value
-	}
-	if len(clean) == 0 {
-		return nil
-	}
-	return clean
-}
-
-func renderFields(fields Fields) string {
-	parts := make([]string, 0, len(fields))
-	for key, value := range fields {
-		parts = append(parts, fmt.Sprintf("%s=%v", key, value))
-	}
-	return strings.Join(parts, " ")
 }
