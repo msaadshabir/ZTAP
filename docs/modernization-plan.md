@@ -4,10 +4,11 @@
 > Generated from a full codebase audit. Each phase is independently shippable; phases are ordered to
 > minimize merge conflicts (mechanical edits → additive CI work → big rename → deep refactors).
 >
-> **Status (2026-02):** Phases A, B, C, D and E are **complete and verified** against the tree (evidence in
+> **Status (2026-02):** Phases A, B, C, D, E and F are **complete and verified** against the tree (evidence in
 > the completed-workstreams tables below; a handful of residuals are listed there). The active
-> checklist is **F**. Path references inside the A/B/C/D/E evidence tables reflect the layout
-> at the time of verification (the Phase C/D/E tables use the post-move `internal/` paths).
+> checklist is empty — remaining items are residuals/follow-ups noted per phase. Path references
+> inside the A–E evidence tables reflect the layout at the time of verification (the Phase C/D/E
+> tables use the post-move `internal/` paths).
 >
 > **Scope decisions (agreed):**
 > - ✅ In scope: quick code modernization (A), CI/release supply chain (B), `pkg/`→`internal/` + cmd split (C), centralized config (D), anomaly service wire-up + hardening (E), `log/slog` migration (F).
@@ -194,28 +195,29 @@ The original implementation landed as 4 commits on `main`; the review hardening 
 
 ---
 
-## Phase F — `log/slog` migration
+## Phase F — `log/slog` migration ✅ COMPLETE (verified 2026-02)
 
 **Goal:** stdlib logging core; kill global state; unify operator output. Shim-first = low blast radius.
 
-- [ ] **F.1** Reimplement `internal/logging` internals over `slog`: `New()` builds an
-  `slog.Logger` with `JSONHandler`/`TextHandler` per config; keep the existing public `Logger`
-  API as a thin shim so call sites are untouched. Preserve field-sanitization behavior — write
-  golden-output tests first (`internal/logging/testdata/*.golden`) since current coverage is thin
-  (`logger_test.go` is 57 lines).
-- [ ] **F.2** Remove global state: delete `defaultLogger`/`exitFn` (`default.go`), replace the
-  stdlib-`log` hijack in `New()` (`logger.go:74-75`) with `slog.SetDefault` +
-  `slog.NewLogLogger(handler, slog.LevelInfo)` bridge for etcd/client-go stdlib output.
-- [ ] **F.3** Operator: replace `zap.Options{Development: true}` in `cmd/ztap-operator/main.go`
-  with `logr.FromSlogHandler(...)` so both binaries share format/config.
-- [ ] **F.4** Verify: log JSON schema unchanged (golden tests), `ztap logs --follow/--level`
-  filtering works, operator emits structured production logs, full test suite + race.
-- [ ] **F.5 (optional follow-up):** migrate call sites to `slog` directly; retire the shim.
+**Status:** every item below was verified against the tree. `internal/logging` is now a thin shim over `log/slog`; the emitted JSON/text schema is byte-identical (pinned by golden tests), all ~300 package-level call sites are untouched, and the operator shares the same core.
 
-**Commits:**
+| Item | Evidence (verified in tree) |
+|---|---|
+| F.1 slog core | `internal/logging/logger.go` builds a `slog.Logger` over the custom `ztapHandler` (`internal/logging/handler.go`) which reproduces the historical schema: JSON lines `{"timestamp":"<RFC3339Nano UTC>","level":"info","message":"...","fields":{...}}` (fields omitted when empty) and text lines `2026-01-02T15:04:05Z [INFO] message key=value`. Sanitization preserved (CR/LF → space + trim in messages; field keys trimmed, empties dropped); field keys are now **sorted** (was map-iteration order — deterministic improvement, JSON was already sorted by `encoding/json`). The public `Logger` API (incl. `Printf`/`Println`/`Write`/`SetLevel`/`SetFormat`/`SetOutput`/`Output` + new `Handler()`) is a thin shim; `rg 'logging\.' internal cmd | wc` ≈ 300 untouched call sites. New `Handler()` exposes the slog handler for the operator bridge |
+| F.1 golden tests | `internal/logging/testdata/{json,text}.golden` pin the exact lines for all four levels, empty-fields omission, message sanitization, and field-key trimming/sorting; `golden_test.go` emits through the public API and normalizes only the timestamp. Also `logger_test.go` bridge tests: stdlib `log.Printf` output lands in the configured logger, `slog.Info` attrs land in `fields`, and stdlib info output is filtered at warn level |
+| F.2 global state | `internal/logging/default.go` no longer has `defaultLogger`/`Default()`/`exitFn` (that file + `default_test.go` deleted); package helpers (`Info`/`Warn`/`Error`/`Debug`/`*f`/`Fatal`/`Fatalf`) delegate to `slog.Default()`, `Fatal` calls `os.Exit(1)` directly. `Configure` = `New` + the process-wide install. Before the first `Configure` (CLI always configures in `PersistentPreRunE`) helpers fall back to the stdlib default (text to stderr) instead of a lazily-created JSON-on-stdout singleton |
+| F.2 stdlib bridge | `New`/`SetFormat`/`SetOutput` re-install via `rebuildLocked`: `slog.SetDefault(l.slog)` — **deviation from the plan text, same effect**: the plan's `slog.NewLogLogger(handler, slog.LevelInfo)` bridge is now built into `slog.SetDefault` (its internal `handlerWriter` links the stdlib `log` sink at `SetLogLoggerLevel`, default info), and `(*log.Logger).Write` no longer exists on Go 1.26 so the explicit `log.SetOutput(slog.NewLogLogger(...))` wiring no longer compiles. etcd/client-go stdlib output is still routed through the configured handler at info level and still filtered by the configured level |
+| F.3 operator | `cmd/ztap-operator/main.go` drops `zap.Options{Development: true}` + the `--zap-*` flag family; `logging.New(operatorLoggingConfig())` reads the shared defaults + `ZTAP_LOG_LEVEL`/`ZTAP_LOG_FORMAT`/`ZTAP_LOG_FILE` and `ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))`. Smoke-verified: without a kubeconfig the operator emits `{"timestamp":...,"level":"error","message":"unable to load in-cluster config","fields":{"err":{},"logger":"controller-runtime/client/config"}}` in JSON mode and `2026-…Z [ERROR] …` in text mode (logr names become `logger` fields). `setupLog` needs no change — controller-runtime v0.24.1 `ctrl.Log` is a delegating logger fulfilled by `SetLogger`. `go mod tidy`: `go-logr/logr` direct, `go-logr/zapr` dropped |
+| F.4 verify | Gate: `go build ./...` + `go test ./... -race` (24 packages ok) + `golangci-lint run` (CI-pinned v2.12.2) 0 issues; `go vet ./...` clean. `ztap logs` smoke against slog-produced files: `--level warn` filters debug/info, `--contains` works, `--follow --tail 1` prints the tail then live-appended JSON entries; text-format lines still pass through raw (pre-existing reader behavior). Operator binary emits both formats |
+| F.5 optional | **Not taken** — call sites stay on the shim (~300 package-level + Logger-method calls); retiring it is a mechanical follow-up when desired |
+
+**Commits (landed on `main`, 2026-02):**
 1. `refactor(logging): reimplement over log/slog behind existing API`
 2. `refactor(logging): remove global default logger and stdlib hijack`
 3. `refactor(operator): unify logging via logr-over-slog`
+4. `docs: changelog entries for Phase F (slog logging, operator unification)`
+
+**Residuals (pre-existing, fixed as a drive-by chore):** 8 golangci findings on `main` before F (3 no-verb `fmt.Errorf` in `internal/anomaly` + 5 dead `cluster.go` symbols orphaned by the Phase C cmd split) — fixed in `chore: fix pre-existing golangci findings` so the gate is green. Live log-format e2e through a long-running `ztap agent` on Linux/Windows still deferred to the first tagged release (same as Phases B/E residuals).
 
 ---
 
@@ -228,7 +230,7 @@ The original implementation landed as 4 commits on `main`; the review hardening 
 | C | ✅ | ✅ | ✅ | — | ✅ complete — help diff + policy round-trip vs baseline, eBPF integration test pending Linux CI |
 | D | ✅ | ✅ | ✅ | — | config round-trip + precedence tests |
 | E | ✅ | ✅ | ✅ | — | `pytest` 24 passed + `ruff check` clean (py3.13 venv, pinned versions); Go race suite and focused repeated detector/pipeline tests pass; covergate has no new failures; live e2e deferred to first tagged release (needs Linux/Windows + container service) |
-| F | ✅ | ✅ | ✅ | — | golden log-output tests |
+| F | ✅ | ✅ | ✅ | — | golden log-output tests + `ztap logs` filter/follow smoke, operator JSON/text smoke; **F.5 (call-site migration to slog) not taken** — optional follow-up |
 
 > Rows A and B are historical (completed); the matrix gates C–F going forward.
 
