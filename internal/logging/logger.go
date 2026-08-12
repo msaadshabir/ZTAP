@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -69,11 +68,6 @@ func New(cfg Config) (*Logger, error) {
 	}
 	logger.lvl.Set(toSlogLevel(lvl))
 	logger.rebuildLocked()
-
-	// Preserve the historical stdlib-log hijack: etcd/client-go output is
-	// routed through this logger's Write method.
-	log.SetFlags(0)
-	log.SetOutput(logger)
 
 	return logger, nil
 }
@@ -153,7 +147,6 @@ func (l *Logger) SetOutput(w io.Writer) {
 	l.out = w
 	l.rebuildLocked()
 	l.mu.Unlock()
-	log.SetOutput(l)
 }
 
 // Output returns the logger output writer.
@@ -223,6 +216,11 @@ func (l *Logger) log(entryLevel level, msg string, fields Fields) {
 // changes. Callers must hold l.mu.
 func (l *Logger) rebuildLocked() {
 	l.slog = slog.New(&ztapHandler{out: l.out, lvl: &l.lvl, mode: l.format})
+	// slog.SetDefault links both the slog default and the stdlib log sink (via
+	// an internal handlerWriter at SetLogLoggerLevel, default info) to this
+	// logger, so third-party components (etcd, client-go, ...) share the
+	// configured format and level.
+	slog.SetDefault(l.slog)
 }
 
 func sanitizeMessage(value string) string {

@@ -2,64 +2,36 @@ package logging
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
-	"sync"
 )
 
-var (
-	defaultMu     sync.RWMutex
-	defaultLogger *Logger
-	exitFn        = os.Exit
-)
-
-// Configure initializes the default logger using the provided config.
+// Configure builds a logger from cfg and installs it as the process-wide
+// logging default: New bridges both the slog default and the stdlib log sink,
+// so the package-level helpers below plus third-party stdlib-log writers
+// (etcd, client-go, ...) all share the configured format and level.
 func Configure(cfg Config) (*Logger, error) {
-	logger, err := New(cfg)
-	if err != nil {
-		return nil, err
-	}
-	defaultMu.Lock()
-	defaultLogger = logger
-	defaultMu.Unlock()
-	return logger, nil
+	return New(cfg)
 }
 
-// Default returns the configured logger or creates one with defaults.
-func Default() *Logger {
-	defaultMu.RLock()
-	logger := defaultLogger
-	defaultMu.RUnlock()
-	if logger != nil {
-		return logger
-	}
-
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
-	if defaultLogger == nil {
-		logger, _ = New(DefaultConfig())
-		defaultLogger = logger
-	}
-	return defaultLogger
+// Info logs at info level through the process default logger.
+func Info(msg string, fields Fields) {
+	slog.Default().Info(msg, attrs(fields)...)
 }
 
 // Debug logs a debug entry.
 func Debug(msg string, fields Fields) {
-	Default().Debug(msg, fields)
-}
-
-// Info logs an info entry.
-func Info(msg string, fields Fields) {
-	Default().Info(msg, fields)
+	slog.Default().Debug(msg, attrs(fields)...)
 }
 
 // Warn logs a warning entry.
 func Warn(msg string, fields Fields) {
-	Default().Warn(msg, fields)
+	slog.Default().Warn(msg, attrs(fields)...)
 }
 
 // Error logs an error entry.
 func Error(msg string, fields Fields) {
-	Default().Error(msg, fields)
+	slog.Default().Error(msg, attrs(fields)...)
 }
 
 // Debugf logs a debug entry with formatting.
@@ -82,10 +54,10 @@ func Errorf(format string, args ...any) {
 	Error(fmt.Sprintf(format, args...), nil)
 }
 
-// Fatal logs an error entry and exits.
+// Fatal logs an error entry through the process default logger and exits.
 func Fatal(msg string, fields Fields) {
-	Error(msg, fields)
-	exitFn(1)
+	slog.Default().Error(msg, attrs(fields)...)
+	os.Exit(1)
 }
 
 // Fatalf logs an error entry with formatting and exits.
