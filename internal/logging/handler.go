@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,11 +24,12 @@ import (
 // non-empty field keys, and alphabetically sorted field keys (matching
 // encoding/json's map marshaling).
 type ztapHandler struct {
-	out   io.Writer
-	lvl   slog.Leveler
-	mode  string // formatJSON or formatText
-	attrs []slog.Attr
-	group string
+	out     io.Writer
+	lvl     slog.Leveler
+	mode    string // formatJSON or formatText
+	attrs   []slog.Attr
+	group   string
+	writeMu *sync.Mutex
 }
 
 // Enabled reports whether records at the given level should be handled.
@@ -50,6 +52,10 @@ func (h *ztapHandler) Handle(_ context.Context, r slog.Record) error {
 	ts := r.Time
 	if ts.IsZero() {
 		ts = time.Now()
+	}
+	if h.writeMu != nil {
+		h.writeMu.Lock()
+		defer h.writeMu.Unlock()
 	}
 	if h.mode == formatText {
 		writeText(h.out, r.Level, ts, msg, fields)
@@ -86,21 +92,52 @@ func (h *ztapHandler) WithGroup(name string) slog.Handler {
 }
 
 func appendField(fields Fields, prefix string, a slog.Attr) {
+	if a.Equal(slog.Attr{}) {
+		return
+	}
+
+	value := a.Value.Resolve()
 	key := a.Key
 	if prefix != "" {
 		key = prefix + "." + key
 	}
-	if a.Value.Kind() == slog.KindGroup {
-		for _, child := range a.Value.Group() {
+	if value.Kind() == slog.KindGroup {
+		for _, child := range value.Group() {
 			appendField(fields, key, child)
 		}
 		return
 	}
-	fields[key] = a.Value.Any()
+	fields[key] = fieldValue(value)
+}
+
+func fieldValue(value slog.Value) any {
+	value = value.Resolve()
+	if value.Kind() == slog.KindAny {
+		v := value.Any()
+		if err, ok := v.(error); ok {
+			if _, marshaler := v.(json.Marshaler); !marshaler {
+				return err.Error()
+			}
+		}
+		return v
+	}
+	return value.Any()
 }
 
 func levelString(lvl slog.Level) string {
-	return strings.ToLower(lvl.String())
+	switch {
+	case lvl >= slog.LevelError:
+		return "error"
+	case lvl >= slog.LevelWarn:
+		return "warn"
+	case lvl >= slog.LevelInfo:
+		return "info"
+	default:
+		// logr maps V(1)..V(4) to custom slog levels below Info. Keep
+		// those records inside ZTAP's four-level schema instead of emitting
+		// values such as "debug+3".
+		return "debug"
+	}
 }
 
 type jsonEntry struct {
@@ -123,8 +160,8 @@ func writeJSON(out io.Writer, lvl slog.Level, ts time.Time, msg string, fields F
 		_, _ = io.WriteString(out, fallback+"\n")
 		return
 	}
+	data = append(data, '\n')
 	_, _ = out.Write(data)
-	_, _ = out.Write([]byte("\n"))
 }
 
 func writeText(out io.Writer, lvl slog.Level, ts time.Time, msg string, fields Fields) {

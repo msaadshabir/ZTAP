@@ -34,11 +34,12 @@ type Fields map[string]any
 // implemented over log/slog; the public API is a thin shim so existing call
 // sites are untouched.
 type Logger struct {
-	mu     sync.Mutex
-	out    io.Writer
-	format string
-	lvl    slog.LevelVar
-	slog   *slog.Logger
+	mu      sync.Mutex
+	writeMu *sync.Mutex
+	out     io.Writer
+	format  string
+	lvl     slog.LevelVar
+	slog    *slog.Logger
 }
 
 // New creates a logger with the given config.
@@ -63,8 +64,9 @@ func New(cfg Config) (*Logger, error) {
 	}
 
 	logger := &Logger{
-		out:    out,
-		format: normalizeFormat(cfg.Format),
+		writeMu: &sync.Mutex{},
+		out:     out,
+		format:  normalizeFormat(cfg.Format),
 	}
 	logger.lvl.Set(toSlogLevel(lvl))
 	logger.rebuildLocked()
@@ -215,7 +217,12 @@ func (l *Logger) log(entryLevel level, msg string, fields Fields) {
 // rebuildLocked rebuilds the underlying slog logger after output or format
 // changes. Callers must hold l.mu.
 func (l *Logger) rebuildLocked() {
-	l.slog = slog.New(&ztapHandler{out: l.out, lvl: &l.lvl, mode: l.format})
+	l.slog = slog.New(&ztapHandler{
+		out:     l.out,
+		lvl:     &l.lvl,
+		mode:    l.format,
+		writeMu: l.writeMu,
+	})
 	// slog.SetDefault links both the slog default and the stdlib log sink (via
 	// an internal handlerWriter at SetLogLoggerLevel, default info) to this
 	// logger, so third-party components (etcd, client-go, ...) share the

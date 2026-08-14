@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"strings"
 
@@ -62,7 +63,7 @@ func main() {
 	// same JSON/text schema as the main binary, via logr over slog.
 	logger, err := logging.New(operatorLoggingConfig())
 	if err != nil {
-		setupLog.Error(err, "unable to configure logging")
+		_, _ = fmt.Fprintf(os.Stderr, "unable to configure logging: %v\n", err)
 		os.Exit(1)
 	}
 	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
