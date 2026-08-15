@@ -250,7 +250,7 @@ Found during the audit, not covered by the selected workstreams:
   `ztap-install.yaml` vs `ztapnetworkpolicy-crd.yaml` (433 lines each), RBAC annotation↔ClusterRole
   drift, hand-written DeepCopy.
 - **Docs cleanup:** Go "1.25+" refs (`README.md:5,452`, `docs/guides/setup.md:10`,
-  `docs/guides/etcd.md:41`, `docs/concepts/ebpf.md:53`) vs go.mod 1.26.5; phantom
+  `docs/guides/etcd.md:41`, `docs/concepts/ebpf.md:53`) vs go.mod 1.26.6; phantom
   `tests/fixtures/test-policy.yaml` in `docs/guides/testing.md:236`; nonexistent "Consul backend"
   mention (`testing.md:331`); empty `tests/data/`; stale CHANGELOG "1.25.8" line.
 - **Observability:** custom Prometheus registry instead of global `MustRegister`; drop redundant

@@ -9,6 +9,29 @@ import (
 	"testing"
 )
 
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Level != "info" || cfg.Format != "json" || cfg.File != "" {
+		t.Fatalf("unexpected default config: %+v", cfg)
+	}
+}
+
+func TestPackageErrorHelpers(t *testing.T) {
+	var out strings.Builder
+	logger, err := Configure(Config{Level: "debug", Format: "json"})
+	if err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	logger.SetOutput(&out)
+
+	Error("error helper", nil)
+	Errorf("formatted %s", "error")
+
+	if !strings.Contains(out.String(), "error helper") || !strings.Contains(out.String(), "formatted error") {
+		t.Fatalf("expected package error helpers to write output, got %q", out.String())
+	}
+}
+
 func TestLoggerRespectsLevels(t *testing.T) {
 	var out strings.Builder
 	logger, err := New(Config{Level: "warn", Format: "json"})

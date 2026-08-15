@@ -71,7 +71,7 @@ See `.github/workflows/ci.yml`.
 
 Use the same version locally (`go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.12.2`):
 older builds (e.g. v2.8.0 on go1.25) refuse to load this repo's config with
-"Go language version ... lower than the targeted Go version (1.26.5)".
+"Go language version ... lower than the targeted Go version (1.26.6)".
 
 When editing GitHub Actions, keep `run:` commands shell-agnostic for matrix jobs that include Windows (`pwsh`) and Linux/macOS (bash). Avoid bash-only line continuations (for example trailing `\`) in shared steps.
 
