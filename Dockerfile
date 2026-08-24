@@ -1,5 +1,5 @@
 # Build stage for Go application
-FROM golang:1.26.6-alpine@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS go-builder
+FROM golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS go-builder
 
 # eBPF bytecode is generated at build time (tools/bpfgen) and inlined into
 # internal/enforcer/bpf_bpf*.go, and regeneration is verified by the CI drift
