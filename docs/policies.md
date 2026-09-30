@@ -5,14 +5,17 @@ objects. The node agent watches the cluster, resolves selectors and local
 container cgroups, then replaces the node-local eBPF policy snapshot
 atomically.
 
-The first release tracks the Kubernetes 1.36.x API line used by the repository
-(`k8s.io/* v0.36.3`). It implements a deliberate IPv4-only subset; unsupported
-native features are rejected instead of being broadened into an allow rule.
+The tested cluster profile is Kubernetes `1.36.4`. The current checkout uses
+`k8s.io/* v0.37.0` client libraries; that dependency version does not establish
+support for another cluster version. ZTAP implements a deliberate IPv4-only
+subset, with explicit rejection of unsupported native features.
 
 ## Accepted input
 
 - A document is a `NetworkPolicy` or `NetworkPolicyList` with the exact native
   API version and a name on every individual policy.
+- YAML may contain multiple documents separated by `---`. An omitted policy
+  namespace defaults to `default` for offline validation.
 - `podSelector` selects subjects in the policy namespace.
 - `namespaceSelector` and `podSelector` select peer Pods.
 - `ipBlock` selects IPv4 addresses; `except` ranges are supported.
@@ -31,6 +34,34 @@ subjects and rules, and rejects malformed or unsupported input. A rejected
 policy quarantines only the local subjects and directions that it selects;
 other accepted policies continue to reconcile.
 
+## Selector and rule semantics
+
+- A peer with only `podSelector` matches Pods in the policy's own namespace.
+- A peer with only `namespaceSelector` matches Pods in the selected namespaces.
+- Both selectors in one peer are an AND: the Pod must match in a selected
+  namespace. Separate peer entries are an OR.
+- Empty selectors match all Pods or namespaces in their respective scope.
+  `matchLabels` and the standard `In`, `NotIn`, `Exists`, and `DoesNotExist`
+  expressions are accepted.
+- Peers and ports within a rule combine: any listed peer may use any listed
+  destination port. Different rules and accepted policies add their allows.
+- Only selected local container cgroups are enforced. Peer selectors resolve
+  non-host-networked Pods across the cluster, including remote nodes.
+
+For a connection between two isolated Pods, the source's egress policy and
+the destination's ingress policy must both permit the initiating traffic.
+Traffic allowed by an explicit TCP/UDP rule creates bounded,
+policy-epoch-scoped connection state so replies do not require an independent
+reverse rule. State expires, can be evicted, and is invalidated by a
+policy-epoch change. Traffic in an unisolated direction does not create this
+reply exemption.
+
+Valid IPv4 TCP/UDP traffic to or from the local Node IPs recorded in Node
+status, and traffic whose source and destination both equal the subject's
+own Pod IP, bypass ordinary deny rules. These exceptions also precede
+quarantine. Other isolated traffic is denied when malformed, fragmented,
+IPv6, or an unsupported protocol; ICMP is not an allowed policy protocol.
+
 ## Supported policy matrix
 
 | Native behavior | `v0.1.0` result | Notes |
@@ -42,21 +73,64 @@ other accepted policies continue to reconcile.
 | Numeric TCP/UDP destination ports | Supported | Omitted protocol defaults to TCP. |
 | Explicit IPv4 ClusterIP `ipBlock` | Supported | No Service or EndpointSlice frontend synthesis occurs. |
 | Named ports or `endPort` ranges | Rejected | Destination-Pod port resolution is post-release scope. |
-| SCTP, IPv6, or dual-stack policy data | Rejected | Isolated unsupported traffic is denied; it never bypasses policy. |
+| SCTP or IPv6 CIDRs | Rejected | Isolated unsupported traffic is denied. |
+| Selected IPv6 or dual-stack Pod | Quarantined | The selected directions are quarantined; IPv4 node/self exceptions still apply. |
 | Peerless or portless allow-all rule | Rejected | Broad implicit wildcards are not approximated. |
 | `hostNetwork` subject | Outside subject set | Treated as node traffic, not as a cgroup-isolated Pod. |
 
 ## Examples
 
 ```sh
-ztap validate --file examples/native/allow-dns.yaml
-ztap validate --file examples/native/default-deny.yaml
-ztap validate --file examples/native/web-to-db.yaml
+make build
+./bin/ztap validate --file examples/native/allow-dns.yaml
+./bin/ztap validate --file examples/native/default-deny.yaml
+./bin/ztap validate --file examples/native/web-to-db.yaml
 ```
+
+| Example | Selected Pods | Effect |
+| --- | --- | --- |
+| [default-deny.yaml](../examples/native/default-deny.yaml) | All Pods in `default` | Isolates ingress and egress with no ordinary allows; node/self exceptions still apply |
+| [allow-dns.yaml](../examples/native/allow-dns.yaml) | `app=client` in `default` | Allows egress TCP/UDP port 53 to the explicit DNS address |
+| [web-to-db.yaml](../examples/native/web-to-db.yaml) | `app=web` and `app=db` in `default` | Two policies allow web egress and database ingress on TCP port 5432 |
+
+These files are policy examples; they do not create workloads. Adapt their
+namespaces, labels, and addresses to your cluster. `allow-dns.yaml` uses
+`10.96.0.10/32` as a DNS Service placeholder. Find your cluster's DNS Service
+IP and replace it before applying the policy, for example in a cluster using
+the `kube-system/kube-dns` Service:
+
+```sh
+kubectl -n kube-system get service kube-dns -o jsonpath='{.spec.clusterIP}{"\n"}'
+```
+
+`web-to-db.yaml` permits direct database Pod IP traffic. A database Service
+ClusterIP needs its own explicit IPv4 `ipBlock` rule and numeric Service
+port; the Pod selector alone does not grant frontend access.
+
+After adapting and validating a file, apply it with `kubectl apply -f <file>`
+and check the agent's readiness and logs on the affected nodes. A default-deny
+policy isolates the selected directions even before another example adds
+allows.
 
 Validation is offline and does not contact Kubernetes. It prints the
 namespace and name of every accepted `NetworkPolicy` document. Pass `-` to
-read YAML from standard input.
+read YAML from standard input:
+
+```sh
+./bin/ztap validate --file - < examples/native/default-deny.yaml
+```
+
+A successful validation checks the file's supported shape, not live selector
+matches, Service addresses, cgroup resolution, or whether the node-wide
+compiled snapshot fits the engine. The offline decoder accepts policy
+metadata `name`, `namespace`, `labels`, and `annotations`; unknown fields,
+including server-generated metadata in exported objects, are rejected.
+
+| Exit status | Meaning |
+| --- | --- |
+| `0` | Every input policy is valid for the supported subset |
+| `1` | Invalid or unsupported policy content |
+| `2` | Input read/YAML decode failure or invalid command usage |
 
 For example, a named port is rejected with a field-specific error rather than
 being guessed:
@@ -72,16 +146,17 @@ subjects while continuing unrelated accepted reconciliation.
 
 ## Deliberate limits
 
-The first product cut supports IPv4 TCP/UDP enforcement with numeric ports.
-The following valid Kubernetes features are explicitly rejected in `v0.1.0`:
+Named ports, `endPort`, SCTP, IPv6 CIDRs, peerless "all peers" rules, and
+portless "all ports" rules are rejected. A selected IPv6 or dual-stack Pod
+is quarantined in the policy's selected directions. Automatic
+Service/EndpointSlice frontend expansion is not performed, and full local-node
+semantics beyond observed Node status addresses are outside the supported
+contract. Host-networked Pods are node traffic rather than cgroup subjects.
 
-- named ports and `endPort` ranges;
-- SCTP and IPv6/dual-stack policy data;
-- peerless "all peers" rules and portless "all ports" rules;
-- automatic Service/EndpointSlice frontend expansion; and
-- complete local-node semantics beyond the valid local Node IP addresses
-  observed in Node status.
-
-Host-networked Pods are node traffic rather than supported cgroup subjects.
-These boundaries, plus advanced flow sampling, are post-release roadmap items;
-they are not silently approximated by the compiler.
+Each active snapshot is limited to 16,384 subject cgroups and 16,384 total
+rule entries, including node/self bypass entries. One `ipBlock` may expand to
+at most 1,024 IPv4 prefixes after exclusions. Counts are taken after
+deduplication; a broad selector can expand one YAML rule into many entries.
+A capacity or kernel-apply failure retains the last applied snapshot for
+already classified cgroups. It does not attach policy to an unobserved new
+container. See [deployment limits](deployment.md#measured-fail-open-intervals).
