@@ -153,7 +153,7 @@ func runNativeKubernetesAgent(ctx context.Context, client kubernetes.Interface, 
 		}
 		return err
 	}
-	resolver := newK8sSubjectResolver(client, options.CgroupRoot)
+	resolver := newK8sSubjectResolver(options.CgroupRoot)
 	var engine enforcer.Engine
 	if options.DryRun {
 		engine = nativeDryRunEngine{}

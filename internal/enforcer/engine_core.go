@@ -182,6 +182,9 @@ func lockEngineMutex(ctx context.Context, mu *sync.Mutex) error {
 	if mu == nil {
 		return errors.New("engine mutex is nil")
 	}
+	if mu.TryLock() {
+		return nil
+	}
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
 	for {

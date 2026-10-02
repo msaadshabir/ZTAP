@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 
@@ -232,8 +233,8 @@ func normalizeResolutionInput(input ResolutionInput) (ResolutionInput, map[strin
 		if previous, exists := namespaces[namespace.Name]; exists && !labels.Equals(labels.Set(previous), labels.Set(namespace.Labels)) {
 			return ResolutionInput{}, nil, ResolutionError{Field: fmt.Sprintf("namespaces[%q]", namespace.Name), Message: "has conflicting duplicate entries"}
 		}
-		namespaces[namespace.Name] = cloneLabels(namespace.Labels)
 		namespace.Labels = cloneLabels(namespace.Labels)
+		namespaces[namespace.Name] = namespace.Labels
 	}
 
 	podKeys := make(map[string]struct{}, len(normalized.Pods))
@@ -521,6 +522,12 @@ func (s *compileState) addRejected(policy *NativeNetworkPolicy, err error) {
 
 func (s *compileState) policySet() PolicySet {
 	set := PolicySet{NodeIPs: append([]netip.Addr(nil), s.input.NodeIPs...)}
+	if len(s.subjects) > 0 {
+		set.Subjects = make([]Subject, 0, len(s.subjects))
+	}
+	if len(s.rules) > 0 {
+		set.Rules = make([]Rule, 0, len(s.rules))
+	}
 	for _, entry := range s.subjects {
 		subject := entry.subject
 		subject.PodIPs = append([]netip.Addr(nil), subject.PodIPs...)
@@ -561,42 +568,46 @@ func ValidatePolicySet(set PolicySet) error {
 	}
 	subjects := make(map[uint64]struct{}, len(set.Subjects))
 	for i, subject := range set.Subjects {
-		field := fmt.Sprintf("subjects[%d]", i)
+		invalid := func(field, message string) error {
+			return ResolutionError{Field: fmt.Sprintf("subjects[%d].%s", i, field), Message: message}
+		}
 		if subject.CgroupID == 0 {
-			return ResolutionError{Field: field + ".cgroupID", Message: "must be non-zero"}
+			return invalid("cgroupID", "must be non-zero")
 		}
 		if subject.Isolated == 0 || subject.Isolated&^allDirections != 0 {
-			return ResolutionError{Field: field + ".isolated", Message: "must contain only ingress or egress bits"}
+			return invalid("isolated", "must contain only ingress or egress bits")
 		}
 		if subject.Quarantined&^subject.Isolated != 0 {
-			return ResolutionError{Field: field + ".quarantined", Message: "must be a subset of isolated"}
+			return invalid("quarantined", "must be a subset of isolated")
 		}
 		if _, exists := subjects[subject.CgroupID]; exists {
-			return ResolutionError{Field: field + ".cgroupID", Message: "must be unique"}
+			return invalid("cgroupID", "must be unique")
 		}
 		subjects[subject.CgroupID] = struct{}{}
 		for j, address := range subject.PodIPs {
 			if !address.IsValid() || !address.Is4() {
-				return ResolutionError{Field: fmt.Sprintf("%s.podIPs[%d]", field, j), Message: "must be IPv4"}
+				return ResolutionError{Field: fmt.Sprintf("subjects[%d].podIPs[%d]", i, j), Message: "must be IPv4"}
 			}
 		}
 	}
 	for i, rule := range set.Rules {
-		field := fmt.Sprintf("rules[%d]", i)
+		invalid := func(field, message string) error {
+			return ResolutionError{Field: fmt.Sprintf("rules[%d].%s", i, field), Message: message}
+		}
 		if _, exists := subjects[rule.CgroupID]; !exists {
-			return ResolutionError{Field: field + ".cgroupID", Message: "must reference a subject"}
+			return invalid("cgroupID", "must reference a subject")
 		}
 		if rule.Direction != DirectionIngress && rule.Direction != DirectionEgress {
-			return ResolutionError{Field: field + ".direction", Message: "must be exactly ingress or egress"}
+			return invalid("direction", "must be exactly ingress or egress")
 		}
 		if !rule.Peer.IsValid() || !rule.Peer.Addr().Is4() {
-			return ResolutionError{Field: field + ".peer", Message: "must be an IPv4 prefix"}
+			return invalid("peer", "must be an IPv4 prefix")
 		}
 		if rule.Protocol != ProtocolTCP && rule.Protocol != ProtocolUDP {
-			return ResolutionError{Field: field + ".protocol", Message: "must be TCP or UDP"}
+			return invalid("protocol", "must be TCP or UDP")
 		}
 		if rule.Port == 0 {
-			return ResolutionError{Field: field + ".port", Message: "must be non-zero"}
+			return invalid("port", "must be non-zero")
 		}
 	}
 	if len(set.Subjects) > MaxPolicySubjects {
@@ -694,52 +705,33 @@ func cloneLabels(source map[string]string) map[string]string {
 }
 
 func uniqueSortedAddrs(values []netip.Addr) []netip.Addr {
-	seen := make(map[netip.Addr]struct{}, len(values))
-	result := make([]netip.Addr, 0, len(values))
-	for _, value := range values {
-		value = value.Unmap()
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+	result := make([]netip.Addr, len(values))
+	for i, value := range values {
+		result[i] = value.Unmap()
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Less(result[j]) })
-	return result
+	slices.SortFunc(result, netip.Addr.Compare)
+	return slices.Compact(result)
 }
 
 func uniqueSortedPrefixes(values []netip.Prefix) []netip.Prefix {
-	seen := make(map[netip.Prefix]struct{}, len(values))
-	result := make([]netip.Prefix, 0, len(values))
-	for _, value := range values {
-		value = value.Masked()
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+	result := make([]netip.Prefix, len(values))
+	for i, value := range values {
+		result[i] = value.Masked()
 	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Addr() != result[j].Addr() {
-			return result[i].Addr().Less(result[j].Addr())
+	slices.SortFunc(result, func(left, right netip.Prefix) int {
+		if order := left.Addr().Compare(right.Addr()); order != 0 {
+			return order
 		}
-		return result[i].Bits() < result[j].Bits()
+		return left.Bits() - right.Bits()
 	})
-	return result
+	return slices.Compact(result)
 }
 
 func uniqueSortedUint64(values []uint64) []uint64 {
-	seen := make(map[uint64]struct{}, len(values))
-	result := make([]uint64, 0, len(values))
-	for _, value := range values {
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
-	return result
+	result := make([]uint64, len(values))
+	copy(result, values)
+	slices.Sort(result)
+	return slices.Compact(result)
 }
 
 func lessRule(left, right Rule) bool {

@@ -15,7 +15,7 @@ type subscriber struct {
 	closed bool
 }
 
-// Monitor implements FlowMonitor with subscriber management.
+// Monitor reads flow events and distributes them to subscribers.
 type Monitor struct {
 	mu            sync.RWMutex
 	running       bool
