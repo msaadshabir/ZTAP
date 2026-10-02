@@ -17,7 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/kubernetes/fake"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	networkinglisters "k8s.io/client-go/listers/networking/v1"
 	"k8s.io/client-go/tools/cache"
@@ -75,7 +74,7 @@ func TestNativePolicySnapshotConvergesAcrossPolicyPodNamespaceAndNodeChanges(t *
 	podLister := corelisters.NewPodLister(podIndexer)
 	namespaceLister := corelisters.NewNamespaceLister(namespaceIndexer)
 	nodeLister := corelisters.NewNodeLister(nodeIndexer)
-	resolver := newK8sSubjectResolver(fake.NewClientset(), cgroupRoot)
+	resolver := newK8sSubjectResolver(cgroupRoot)
 
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
@@ -277,7 +276,7 @@ func TestNativePolicySnapshotCorrectsAndDeletesRejectedPolicyWithoutRestart(t *t
 	podLister := corelisters.NewPodLister(podIndexer)
 	namespaceLister := corelisters.NewNamespaceLister(namespaceIndexer)
 	nodeLister := corelisters.NewNodeLister(nodeIndexer)
-	resolver := newK8sSubjectResolver(fake.NewClientset(), cgroupRoot)
+	resolver := newK8sSubjectResolver(cgroupRoot)
 
 	if err := nodeIndexer.Add(&corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
@@ -491,7 +490,7 @@ func TestNativeAgentRelistReconcilesUpdatedPodSnapshot(t *testing.T) {
 	policyLister := networkinglisters.NewNetworkPolicyLister(policyIndexer)
 	namespaceLister := corelisters.NewNamespaceLister(namespaceIndexer)
 	nodeLister := corelisters.NewNodeLister(nodeIndexer)
-	resolver := newK8sSubjectResolver(fake.NewClientset(), cgroupRoot)
+	resolver := newK8sSubjectResolver(cgroupRoot)
 
 	if err := namespaceIndexer.Add(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "apps"}}); err != nil {
 		t.Fatalf("add namespace: %v", err)
@@ -661,7 +660,7 @@ func TestNativeAgentPolicyInformerConvergesAddUpdateDeleteRelist(t *testing.T) {
 	namespaceLister := corelisters.NewNamespaceLister(namespaceIndexer)
 	nodeLister := corelisters.NewNodeLister(nodeIndexer)
 	podLister := corelisters.NewPodLister(podIndexer)
-	resolver := newK8sSubjectResolver(nil, cgroupRoot)
+	resolver := newK8sSubjectResolver(cgroupRoot)
 
 	if err := namespaceIndexer.Add(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "apps"}}); err != nil {
 		t.Fatalf("add namespace: %v", err)
@@ -806,7 +805,7 @@ func TestBuildResolutionSnapshotProducesCompilerFactsAndCgroupPaths(t *testing.T
 		t.Fatalf("create cgroup fixture: %v", err)
 	}
 
-	resolver := newK8sSubjectResolver(fake.NewClientset(), cgroupRoot)
+	resolver := newK8sSubjectResolver(cgroupRoot)
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 		Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{
@@ -945,7 +944,7 @@ func TestBuildResolutionSnapshotProducesCompilerFactsAndCgroupPaths(t *testing.T
 }
 
 func TestBuildResolutionSnapshotRequiresMatchingLocalNode(t *testing.T) {
-	resolver := newK8sSubjectResolver(fake.NewClientset(), t.TempDir())
+	resolver := newK8sSubjectResolver(t.TempDir())
 	if _, err := resolver.BuildResolutionSnapshot("node-a", nil, nil, nil); err == nil {
 		t.Fatal("BuildResolutionSnapshot accepted a missing node")
 	}
@@ -958,7 +957,7 @@ func TestBuildResolutionSnapshotRequiresMatchingLocalNode(t *testing.T) {
 }
 
 func TestBuildResolutionSnapshotMarksUnresolvedRunningContainerAndBlocksApply(t *testing.T) {
-	resolver := newK8sSubjectResolver(fake.NewClientset(), t.TempDir())
+	resolver := newK8sSubjectResolver(t.TempDir())
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 		Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{{
@@ -1016,7 +1015,7 @@ func TestBuildResolutionSnapshotMarksUnresolvedRunningContainerAndBlocksApply(t 
 }
 
 func TestBuildResolutionSnapshotTreatsRunningContainerWithoutIDAsPending(t *testing.T) {
-	resolver := newK8sSubjectResolver(fake.NewClientset(), t.TempDir())
+	resolver := newK8sSubjectResolver(t.TempDir())
 	input, err := resolver.BuildResolutionSnapshot(
 		"node-a",
 		&corev1.Node{
@@ -1124,7 +1123,7 @@ func TestExtractRunningContainerdIDsRejectsNilPod(t *testing.T) {
 	if len(ids) != 0 || failure != policy.CgroupResolutionFailureNotFound {
 		t.Fatalf("nil pod IDs=%v failure=%d, want no IDs and not-found failure", ids, failure)
 	}
-	resolver := newK8sSubjectResolver(fake.NewClientset(), t.TempDir())
+	resolver := newK8sSubjectResolver(t.TempDir())
 	if cgroups, failure := resolver.resolvePodCgroupsCached(nil); len(cgroups) != 0 || failure != policy.CgroupResolutionFailureNotFound {
 		t.Fatalf("nil pod cgroups=%v failure=%d, want no cgroups and not-found failure", cgroups, failure)
 	}

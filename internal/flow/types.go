@@ -1,7 +1,6 @@
 package flow
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -152,22 +151,6 @@ type FlowStats struct {
 	EventsPerSec   float64
 	LastEventTime  time.Time
 	MonitorStarted time.Time
-}
-
-// FlowMonitor is the interface for flow event monitoring.
-type FlowMonitor interface {
-	// Start begins monitoring flow events.
-	Start(ctx context.Context) error
-	// Stop stops the flow monitor.
-	Stop() error
-	// Subscribe returns a channel that receives flow events.
-	// The channel is closed when the context is cancelled or Stop is called.
-	// A nil context returns an already-closed channel.
-	Subscribe(ctx context.Context) <-chan FlowEvent
-	// GetStats returns current flow statistics.
-	GetStats() FlowStats
-	// IsRunning returns true if the monitor is actively running.
-	IsRunning() bool
 }
 
 // FlowFilter defines criteria for filtering flow events.
