@@ -111,11 +111,19 @@ it does not rerun Linux enforcement or require a Linux host.
 
 ```sh
 GOCACHE="$PWD/.cache/go-build" GOFLAGS=-buildvcs=false \
-  go test -bench '^BenchmarkCompileReferenceFixture$' -benchmem -count=3 ./internal/policy
+  go test -run '^$' -bench '^BenchmarkCompileReferenceFixture$' -benchmem -count=5 ./internal/policy
 ```
 
 This measures compilation for the reference fixture only. It cannot satisfy
 packet-path, resource, flow-accounting, or fail-open gates.
+
+For before-and-after comparisons, use the same Go toolchain, host, and
+`GOMAXPROCS` setting for both revisions. Run the benchmarks sequentially on
+an idle host; concurrent builds and analysis can distort timings. Compare
+the median `ns/op` across runs alongside `B/op` and `allocs/op`, and record
+both source revisions and the environment. Local compiler improvements do
+not update the published release measurements above; those require fresh
+Linux evidence for the changed commit.
 
 ### Linux performance harness
 

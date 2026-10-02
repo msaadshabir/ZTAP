@@ -15,13 +15,11 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
 
 	"github.com/saadshabir/ZTAP/internal/policy"
 )
 
 type k8sSubjectResolver struct {
-	client                      kubernetes.Interface
 	cgroupRoot                  string
 	mu                          sync.RWMutex
 	cgroupPath                  map[uint64]string
@@ -50,13 +48,12 @@ type cachedPodCgroup struct {
 	identity cgroupFilesystemIdentity
 }
 
-func newK8sSubjectResolver(client kubernetes.Interface, cgroupRoot string) *k8sSubjectResolver {
+func newK8sSubjectResolver(cgroupRoot string) *k8sSubjectResolver {
 	cgroupRoot = strings.TrimSpace(cgroupRoot)
 	if cgroupRoot == "" {
 		cgroupRoot = "/sys/fs/cgroup"
 	}
 	return &k8sSubjectResolver{
-		client:            client,
 		cgroupRoot:        cgroupRoot,
 		cgroupPath:        make(map[uint64]string),
 		cgroupCache:       make(map[cgroupCacheKey]cachedPodCgroup),

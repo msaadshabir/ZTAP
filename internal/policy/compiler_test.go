@@ -480,6 +480,98 @@ func TestValidatePolicySetRejectsQuarantineOutsideIsolation(t *testing.T) {
 	}
 }
 
+func TestValidatePolicySetReportsInvalidEntryFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*PolicySet)
+		field   string
+		message string
+	}{
+		{"node address", func(set *PolicySet) { set.NodeIPs[0] = mustAddr("2001:db8::1") }, "nodeIPs[0]", "must be IPv4"},
+		{"zero cgroup", func(set *PolicySet) { set.Subjects[0].CgroupID = 0 }, "subjects[0].cgroupID", "must be non-zero"},
+		{"no isolation", func(set *PolicySet) { set.Subjects[0].Isolated = 0 }, "subjects[0].isolated", "must contain only ingress or egress bits"},
+		{"unknown isolation", func(set *PolicySet) { set.Subjects[0].Isolated = Direction(4) }, "subjects[0].isolated", "must contain only ingress or egress bits"},
+		{"duplicate cgroup", func(set *PolicySet) { set.Subjects = append(set.Subjects, set.Subjects[0]) }, "subjects[1].cgroupID", "must be unique"},
+		{"pod address", func(set *PolicySet) { set.Subjects[0].PodIPs[0] = netip.Addr{} }, "subjects[0].podIPs[0]", "must be IPv4"},
+		{"missing subject", func(set *PolicySet) { set.Rules[0].CgroupID = 2 }, "rules[0].cgroupID", "must reference a subject"},
+		{"rule direction", func(set *PolicySet) { set.Rules[0].Direction = allDirections }, "rules[0].direction", "must be exactly ingress or egress"},
+		{"rule peer", func(set *PolicySet) { set.Rules[0].Peer = netip.Prefix{} }, "rules[0].peer", "must be an IPv4 prefix"},
+		{"rule protocol", func(set *PolicySet) { set.Rules[0].Protocol = 1 }, "rules[0].protocol", "must be TCP or UDP"},
+		{"rule port", func(set *PolicySet) { set.Rules[0].Port = 0 }, "rules[0].port", "must be non-zero"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			set := PolicySet{
+				NodeIPs:  []netip.Addr{mustAddr("192.0.2.10")},
+				Subjects: []Subject{{CgroupID: 1, Isolated: DirectionEgress, PodIPs: []netip.Addr{mustAddr("10.0.0.2")}}},
+				Rules:    []Rule{{CgroupID: 1, Direction: DirectionEgress, Peer: mustPrefix("203.0.113.0/24"), Protocol: ProtocolTCP, Port: 443}},
+			}
+			test.mutate(&set)
+			var resolutionErr ResolutionError
+			if err := ValidatePolicySet(set); !errors.As(err, &resolutionErr) {
+				t.Fatalf("error = %v, want ResolutionError", err)
+			}
+			if resolutionErr.Field != test.field || resolutionErr.Message != test.message {
+				t.Fatalf("diagnostic = %#v, want field %q and message %q", resolutionErr, test.field, test.message)
+			}
+		})
+	}
+}
+
+func TestCompileNativePoliciesNormalizesWithoutMutatingInput(t *testing.T) {
+	policies := []NativeNetworkPolicy{nativePolicy("default", "egress", nil, []string{"Egress"}, nil, []NativeEgressRule{{
+		To: []NativePeer{
+			{IPBlock: &NativeIPBlock{CIDR: "203.0.113.15/24"}},
+			{IPBlock: &NativeIPBlock{CIDR: "203.0.113.0/24"}},
+		},
+		Ports: []NativePort{{Protocol: "TCP", Port: 443}},
+	}})}
+	newInput := func() ResolutionInput {
+		return ResolutionInput{
+			NodeIPs: []netip.Addr{mustAddr("192.0.2.11"), mustAddr("::ffff:192.0.2.10"), mustAddr("192.0.2.10")},
+			Namespaces: []ResolvedNamespace{
+				{Name: "default", Labels: map[string]string{"tenant": "local"}},
+				{Name: "default", Labels: map[string]string{"tenant": "local"}},
+			},
+			Pods: []ResolvedPod{{
+				Name: "web", Local: true, Labels: map[string]string{"app": "web"},
+				PodIPs:    []netip.Addr{mustAddr("10.0.0.3"), mustAddr("::ffff:10.0.0.2"), mustAddr("10.0.0.2")},
+				CgroupIDs: []uint64{2, 1, 2},
+			}},
+		}
+	}
+	input := newInput()
+	result, err := CompileNativePolicies(policies, input)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	want := PolicySet{
+		NodeIPs: []netip.Addr{mustAddr("192.0.2.10"), mustAddr("192.0.2.11")},
+		Subjects: []Subject{
+			{CgroupID: 1, Isolated: DirectionEgress, PodIPs: []netip.Addr{mustAddr("10.0.0.2"), mustAddr("10.0.0.3")}},
+			{CgroupID: 2, Isolated: DirectionEgress, PodIPs: []netip.Addr{mustAddr("10.0.0.2"), mustAddr("10.0.0.3")}},
+		},
+		Rules: []Rule{
+			{CgroupID: 1, Direction: DirectionEgress, Peer: mustPrefix("203.0.113.0/24"), Protocol: ProtocolTCP, Port: 443},
+			{CgroupID: 2, Direction: DirectionEgress, Peer: mustPrefix("203.0.113.0/24"), Protocol: ProtocolTCP, Port: 443},
+		},
+	}
+	if !reflect.DeepEqual(result.PolicySet, want) {
+		t.Fatalf("policy set = %#v, want %#v", result.PolicySet, want)
+	}
+	if !reflect.DeepEqual(input, newInput()) {
+		t.Fatalf("compiler mutated resolution input: %#v", input)
+	}
+	result.PolicySet.NodeIPs[0] = mustAddr("192.0.2.99")
+	result.PolicySet.Subjects[0].PodIPs[0] = mustAddr("10.0.0.99")
+	if !reflect.DeepEqual(input, newInput()) {
+		t.Fatal("compiled addresses alias caller-owned input")
+	}
+	if !reflect.DeepEqual(result.PolicySet.Subjects[1], want.Subjects[1]) {
+		t.Fatal("compiled subjects share mutable address slices")
+	}
+}
+
 func TestCuratedNativeExamplesValidateAndCompile(t *testing.T) {
 	tests := []struct {
 		name  string
