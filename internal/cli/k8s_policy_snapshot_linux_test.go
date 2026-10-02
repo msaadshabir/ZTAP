@@ -1211,3 +1211,58 @@ func TestFindContainerCgroupPathRejectsIncompletePodIdentity(t *testing.T) {
 		t.Fatalf("findContainerCgroupPath accepted pod without UID and returned %q", path)
 	}
 }
+
+func TestTerminalPeersCannotAuthorizeReusedIPs(t *testing.T) {
+	for _, phase := range []corev1.PodPhase{corev1.PodSucceeded, corev1.PodFailed} {
+		t.Run(string(phase), func(t *testing.T) {
+			resolver := newK8sSubjectResolver(t.TempDir())
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+				Status:     corev1.NodeStatus{Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "192.0.2.10"}}},
+			}
+			namespace := corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "default"}}
+			pods := []corev1.Pod{
+				{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "api", Labels: map[string]string{"app": "api"}},
+					Spec: corev1.PodSpec{NodeName: "node-a"}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"}},
+				{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "old-trusted-job", Labels: map[string]string{"app": "trusted"}},
+					Spec: corev1.PodSpec{NodeName: "node-b"}, Status: corev1.PodStatus{Phase: phase, PodIP: "10.0.0.3"}},
+				{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "new-untrusted", Labels: map[string]string{"app": "untrusted"}},
+					Spec: corev1.PodSpec{NodeName: "node-b"}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.3"}},
+			}
+			input, err := resolver.BuildResolutionSnapshot("node-a", node, []corev1.Namespace{namespace}, pods)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Supply the local subject's cgroup identity; peer resolution
+			// is the property under review and does not depend on real cgroups.
+			for i := range input.Pods {
+				if input.Pods[i].Name == "api" {
+					input.Pods[i].CgroupIDs = []uint64{42}
+				}
+			}
+			types := []string{"Ingress", "Egress"}
+			native := policy.NativeNetworkPolicy{
+				APIVersion: policy.NativeNetworkPolicyAPIVersion, Kind: policy.NativeNetworkPolicyKind,
+				Metadata: &policy.NativeObjectMeta{Namespace: "default", Name: "trusted-to-api"},
+				Spec: &policy.NativeNetworkPolicySpec{
+					PodSelector: &policy.NativeLabelSelector{MatchLabels: map[string]string{"app": "api"}}, PolicyTypes: &types,
+					Egress: []policy.NativeEgressRule{{
+						To:    []policy.NativePeer{{PodSelector: &policy.NativeLabelSelector{MatchLabels: map[string]string{"app": "trusted"}}}},
+						Ports: []policy.NativePort{{Protocol: "TCP", Port: 8443}},
+					}},
+					Ingress: []policy.NativeIngressRule{{
+						From:  []policy.NativePeer{{PodSelector: &policy.NativeLabelSelector{MatchLabels: map[string]string{"app": "trusted"}}}},
+						Ports: []policy.NativePort{{Protocol: "TCP", Port: 8443}},
+					}},
+				},
+			}
+			result, err := policy.CompileNativePolicies([]policy.NativeNetworkPolicy{native}, input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.PolicySet.Rules) != 0 {
+				t.Fatalf("completed trusted peer authorizes IP now owned by untrusted pod: %+v", result.PolicySet.Rules)
+			}
+		})
+	}
+}

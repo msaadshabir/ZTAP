@@ -69,6 +69,11 @@ type bpfConnectionKey struct {
 	_               [2]byte
 }
 
+type bpfConnectionValue struct {
+	ExpiresAtNS      uint64
+	TCPFinDirections uint64
+}
+
 type bpfEpochDecisionKey struct {
 	PolicyEpoch uint64
 	Direction   uint8

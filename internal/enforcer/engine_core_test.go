@@ -337,7 +337,7 @@ func TestEngineApplyRetriesDeferredSlotCleanupBeforeReuse(t *testing.T) {
 	}
 
 	store.waitErr = errors.New("packet readers did not quiesce")
-	if err := engine.Apply(context.Background(), testPolicySet(10)); err != nil {
+	if err := engine.Apply(context.Background(), testPolicySet(20)); err != nil {
 		t.Fatalf("committed policy should survive deferred cleanup: %v", err)
 	}
 	if engine.pendingCleanup == nil || *engine.pendingCleanup != 1 {
@@ -347,7 +347,7 @@ func TestEngineApplyRetriesDeferredSlotCleanupBeforeReuse(t *testing.T) {
 
 	store.waitErr = nil
 	store.clearErr[1] = 1
-	if err := engine.Apply(context.Background(), testPolicySet(10)); err == nil {
+	if err := engine.Apply(context.Background(), testPolicySet(20)); err == nil {
 		t.Fatal("expected slot cleanup retry to fail before candidate population")
 	}
 	if store.active != committed {
@@ -357,11 +357,66 @@ func TestEngineApplyRetriesDeferredSlotCleanupBeforeReuse(t *testing.T) {
 		t.Fatalf("pending cleanup lost after retry failure: %v", engine.pendingCleanup)
 	}
 
-	if err := engine.Apply(context.Background(), testPolicySet(10)); err != nil {
+	if err := engine.Apply(context.Background(), testPolicySet(20)); err != nil {
 		t.Fatalf("apply after cleanup succeeds: %v", err)
 	}
 	if engine.pendingCleanup != nil {
 		t.Fatalf("pending cleanup remained after successful reuse: %v", engine.pendingCleanup)
+	}
+	if store.active != committed {
+		t.Fatalf("cleanup of unchanged policy advanced config: %+v", store.active)
+	}
+}
+
+func TestEngineUnchangedPolicyPreservesEpochAndMapContents(t *testing.T) {
+	store := newFakePolicyStore()
+	engine := newEngineCore(store, newFakeLinker(nil), nil)
+	desired := testPolicySet(10)
+	desired.NodeIPs = append(desired.NodeIPs, netip.MustParseAddr("192.0.2.2"))
+	desired.Subjects = append(desired.Subjects, testPolicySet(20).Subjects...)
+	desired.Rules = append(desired.Rules, testPolicySet(20).Rules...)
+	if err := engine.Apply(t.Context(), desired); err != nil {
+		t.Fatal(err)
+	}
+	committed := store.active
+	store.calls = nil
+	// Reordering, duplicate entries, and mutation of the original caller's
+	// slices must not change the cached, canonical map contents.
+	desired.Subjects[0], desired.Subjects[1] = desired.Subjects[1], desired.Subjects[0]
+	desired.NodeIPs[0], desired.NodeIPs[1] = desired.NodeIPs[1], desired.NodeIPs[0]
+	desired.NodeIPs = append(desired.NodeIPs, desired.NodeIPs[0])
+	desired.Rules[0], desired.Rules[1] = desired.Rules[1], desired.Rules[0]
+	desired.Rules = append(desired.Rules, desired.Rules[0])
+	desired.Subjects[0].PodIPs = append(desired.Subjects[0].PodIPs, desired.Subjects[0].PodIPs[0])
+	if err := engine.Apply(t.Context(), desired); err != nil {
+		t.Fatal(err)
+	}
+	if store.active != committed || len(store.calls) != 0 {
+		t.Fatalf("unchanged policy mutated maps: config=%+v calls=%v", store.active, store.calls)
+	}
+	desired.Rules[0].Port++
+	if err := engine.Apply(t.Context(), desired); err != nil {
+		t.Fatal(err)
+	}
+	if store.active.PolicyEpoch != committed.PolicyEpoch+1 {
+		t.Fatalf("changed rule did not advance epoch: %+v", store.active)
+	}
+}
+
+func TestEngineUnchangedPolicyRetriesLifecyclePublication(t *testing.T) {
+	store := &lifecycleFakeStore{fakePolicyStore: newFakePolicyStore(), markErr: errors.New("status unavailable")}
+	engine := newEngineCore(store, newFakeLinker(nil), nil)
+	if err := engine.Apply(t.Context(), testPolicySet(10)); err == nil {
+		t.Fatal("expected lifecycle publication failure")
+	}
+	committed := store.active
+	store.calls = nil
+	store.markErr = nil
+	if err := engine.Apply(t.Context(), testPolicySet(10)); err != nil {
+		t.Fatal(err)
+	}
+	if store.active != committed || len(store.calls) != 0 || store.markCalls != 2 {
+		t.Fatalf("publication retry: config=%+v calls=%v publications=%d", store.active, store.calls, store.markCalls)
 	}
 }
 

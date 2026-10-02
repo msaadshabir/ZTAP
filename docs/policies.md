@@ -47,14 +47,27 @@ other accepted policies continue to reconcile.
   destination port. Different rules and accepted policies add their allows.
 - Only selected local container cgroups are enforced. Peer selectors resolve
   non-host-networked Pods across the cluster, including remote nodes.
+- `Succeeded` and `Failed` Pods are excluded from peer and subject resolution.
+  Their retained addresses cannot grant access to a new Pod reusing the IP.
+  Live terminating Pods remain eligible until they reach a terminal phase.
 
 For a connection between two isolated Pods, the source's egress policy and
 the destination's ingress policy must both permit the initiating traffic.
 Traffic allowed by an explicit TCP/UDP rule creates bounded,
 policy-epoch-scoped connection state so replies do not require an independent
 reverse rule. State expires, can be evicted, and is invalidated by a
-policy-epoch change. Traffic in an unisolated direction does not create this
+policy-epoch change. An unchanged compiled snapshot preserves its epoch and
+existing reply state, even when an informer reports unrelated updates.
+Every new TCP SYN requires an explicit rule in its initiating direction.
+TCP reset removes state; once FINs are observed in both directions, final
+ACKs and retransmits have a 120-second closing interval that cannot be
+extended by more traffic. Half-closed streams keep their ordinary idle
+timeout. Traffic in an unisolated direction does not create this
 reply exemption.
+
+Workloads must satisfy the [packet-socket security prerequisite](deployment.md#requirements).
+The install manifest enforces it at admission; the agent checks existing Pods
+before applying a snapshot.
 
 Valid IPv4 TCP/UDP traffic to or from the local Node IPs recorded in Node
 status, and traffic whose source and destination both equal the subject's

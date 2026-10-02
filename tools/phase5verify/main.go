@@ -184,7 +184,7 @@ var referenceMapMemoryShape = []mapMemoryEvidence{
 	{Name: "active_config", Type: "ArrayOfMaps", MaxEntries: 1, KeySize: 4, ValueSize: 4, CapacityBounded: true},
 	{Name: "agent_status", Type: "Array", MaxEntries: 1, KeySize: 4, ValueSize: 24, CapacityBounded: true},
 	{Name: "attached_cgroup", Type: "CGroupStorage", KeySize: 16, ValueSize: 8},
-	{Name: "conn_state", Type: "LRUHash", MaxEntries: 65536, KeySize: 32, ValueSize: 8, CapacityBounded: true},
+	{Name: "conn_state", Type: "LRUHash", MaxEntries: 65536, KeySize: 32, ValueSize: 16, CapacityBounded: true},
 	{Name: "decision_counts", Type: "PerCPUArray", MaxEntries: 48, KeySize: 4, ValueSize: 8, CapacityBounded: true},
 	{Name: "decision_epoch_counts", Type: "LRUCPUHash", MaxEntries: 4096, KeySize: 16, ValueSize: 8, CapacityBounded: true},
 	{Name: "event_drop_epoch_counts", Type: "LRUCPUHash", MaxEntries: 1024, KeySize: 16, ValueSize: 8, CapacityBounded: true},
@@ -1880,7 +1880,7 @@ func validateHostedFixturePodSpec(path string, object *yaml.Node, name string) e
 		return fmt.Errorf("%s Pod %q contains %d containers, want 1", path, name, count)
 	}
 	container := containers.Content[0]
-	if err := requireHostedYAMLFieldSet(path, container, fmt.Sprintf("Pod %q workload container", name), "name", "image", "imagePullPolicy", "command"); err != nil {
+	if err := requireHostedYAMLFieldSet(path, container, fmt.Sprintf("Pod %q workload container", name), "name", "image", "imagePullPolicy", "command", "securityContext"); err != nil {
 		return err
 	}
 	containerName, containerNameOK := hostedYAMLStringField(container, "name")
@@ -1899,6 +1899,28 @@ func validateHostedFixturePodSpec(path string, object *yaml.Node, name string) e
 		if item.Kind != yaml.ScalarNode || item.Tag != "!!str" || item.Value != want {
 			return fmt.Errorf("%s Pod %q workload command item %d is %q, want %q", path, name, index, item.Value, want)
 		}
+	}
+	security, ok := hostedYAMLMappingField(container, "securityContext")
+	if !ok {
+		return fmt.Errorf("%s Pod %q workload security context is missing", path, name)
+	}
+	if err := requireHostedYAMLFieldSet(path, security, fmt.Sprintf("Pod %q security context", name), "allowPrivilegeEscalation", "capabilities"); err != nil {
+		return err
+	}
+	escalation, ok := hostedYAMLField(security, "allowPrivilegeEscalation")
+	if !ok || escalation.Kind != yaml.ScalarNode || escalation.Tag != "!!bool" || escalation.Value != "false" {
+		return fmt.Errorf("%s Pod %q must explicitly disable privilege escalation", path, name)
+	}
+	capabilities, ok := hostedYAMLMappingField(security, "capabilities")
+	if !ok {
+		return fmt.Errorf("%s Pod %q capabilities are missing", path, name)
+	}
+	if err := requireHostedYAMLFieldSet(path, capabilities, fmt.Sprintf("Pod %q capabilities", name), "drop"); err != nil {
+		return err
+	}
+	drop, ok := hostedYAMLSequenceField(capabilities, "drop")
+	if !ok || len(drop.Content) != 1 || drop.Content[0].Tag != "!!str" || drop.Content[0].Value != "NET_RAW" {
+		return fmt.Errorf("%s Pod %q must drop NET_RAW", path, name)
 	}
 	return nil
 }

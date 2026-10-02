@@ -118,6 +118,19 @@ func TestPhase5ReferenceFixtureApply(t *testing.T) {
 	root := createTestCgroup(t)
 	cgroupPaths := make(map[uint64]string, phase5ReferenceSubjects)
 	policySet := phase5ReferencePolicySet(t, root, cgroupPaths)
+	// Every measured apply must change map contents. Identical snapshots now
+	// preserve their epoch, and timing that path would understate update cost.
+	basePort := policySet.Rules[0].Port
+	changedPort := basePort + 1
+	if basePort == 65535 {
+		changedPort = basePort - 1
+	}
+	changeSnapshot := func(iteration int) {
+		policySet.Rules[0].Port = basePort
+		if iteration%2 == 1 {
+			policySet.Rules[0].Port = changedPort
+		}
+	}
 	engine := newLinuxEngineForTest(t, cgroupPaths)
 	previousMapMemory := phase5MapMemory(t, engine)
 	mapMemorySamples := 1
@@ -126,6 +139,7 @@ func TestPhase5ReferenceFixtureApply(t *testing.T) {
 	// Populate both policy slots before checking repeated-apply memory. The
 	// LPM trie allocates entries lazily, including on the first use of slot 0.
 	for warmup := 0; warmup < 2; warmup++ {
+		changeSnapshot(warmup)
 		warmupContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		err := engine.Apply(warmupContext, policySet)
 		cancel()
@@ -145,6 +159,7 @@ func TestPhase5ReferenceFixtureApply(t *testing.T) {
 
 	samples := make([]time.Duration, 0, phase5ApplySamples)
 	for sample := 0; sample < phase5ApplySamples; sample++ {
+		changeSnapshot(sample)
 		applyContext, applyCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		started := time.Now()
 		err := engine.Apply(applyContext, policySet)

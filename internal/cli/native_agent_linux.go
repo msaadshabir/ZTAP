@@ -481,6 +481,9 @@ func nativePolicySnapshot(nodeName string, policyLister networkinglisters.Networ
 	for _, object := range pods {
 		podCopies = append(podCopies, *object.DeepCopy())
 	}
+	if err := validatePacketSocketIsolation(podCopies); err != nil {
+		return nil, policy.ResolutionInput{}, nativeSnapshotTelemetry{}, err
+	}
 	input, err := resolver.BuildResolutionSnapshot(nodeName, &nodeCopy, namespaceCopies, podCopies)
 	if err != nil {
 		return nil, policy.ResolutionInput{}, nativeSnapshotTelemetry{}, fmt.Errorf("build Kubernetes resolution snapshot: %w", err)

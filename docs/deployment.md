@@ -16,6 +16,12 @@ a separate manifest with the immutable image digest.
   outside the first-release support contract.
 - Kubernetes access for the agent ServiceAccount to read Nodes, Namespaces,
   Pods, and NetworkPolicies.
+- Every non-host-network Pod in the cluster must explicitly drop `NET_RAW`
+  (or `ALL`), set `allowPrivilegeEscalation: false`, and avoid privileged mode
+  and added `NET_RAW` or `SYS_ADMIN`. This applies to regular, init, sidecar,
+  and ephemeral containers, including non-host-network system workloads.
+  The install manifest includes a cluster-wide, fail-closed
+  `ValidatingAdmissionPolicy` and binding enforcing this prerequisite.
 - Linux amd64 or arm64 nodes with the eBPF capabilities required by the
   kernel and runtime. The recorded release kernel is `6.17.0-1022-azure`;
   see [the reference environment](performance.md#published-v010-results).
@@ -29,6 +35,11 @@ first, and adds only `BPF`, `NET_ADMIN`, `PERFMON`, and `SYS_RESOURCE`. The root
 filesystem is read-only.
 
 ## Install
+
+The published `v0.1.0` assets predate the packet-socket admission guard and
+connection-state fixes in this checkout. Use a source build until a published
+release includes these fixes; the following historical release commands do
+not install the hardened checkout.
 
 Download the published `v0.1.0` install manifest, inspect it, then apply it:
 
@@ -73,6 +84,32 @@ kubectl apply -f deployments/kubernetes/ztap-agent.yaml
 kubectl -n ztap-system rollout status daemonset/ztap-agent
 kubectl -n ztap-system get pods -o wide
 ```
+
+Update existing workload templates before installing the manifest. For each
+container, the minimum packet-socket restriction is:
+
+```yaml
+securityContext:
+  privileged: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [NET_RAW]
+```
+
+Admission checks future Pod creation and ephemeral-container updates; it does
+not change existing Pods. Recreate existing unsafe Pods after updating their
+templates. The agent also audits the current Pod snapshot and refuses to
+report enforcement readiness when any non-terminal, non-host-network Pod
+violates this prerequisite. Readiness does not retroactively prevent unsafe
+existing Pods from sending traffic. Static Pods must satisfy the same
+restriction in their node-local manifests because API admission cannot
+control their creation.
+
+This restriction is necessary because Linux `AF_PACKET` sockets bypass
+`cgroup_skb` filtering. Host-network workloads remain outside ZTAP's subject
+set. Administrators must retain the admission policy and binding while ZTAP
+is deployed; removing them admits workloads that the packet hooks cannot
+enforce.
 
 The image is built `CGO_ENABLED=0` from `scratch`. It contains the ZTAP binary
 and CA certificates only; use Kubernetes logs, probes, port forwarding, and

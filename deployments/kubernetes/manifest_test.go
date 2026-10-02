@@ -95,6 +95,41 @@ func TestNativeAgentManifestsUseTheCapabilityOnlyProfile(t *testing.T) {
 	}
 }
 
+func TestAdmissionGuardCoversPodCreationAndDebugUpdates(t *testing.T) {
+	objects, err := loadManifestObjects("ztap-agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard := findObject(objects, "ValidatingAdmissionPolicy", "ztap-packet-socket-isolation")
+	binding := findObject(objects, "ValidatingAdmissionPolicyBinding", "ztap-packet-socket-isolation")
+	if guard == nil || binding == nil {
+		t.Fatal("install manifest must include both admission guard and binding")
+	}
+	spec, ok := nestedMap(guard, "spec")
+	if !ok || spec["failurePolicy"] != "Fail" {
+		t.Fatal("admission errors must fail closed")
+	}
+	constraints, ok := nestedMap(guard, "spec", "matchConstraints")
+	if !ok || constraints["namespaceSelector"] != nil || constraints["objectSelector"] != nil {
+		t.Fatal("packet-socket restriction must not have label-based workload exemptions")
+	}
+	rules, _ := constraints["resourceRules"].([]interface{})
+	if len(rules) != 1 {
+		t.Fatalf("admission resource rules = %v", rules)
+	}
+	rule, _ := rules[0].(map[string]interface{})
+	resources, operations := stringSlice(rule["resources"]), stringSlice(rule["operations"])
+	if !contains(resources, "pods") || !contains(resources, "pods/ephemeralcontainers") ||
+		!contains(operations, "CREATE") || !contains(operations, "UPDATE") {
+		t.Fatal("guard must cover regular Pods and ephemeral-container updates")
+	}
+	bound, ok := nestedMap(binding, "spec")
+	if !ok || bound["policyName"] != "ztap-packet-socket-isolation" ||
+		!contains(stringSlice(bound["validationActions"]), "Deny") || bound["matchResources"] != nil {
+		t.Fatal("binding must deny unsafe workloads without narrowing the policy's scope")
+	}
+}
+
 func assertHostNamespaceIsolation(t *testing.T, spec map[string]interface{}) {
 	t.Helper()
 	for _, field := range []string{"hostNetwork", "hostPID", "hostIPC"} {

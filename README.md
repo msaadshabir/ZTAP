@@ -79,7 +79,14 @@ require Linux. The Dockerfile builds a Linux image on either host; see
 [source builds](docs/deployment.md#build-your-own-image) to publish one.
 
 For a cluster that meets the [deployment requirements](docs/deployment.md#requirements),
-download and apply the published `v0.1.0` manifest, which pins the image digest:
+use a source build until a release includes the security fixes in this
+checkout. The install manifest includes a cluster-wide admission guard:
+non-host-network containers must drop `NET_RAW` (or `ALL`), disable privilege
+escalation, and avoid privileged mode and added `NET_RAW` or `SYS_ADMIN`.
+Existing unsafe Pods must be recreated; the agent refuses enforcement
+readiness while they remain. See [source-build installation](docs/deployment.md#build-your-own-image).
+
+The historical `v0.1.0` manifest pins the image digest but predates these fixes:
 
 ```sh
 curl -fL -o ztap-agent-v0.1.0.yaml \
@@ -89,8 +96,8 @@ kubectl -n ztap-system rollout status daemonset/ztap-agent
 ```
 
 The checked-in source manifest uses `ztap:v0.1.0` as a local-build placeholder.
-Use the release asset above, or replace that placeholder with your published
-image before applying the source manifest.
+Replace that placeholder with your source-built image before applying the
+source manifest.
 
 The DaemonSet mounts the host cgroup v2 hierarchy and bpffs, requests only the
 capabilities needed by the eBPF engine, and exposes health, readiness, and

@@ -24,7 +24,7 @@ internal/cli/             Cobra commands and user-facing I/O
 internal/policy/          native NetworkPolicy validation and compilation
 internal/enforcer/        Linux eBPF engine and generated bindings
 internal/flow/            pinned flow-map decoding and output
-deployments/kubernetes/   capability-only DaemonSet and manifest tests
+deployments/kubernetes/   admission guard, capability-only DaemonSet, manifest tests
 examples/native/          validator fixtures
 bpf/                      retained eBPF C source
 tools/bpfgen/             source-only binding generator
@@ -84,6 +84,14 @@ boundary: deleting the last selecting policy must clear both slots, detach all
 owned cgroup links, and allow traffic from the formerly selected cgroup again.
 CI also builds the scratch image, runs the offline validator through that image
 over stdin, and exercises the capability-only DaemonSet in kind.
+
+With a host C compiler (`clang` or `cc`), the portable suite also runs the
+actual packet C program with deterministic BPF helpers to check TCP
+handshakes, half-close, FIN/RST cleanup, tuple reuse, and UDP expiry. This
+checks decision logic; Linux integration still validates loading and
+attachment. The kind gate additionally tests admission rejection of unsafe
+regular, init, and ephemeral containers and verifies that a safe workload's
+effective, permitted, and bounding capabilities exclude `NET_RAW`.
 
 The fixed-size binary flow-event decoder has a fuzz target that rejects
 unknown sizes and schemas before decoding and exercises conversion of valid
