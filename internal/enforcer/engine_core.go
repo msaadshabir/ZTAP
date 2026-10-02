@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"net/netip"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -40,6 +41,8 @@ type engineCore struct {
 	linker              subjectLinker
 	logger              *slog.Logger
 	active              activeConfiguration
+	applied             encodedPolicySet
+	hasApplied          bool
 	links               map[uint64]io.Closer
 	orphanLinks         map[uint64][]io.Closer
 	pendingCleanup      *uint32
@@ -73,6 +76,12 @@ func (e *engineCore) Apply(ctx context.Context, desired policy.PolicySet) error 
 		return fmt.Errorf("validate policy set: %w", err)
 	}
 	desired = clonePolicySet(desired)
+	// Compare the actual map contents, including normalized order and duplicate
+	// removal, rather than informer object versions or slice ordering.
+	encoded, err := encodePolicySet(0, desired)
+	if err != nil {
+		return err
+	}
 
 	if err := lockEngineMutex(ctx, &e.mu); err != nil {
 		return err
@@ -89,6 +98,13 @@ func (e *engineCore) Apply(ctx context.Context, desired policy.PolicySet) error 
 	}
 	if e.active.Slot > 1 {
 		return fmt.Errorf("invalid active policy slot %d", e.active.Slot)
+	}
+	if e.hasApplied && equalEncodedPolicySets(e.applied, encoded) {
+		if err := e.reclaimPendingSlot(ctx, 1-e.active.Slot); err != nil {
+			return err
+		}
+		e.closeRemovedLinks(policySetCgroupIDs(desired))
+		return e.markEnforcing()
 	}
 	if e.active.PolicyEpoch == math.MaxUint64 {
 		return errors.New("policy epoch exhausted")
@@ -160,20 +176,32 @@ func (e *engineCore) Apply(ctx context.Context, desired policy.PolicySet) error 
 
 	old := e.active
 	e.active = candidate
-	var statusErr error
-	if lifecycle, ok := e.store.(interface{ MarkEnforcing() error }); ok {
-		// The policy flip is already committed at this point. A status-map
-		// publication failure therefore cannot roll back the candidate, but it
-		// must be surfaced so the agent keeps readiness false and retries.
-		statusErr = lifecycle.MarkEnforcing()
-	}
+	e.applied = encoded
+	e.hasApplied = true
+	// Cache the committed contents even if lifecycle publication fails. A retry
+	// must publish readiness without invalidating established reply state.
+	statusErr := e.markEnforcing()
 	for cgroupID, link := range newLinks {
 		e.links[cgroupID] = link
 	}
 	e.closeRemovedLinks(desiredIDs)
 	e.reclaimCommittedSlot(old.Slot)
 	if statusErr != nil {
-		return fmt.Errorf("publish enforcing lifecycle status: %w", statusErr)
+		return statusErr
+	}
+	return nil
+}
+
+func equalEncodedPolicySets(a, b encodedPolicySet) bool {
+	return slices.Equal(a.Subjects, b.Subjects) && slices.Equal(a.Nodes, b.Nodes) &&
+		slices.Equal(a.Self, b.Self) && slices.Equal(a.Rules, b.Rules)
+}
+
+func (e *engineCore) markEnforcing() error {
+	if lifecycle, ok := e.store.(interface{ MarkEnforcing() error }); ok {
+		if err := lifecycle.MarkEnforcing(); err != nil {
+			return fmt.Errorf("publish enforcing lifecycle status: %w", err)
+		}
 	}
 	return nil
 }

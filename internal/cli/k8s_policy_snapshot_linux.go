@@ -55,6 +55,12 @@ func (r *k8sSubjectResolver) BuildResolutionSnapshot(nodeName string, node *core
 	observedAt := time.Now()
 	for i := range pods {
 		pod := &pods[i]
+		// Terminal Pods retain their labels and IPs in the API even after the
+		// runtime releases those addresses. They must never authorize a new
+		// workload that subsequently receives the same IP.
+		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
 		local := pod.Spec.NodeName == nodeName
 		resolved := policy.ResolvedPod{
 			Namespace:   pod.Namespace,

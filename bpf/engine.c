@@ -184,6 +184,7 @@ struct connection_key {
 
 struct connection_value {
     __u64 expires_at_ns;
+    __u64 tcp_fin_directions;
 };
 
 struct epoch_decision_key {
@@ -388,6 +389,7 @@ struct {
 #define FLOW_LIMIT_PER_SECOND 100
 #define NS_PER_SECOND 1000000000ULL
 #define TCP_IDLE_NS (24ULL * 60 * 60 * NS_PER_SECOND)
+#define TCP_CLOSING_NS (120ULL * NS_PER_SECOND)
 #define UDP_IDLE_NS (30ULL * NS_PER_SECOND)
 /* Coalesce expiry writes to roughly once per second per active connection. */
 #define CONNECTION_REFRESH_INTERVAL_NS NS_PER_SECOND
@@ -409,7 +411,7 @@ struct packet_info {
     __u16 destination_port;
     __u8 protocol;
     __u8 family;
-    __u8 tcp_reset;
+    __u8 tcp_flags;
     __u8 _padding;
 };
 
@@ -519,7 +521,7 @@ static __always_inline int parse_packet(struct __sk_buff *skb, struct packet_inf
             return PACKET_MALFORMED;
         packet->source_port = bpf_ntohs(tcp.source);
         packet->destination_port = bpf_ntohs(tcp.destination);
-        packet->tcp_reset = (offset_flags & 0x0004) != 0;
+        packet->tcp_flags = offset_flags & 0x003f;
         return PACKET_VALID;
     }
 
@@ -667,54 +669,85 @@ static __always_inline struct connection_key reverse_connection_key(struct conne
     return key;
 }
 
-static __always_inline void remember_reverse_connection(struct connection_key packet_key,
-                                                        __u64 now, __u8 tcp_reset)
+/* One canonical entry owns both directions, so concurrent FINs cannot update
+ * independent copies of the closing state. Orient the tuple as ingress. */
+static __always_inline struct connection_key connection_state_key(struct connection_key key)
 {
-    struct connection_key reverse = reverse_connection_key(packet_key);
-    if (tcp_reset) {
-        bpf_map_delete_elem(&conn_state, &packet_key);
-        bpf_map_delete_elem(&conn_state, &reverse);
-        return;
-    }
-
-    const __u64 idle_ns = packet_key.protocol == IPPROTO_TCP ? TCP_IDLE_NS : UDP_IDLE_NS;
-    struct connection_value *existing = bpf_map_lookup_elem(&conn_state, &reverse);
-    if (existing && existing->expires_at_ns > now &&
-        existing->expires_at_ns - now > idle_ns - CONNECTION_REFRESH_INTERVAL_NS)
-        return;
-
-    struct connection_value value = {
-        .expires_at_ns = now + idle_ns,
-    };
-    bpf_map_update_elem(&conn_state, &reverse, &value, 0);
+    return key.direction == DIR_EGRESS ? reverse_connection_key(key) : key;
 }
 
-static __always_inline int allow_connection_state(struct connection_key key,
-                                                  __u64 now, __u8 tcp_reset)
+static __always_inline void refresh_connection(struct connection_value *value,
+                                                struct connection_key packet_key,
+                                                __u64 now, __u8 tcp_flags)
 {
-    /* The reverse tuple seeds state on the first allowed packet. */
-    struct connection_key reverse = reverse_connection_key(key);
+    __u64 fins = value->tcp_fin_directions;
+    if (packet_key.protocol == IPPROTO_TCP && (tcp_flags & 0x01)) {
+        __u64 previous = __sync_fetch_and_or(&value->tcp_fin_directions, DIR_MASK(packet_key.direction));
+        fins = previous | DIR_MASK(packet_key.direction);
+        if (fins == 3 && previous != 3) {
+            /* Preserve final ACKs and retransmits for a bounded closing
+             * interval. Retransmitted FINs never extend that interval. */
+            __sync_lock_test_and_set(&value->expires_at_ns, now + TCP_CLOSING_NS);
+        }
+    }
+    if (fins == 3)
+        return;
+
+    const __u64 idle_ns = packet_key.protocol == IPPROTO_TCP ? TCP_IDLE_NS : UDP_IDLE_NS;
+    __u64 expiry = value->expires_at_ns;
+    if (expiry > now && expiry - now > idle_ns - CONNECTION_REFRESH_INTERVAL_NS)
+        return;
+    if (__sync_fetch_and_or(&value->tcp_fin_directions, 0) == 3)
+        return;
+    /* A concurrent close shortens expiry. Never overwrite that transition
+     * with an idle refresh based on an older value. */
+    __sync_val_compare_and_swap(&value->expires_at_ns, expiry, now + idle_ns);
+}
+
+static __always_inline void remember_reverse_connection(struct connection_key packet_key,
+                                                        __u64 now, __u8 tcp_flags)
+{
+    struct connection_key key = connection_state_key(packet_key);
+    if (packet_key.protocol == IPPROTO_TCP && (tcp_flags & 0x04)) {
+        bpf_map_delete_elem(&conn_state, &key);
+        return;
+    }
+    /* An explicitly allowed new SYN replaces any previous use of the tuple.
+     * SYN retransmits still require an allow rule in their own direction. */
+    if (packet_key.protocol == IPPROTO_TCP && (tcp_flags & 0x12) == 0x02)
+        bpf_map_delete_elem(&conn_state, &key);
+
     struct connection_value *value = bpf_map_lookup_elem(&conn_state, &key);
-    if (!value)
-        value = bpf_map_lookup_elem(&conn_state, &reverse);
+    if (value && value->expires_at_ns > now) {
+        refresh_connection(value, packet_key, now, tcp_flags);
+        return;
+    }
+    struct connection_value initial = {
+        .expires_at_ns = now + (packet_key.protocol == IPPROTO_TCP ? TCP_IDLE_NS : UDP_IDLE_NS),
+        .tcp_fin_directions = packet_key.protocol == IPPROTO_TCP && (tcp_flags & 0x01)
+            ? DIR_MASK(packet_key.direction) : 0,
+    };
+    bpf_map_update_elem(&conn_state, &key, &initial, 0);
+}
+
+static __always_inline int allow_connection_state(struct connection_key packet_key,
+                                                  __u64 now, __u8 tcp_flags)
+{
+    /* A fresh TCP handshake is a policy decision, never reply traffic, even
+     * when an old connection used the same addresses and ports. */
+    if (packet_key.protocol == IPPROTO_TCP && (tcp_flags & 0x12) == 0x02)
+        return 0;
+    struct connection_key key = connection_state_key(packet_key);
+    struct connection_value *value = bpf_map_lookup_elem(&conn_state, &key);
     if (!value || value->expires_at_ns <= now)
         return 0;
 
-    if (tcp_reset) {
+    if (packet_key.protocol == IPPROTO_TCP && (tcp_flags & 0x04)) {
         bpf_map_delete_elem(&conn_state, &key);
-        bpf_map_delete_elem(&conn_state, &reverse);
         return 1;
     }
 
-    const __u64 idle_ns = key.protocol == IPPROTO_TCP ? TCP_IDLE_NS : UDP_IDLE_NS;
-    if (value->expires_at_ns - now > idle_ns - CONNECTION_REFRESH_INTERVAL_NS)
-        return 1;
-
-    struct connection_value refreshed = {
-        .expires_at_ns = now + idle_ns,
-    };
-    bpf_map_update_elem(&conn_state, &key, &refreshed, 0);
-    bpf_map_update_elem(&conn_state, &reverse, &refreshed, 0);
+    refresh_connection(value, packet_key, now, tcp_flags);
     return 1;
 }
 
@@ -843,7 +876,7 @@ static __always_inline int enforce_packet(struct __sk_buff *skb, __u8 direction,
     }
 
     struct connection_key packet_key = connection_key_for(epoch, cgroup_id, direction, &packet);
-    if (allow_connection_state(packet_key, now, packet.tcp_reset)) {
+    if (allow_connection_state(packet_key, now, packet.tcp_flags)) {
         int result = decide(&packet, now, epoch, cgroup_id, direction,
                             ACTION_ALLOWED, REASON_CONNECTION);
         __sync_fetch_and_sub(in_flight_count, 1);
@@ -851,7 +884,7 @@ static __always_inline int enforce_packet(struct __sk_buff *skb, __u8 direction,
     }
 
     if (rule_matches(slot, cgroup_id, direction, &packet)) {
-        remember_reverse_connection(packet_key, now, packet.tcp_reset);
+        remember_reverse_connection(packet_key, now, packet.tcp_flags);
         int result = decide(&packet, now, epoch, cgroup_id, direction,
                             ACTION_ALLOWED, REASON_RULE);
         __sync_fetch_and_sub(in_flight_count, 1);

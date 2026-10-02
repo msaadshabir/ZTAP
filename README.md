@@ -3,7 +3,7 @@
 ZTAP is a Linux node agent that compiles the supported subset of Kubernetes
 `NetworkPolicy` and enforces it with per-container eBPF programs. The product
 is intentionally small: one binary, one DaemonSet, and explicit command-line
-flags. It is experimental `v0.1.0` software; the documented Linux and
+flags. It is experimental software; the documented Linux and
 Kubernetes acceptance gates are part of the release contract.
 
 Enforcement is process-owned: new containers can transmit before they are
@@ -79,18 +79,25 @@ require Linux. The Dockerfile builds a Linux image on either host; see
 [source builds](docs/deployment.md#build-your-own-image) to publish one.
 
 For a cluster that meets the [deployment requirements](docs/deployment.md#requirements),
-download and apply the published `v0.1.0` manifest, which pins the image digest:
+use the `v0.1.1` release manifest. It includes a cluster-wide admission guard:
+non-host-network containers must drop `NET_RAW` (or `ALL`), disable privilege
+escalation, and avoid privileged mode and added `NET_RAW` or `SYS_ADMIN`.
+Existing unsafe Pods must be recreated; the agent refuses enforcement
+readiness while they remain. See [deployment requirements](docs/deployment.md#requirements)
+and [source-build installation](docs/deployment.md#build-your-own-image).
+
+The release manifest pins the image digest:
 
 ```sh
-curl -fL -o ztap-agent-v0.1.0.yaml \
-  https://github.com/saadshabir/ZTAP/releases/download/v0.1.0/ztap-agent-v0.1.0.yaml
-kubectl apply -f ztap-agent-v0.1.0.yaml
+curl -fL -o ztap-agent-v0.1.1.yaml \
+  https://github.com/saadshabir/ZTAP/releases/download/v0.1.1/ztap-agent-v0.1.1.yaml
+kubectl apply -f ztap-agent-v0.1.1.yaml
 kubectl -n ztap-system rollout status daemonset/ztap-agent
 ```
 
 The checked-in source manifest uses `ztap:v0.1.0` as a local-build placeholder.
-Use the release asset above, or replace that placeholder with your published
-image before applying the source manifest.
+Replace that placeholder with your source-built image before applying the
+source manifest.
 
 The DaemonSet mounts the host cgroup v2 hierarchy and bpffs, requests only the
 capabilities needed by the eBPF engine, and exposes health, readiness, and

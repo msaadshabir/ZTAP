@@ -16,6 +16,12 @@ a separate manifest with the immutable image digest.
   outside the first-release support contract.
 - Kubernetes access for the agent ServiceAccount to read Nodes, Namespaces,
   Pods, and NetworkPolicies.
+- Every non-host-network Pod in the cluster must explicitly drop `NET_RAW`
+  (or `ALL`), set `allowPrivilegeEscalation: false`, and avoid privileged mode
+  and added `NET_RAW` or `SYS_ADMIN`. This applies to regular, init, sidecar,
+  and ephemeral containers, including non-host-network system workloads.
+  The install manifest includes a cluster-wide, fail-closed
+  `ValidatingAdmissionPolicy` and binding enforcing this prerequisite.
 - Linux amd64 or arm64 nodes with the eBPF capabilities required by the
   kernel and runtime. The recorded release kernel is `6.17.0-1022-azure`;
   see [the reference environment](performance.md#published-v010-results).
@@ -30,22 +36,24 @@ filesystem is read-only.
 
 ## Install
 
-Download the published `v0.1.0` install manifest, inspect it, then apply it:
+The `v0.1.1` release includes the packet-socket admission guard and
+connection-state fixes. Update workload templates and recreate unsafe Pods
+as described below before installing it. The historical `v0.1.0` assets
+predate these fixes.
+
+Download the `v0.1.1` install manifest, inspect it, then apply it:
 
 ```sh
-curl -fL -o ztap-agent-v0.1.0.yaml \
-  https://github.com/saadshabir/ZTAP/releases/download/v0.1.0/ztap-agent-v0.1.0.yaml
-kubectl apply -f ztap-agent-v0.1.0.yaml
+curl -fL -o ztap-agent-v0.1.1.yaml \
+  https://github.com/saadshabir/ZTAP/releases/download/v0.1.1/ztap-agent-v0.1.1.yaml
+kubectl apply -f ztap-agent-v0.1.1.yaml
 kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=5m
 kubectl -n ztap-system get pods -l app=ztap-agent -o wide
 ```
 
-The [release asset](https://github.com/saadshabir/ZTAP/releases/download/v0.1.0/ztap-agent-v0.1.0.yaml)
-pins the multi-architecture image to:
-
-```yaml
-image: ghcr.io/saadshabir/ztap@sha256:a4f7b5aa3ce33e937d4b3d45172c420899b26f8c27f48a4a392d07fa66f3fad7
-```
+The [release asset](https://github.com/saadshabir/ZTAP/releases/download/v0.1.1/ztap-agent-v0.1.1.yaml)
+pins `ghcr.io/saadshabir/ztap` to the immutable multi-architecture image digest
+verified by the release workflow.
 
 Check that an agent is Ready on each intended node. Then validate and apply
 your native `NetworkPolicy` documents; see [policy examples](policies.md#examples).
@@ -57,10 +65,10 @@ To deploy a source build, publish it to a registry reachable by your nodes:
 ```sh
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --build-arg VERSION=v0.1.0 \
+  --build-arg VERSION=v0.1.1 \
   --build-arg COMMIT="$(git rev-parse HEAD)" \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --tag your-registry/ztap:v0.1.0 \
+  --tag your-registry/ztap:v0.1.1 \
   --push .
 ```
 
@@ -73,6 +81,32 @@ kubectl apply -f deployments/kubernetes/ztap-agent.yaml
 kubectl -n ztap-system rollout status daemonset/ztap-agent
 kubectl -n ztap-system get pods -o wide
 ```
+
+Update existing workload templates before installing the manifest. For each
+container, the minimum packet-socket restriction is:
+
+```yaml
+securityContext:
+  privileged: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [NET_RAW]
+```
+
+Admission checks future Pod creation and ephemeral-container updates; it does
+not change existing Pods. Recreate existing unsafe Pods after updating their
+templates. The agent also audits the current Pod snapshot and refuses to
+report enforcement readiness when any non-terminal, non-host-network Pod
+violates this prerequisite. Readiness does not retroactively prevent unsafe
+existing Pods from sending traffic. Static Pods must satisfy the same
+restriction in their node-local manifests because API admission cannot
+control their creation.
+
+This restriction is necessary because Linux `AF_PACKET` sockets bypass
+`cgroup_skb` filtering. Host-network workloads remain outside ZTAP's subject
+set. Administrators must retain the admission policy and binding while ZTAP
+is deployed; removing them admits workloads that the packet hooks cannot
+enforce.
 
 The image is built `CGO_ENABLED=0` from `scratch`. It contains the ZTAP binary
 and CA certificates only; use Kubernetes logs, probes, port forwarding, and
@@ -281,7 +315,7 @@ kubectl -n ztap-system delete daemonset ztap-agent
 For a complete uninstall, delete the manifest you installed:
 
 ```sh
-kubectl delete -f ztap-agent-v0.1.0.yaml
+kubectl delete -f ztap-agent-v0.1.1.yaml
 ```
 
 This also deletes `ztap-system` and any other resources in that namespace.

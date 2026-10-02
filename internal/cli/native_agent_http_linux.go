@@ -43,7 +43,7 @@ type nativeAgentHTTP struct {
 	packetDecisions     *prometheus.CounterVec
 	flowDrops           *prometheus.CounterVec
 	slotCleanupFailures prometheus.Counter
-	engineMetricsMu     sync.RWMutex
+	engineMetricsMu     sync.Mutex
 	engineMetrics       enforcer.MetricsProvider
 	lastDecisions       map[string]uint64
 	lastDrops           map[string]uint64
@@ -309,24 +309,25 @@ func (a *nativeAgentHTTP) setEngineMetricsProvider(provider enforcer.MetricsProv
 		return
 	}
 	a.engineMetricsMu.Lock()
+	defer a.engineMetricsMu.Unlock()
 	a.engineMetrics = provider
-	a.engineMetricsMu.Unlock()
-	if provider == nil {
-		a.stateMu.Lock()
-		a.lastDecisions = make(map[string]uint64)
-		a.lastDrops = make(map[string]uint64)
-		a.lastCleanupFailures = 0
-		a.stateMu.Unlock()
-	}
+	// A newly assigned provider starts a new cumulative counter source.
+	a.stateMu.Lock()
+	a.lastDecisions = make(map[string]uint64)
+	a.lastDrops = make(map[string]uint64)
+	a.lastCleanupFailures = 0
+	a.stateMu.Unlock()
 }
 
 func (a *nativeAgentHTTP) refreshEngineMetrics() {
 	if a == nil {
 		return
 	}
-	a.engineMetricsMu.RLock()
+	// Collection and publication are one ordered operation. Otherwise a slow
+	// older snapshot can be mistaken for a map reset and counted a second time.
+	a.engineMetricsMu.Lock()
+	defer a.engineMetricsMu.Unlock()
 	provider := a.engineMetrics
-	a.engineMetricsMu.RUnlock()
 	if provider == nil {
 		return
 	}

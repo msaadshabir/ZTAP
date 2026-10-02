@@ -597,7 +597,9 @@ func TestLinuxEngineFlowEventRateLimitPersistsAcrossPolicyEpochs(t *testing.T) {
 		t.Fatalf("prime flow event limiter: %v", err)
 	}
 
-	if err := engine.Apply(context.Background(), set); err != nil {
+	changed := clonePolicySet(set)
+	changed.NodeIPs = append(changed.NodeIPs, netip.MustParseAddr("192.0.2.99"))
+	if err := engine.Apply(context.Background(), changed); err != nil {
 		t.Fatalf("apply second policy epoch: %v", err)
 	}
 	var persisted []bpfEventLimiterValue
@@ -665,6 +667,12 @@ func TestLinuxEngineAllowsReplyTrafficWithinPolicyEpoch(t *testing.T) {
 		t.Fatalf("receive UDP request: %v", err)
 	}
 	stateKey, originalExpiry := engineConnectionStateForPorts(t, engine, cgroupID, flow.DirectionIngress, serverPort, uint16(client.Port))
+	if err := engine.Apply(context.Background(), engineReplyPolicySet(t, cgroupID, serverPort)); err != nil {
+		t.Fatalf("reapply unchanged request policy: %v", err)
+	}
+	if engine.active.PolicyEpoch != 1 {
+		t.Fatalf("unchanged policy invalidated UDP replies: epoch %d", engine.active.PolicyEpoch)
+	}
 	if _, err := server.WriteToUDP([]byte("reply"), client); err != nil {
 		t.Fatalf("send UDP reply: %v", err)
 	}
@@ -701,8 +709,8 @@ func TestLinuxEngineAllowsReplyTrafficWithinPolicyEpoch(t *testing.T) {
 	}
 	_ = statusReader.Close()
 
-	// A connection due for its periodic expiry refresh must refresh both
-	// directions before accepting the reply; the fresh entry above skips writes.
+	// A connection due for its periodic expiry refresh must update the shared
+	// entry before accepting the reply; the fresh entry above skips writes.
 	child2, statusReader2 := startUDPRequestReplyHelper(t, cgroup, fmt.Sprintf("127.0.0.1:%d", serverPort), false)
 	defer func() {
 		if child2.ProcessState == nil {
@@ -726,7 +734,8 @@ func TestLinuxEngineAllowsReplyTrafficWithinPolicyEpoch(t *testing.T) {
 		t.Fatalf("read monotonic clock before expiry refresh: %v", err)
 	}
 	nearRefresh := now + uint64(30*time.Second-time.Second-time.Second/2)
-	if err := engine.store.maps["conn_state"].Update(&stateKey, &nearRefresh, ebpf.UpdateAny); err != nil {
+	aged := bpfConnectionValue{ExpiresAtNS: nearRefresh}
+	if err := engine.store.maps["conn_state"].Update(&stateKey, &aged, ebpf.UpdateAny); err != nil {
 		t.Fatalf("age connection state toward expiry: %v", err)
 	}
 	if _, err := server.WriteToUDP([]byte("reply"), client); err != nil {
@@ -741,10 +750,6 @@ func TestLinuxEngineAllowsReplyTrafficWithinPolicyEpoch(t *testing.T) {
 	}
 	if refreshedExpiry <= now+uint64(20*time.Second) {
 		t.Fatalf("near-expiry connection was not refreshed: expiry=%d now=%d", refreshedExpiry, now)
-	}
-	_, reverseExpiry := engineConnectionStateForPorts(t, engine, cgroupID, flow.DirectionEgress, uint16(client.Port), serverPort)
-	if reverseExpiry != refreshedExpiry {
-		t.Fatalf("reverse connection expiry = %d, want %d", reverseExpiry, refreshedExpiry)
 	}
 	if got := readEngineReplyResult(t, statusReader2); got != '1' {
 		t.Fatalf("second helper did not receive allowed reply: status %q", got)
@@ -796,6 +801,12 @@ func TestLinuxEngineAllowsTCPReplyTrafficWithoutReverseRule(t *testing.T) {
 	}
 	if string(request) != "request" {
 		t.Fatalf("TCP request = %q, want request", request)
+	}
+	if err := engine.Apply(context.Background(), engineTCPReplyPolicySet(t, cgroupID, serverPort)); err != nil {
+		t.Fatalf("reapply unchanged TCP policy: %v", err)
+	}
+	if engine.active.PolicyEpoch != 1 {
+		t.Fatalf("unchanged policy invalidated TCP replies: epoch %d", engine.active.PolicyEpoch)
 	}
 	if _, err := connection.Write([]byte("reply!")); err != nil {
 		t.Fatalf("write TCP reply: %v", err)
@@ -849,7 +860,9 @@ func TestLinuxEngineReplyStateExpiresAcrossReusedSlot(t *testing.T) {
 
 	// Two complete updates cycle the active slot 1 -> 0 -> 1. The reply-state
 	// entry remains physically present under epoch 1 but cannot match epoch 3.
-	if err := engine.Apply(context.Background(), set); err != nil {
+	changed := clonePolicySet(set)
+	changed.NodeIPs = append(changed.NodeIPs, netip.MustParseAddr("192.0.2.99"))
+	if err := engine.Apply(context.Background(), changed); err != nil {
 		t.Fatalf("apply epoch 2: %v", err)
 	}
 	if err := engine.Apply(context.Background(), set); err != nil {
@@ -1755,8 +1768,8 @@ func assertEngineDecision(t *testing.T, event flow.RawFlowEvent, action, reason 
 func engineHasConnectionEpoch(engine *LinuxEngine, epoch uint64) bool {
 	iterator := engine.store.maps["conn_state"].Iterate()
 	var key bpfConnectionKey
-	var expires uint64
-	for iterator.Next(&key, &expires) {
+	var value bpfConnectionValue
+	for iterator.Next(&key, &value) {
 		if key.PolicyEpoch == epoch && key.Direction == flow.DirectionIngress {
 			return true
 		}
@@ -1768,11 +1781,11 @@ func engineConnectionStateForPorts(t *testing.T, engine *LinuxEngine, cgroupID u
 	t.Helper()
 	iterator := engine.store.maps["conn_state"].Iterate()
 	var key bpfConnectionKey
-	var expires uint64
-	for iterator.Next(&key, &expires) {
+	var value bpfConnectionValue
+	for iterator.Next(&key, &value) {
 		if key.PolicyEpoch == 1 && key.CgroupID == cgroupID && key.Direction == direction &&
 			key.Protocol == uint8(flow.ProtocolUDP) && key.SourcePort == sourcePort && key.DestinationPort == destinationPort {
-			return key, expires
+			return key, value.ExpiresAtNS
 		}
 	}
 	if err := iterator.Err(); err != nil {

@@ -452,8 +452,17 @@ jobs:
           set -euo pipefail
           test "${ZTAP_KINDNET_NETWORKPOLICY_DISABLED:-}" = 1
           printf '%s\n' 'kindnet_networkpolicy_controller=disabled'
+          # Harden the pre-existing non-host-network system workload before
+          # the agent audits the cluster's packet-socket prerequisite.
+          kubectl -n kube-system patch deployment coredns --type=strategic \
+            -p '{"spec":{"template":{"spec":{"containers":[{"name":"coredns","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["NET_RAW"]}}}]}}}}'
+          kubectl -n kube-system rollout status deployment/coredns --timeout=180s
+          kubectl -n local-path-storage patch deployment local-path-provisioner --type=strategic \
+            -p '{"spec":{"template":{"spec":{"containers":[{"name":"local-path-provisioner","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["NET_RAW"]}}}]}}}}'
+          kubectl -n local-path-storage rollout status deployment/local-path-provisioner --timeout=180s
           kubectl apply -f deployments/kubernetes/ztap-agent.yaml
           kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=180s
+          bash .github/scripts/verify-admission.sh
           kubectl apply -f - <<'EOF'
           apiVersion: v1
           kind: Namespace
@@ -472,6 +481,10 @@ jobs:
               - name: server
                 image: busybox:1.36.1
                 command: ["sh", "-c", "mkdir -p /www && printf 'ok\\n' > /www/index.html && exec httpd -f -p 8080 -h /www"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: [NET_RAW]
           ---
           apiVersion: v1
           kind: Service
@@ -500,6 +513,10 @@ jobs:
               - name: control
                 image: busybox:1.36.1
                 command: ["sh", "-c", "sleep 3600"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: [NET_RAW]
           ---
           apiVersion: v1
           kind: Pod
@@ -513,6 +530,10 @@ jobs:
               - name: client
                 image: busybox:1.36.1
                 command: ["sh", "-c", "sleep 3600"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: [NET_RAW]
           ---
           apiVersion: networking.k8s.io/v1
           kind: NetworkPolicy
@@ -920,7 +941,7 @@ jobs:
             for ((index = 0; index < reference_pods; index++)); do
               bucket=$((index / pods_per_policy))
               printf '%s\n' '---'
-              printf 'apiVersion: v1\nkind: Pod\nmetadata:\n  name: reference-pod-%03d\n  namespace: ztap-performance\n  labels:\n    phase5-bucket: "%02d"\nspec:\n  containers:\n    - name: workload\n      image: busybox:1.36.1\n      imagePullPolicy: IfNotPresent\n      command: ["sh", "-c", "sleep 3600"]\n' \
+              printf 'apiVersion: v1\nkind: Pod\nmetadata:\n  name: reference-pod-%03d\n  namespace: ztap-performance\n  labels:\n    phase5-bucket: "%02d"\nspec:\n  containers:\n    - name: workload\n      image: busybox:1.36.1\n      imagePullPolicy: IfNotPresent\n      command: ["sh", "-c", "sleep 3600"]\n      securityContext:\n        allowPrivilegeEscalation: false\n        capabilities:\n          drop: [NET_RAW]\n' \
                 "$index" "$bucket"
             done
             for ((policy = 0; policy < reference_policies; policy++)); do

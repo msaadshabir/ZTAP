@@ -1596,7 +1596,7 @@ func referenceHostedFixture(includePolicyBuckets bool) string {
 	fixture.WriteString("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: ztap-performance\n")
 	for index := 0; index < referenceSubjects; index++ {
 		fixture.WriteString("---\n")
-		fmt.Fprintf(&fixture, "apiVersion: v1\nkind: Pod\nmetadata:\n  name: reference-pod-%03d\n  namespace: ztap-performance\n  labels:\n    phase5-bucket: \"%02d\"\nspec:\n  containers:\n    - name: workload\n      image: busybox:1.36.1\n      imagePullPolicy: IfNotPresent\n      command: [\"sh\", \"-c\", \"sleep 3600\"]\n", index, index/(referenceSubjects/referencePolicies))
+		fmt.Fprintf(&fixture, "apiVersion: v1\nkind: Pod\nmetadata:\n  name: reference-pod-%03d\n  namespace: ztap-performance\n  labels:\n    phase5-bucket: \"%02d\"\nspec:\n  containers:\n    - name: workload\n      image: busybox:1.36.1\n      imagePullPolicy: IfNotPresent\n      command: [\"sh\", \"-c\", \"sleep 3600\"]\n      securityContext:\n        allowPrivilegeEscalation: false\n        capabilities:\n          drop: [NET_RAW]\n", index, index/(referenceSubjects/referencePolicies))
 	}
 	for index := 0; index < referencePolicies; index++ {
 		fixture.WriteString("---\n")
@@ -1826,6 +1826,9 @@ func TestValidateHostedFixtureRejectsPodSemanticDrift(t *testing.T) {
 		{name: "image", needle: "image: busybox:1.36.1", repl: "image: alpine:3.20"},
 		{name: "command", needle: "command: [\"sh\", \"-c\", \"sleep 3600\"]", repl: "command: [\"sh\", \"-c\", \"sleep 1\"]"},
 		{name: "extra field", needle: "spec:\n  containers:", repl: "spec:\n  hostNetwork: true\n  containers:"},
+		{name: "raw capability", needle: "drop: [NET_RAW]", repl: "drop: [CHOWN]"},
+		{name: "privilege escalation", needle: "allowPrivilegeEscalation: false", repl: "allowPrivilegeEscalation: true"},
+		{name: "added raw capability", needle: "drop: [NET_RAW]", repl: "drop: [NET_RAW]\n          add: [NET_RAW]"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

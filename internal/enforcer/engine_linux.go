@@ -514,7 +514,7 @@ func validateEngineCollectionSpec(spec *ebpf.CollectionSpec) error {
 		"subject_state":           {typ: ebpf.Hash, max: 2 * policy.MaxPolicySubjects, keySize: 16, valueSize: 8},
 		"node_bypass":             {typ: ebpf.Hash, max: 2 * policy.MaxPolicyRules, keySize: 8, valueSize: 1},
 		"self_bypass":             {typ: ebpf.Hash, max: 2 * policy.MaxPolicyRules, keySize: 16, valueSize: 1},
-		"conn_state":              {typ: ebpf.LRUHash, max: 65_536, keySize: 32, valueSize: 8},
+		"conn_state":              {typ: ebpf.LRUHash, max: 65_536, keySize: 32, valueSize: 16},
 		"flow_events":             {typ: ebpf.RingBuf, max: 1 << 20, keySize: 0, valueSize: 0},
 		"decision_counts":         {typ: ebpf.PerCPUArray, max: 48, keySize: 4, valueSize: 8},
 		"decision_epoch_counts":   {typ: ebpf.LRUCPUHash, max: 4096, keySize: 16, valueSize: 8},

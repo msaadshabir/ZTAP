@@ -1,3 +1,45 @@
+# Install the admission guard before creating the agent or workload Pods.
+# It applies cluster-wide to non-host-network Pods, including debug containers.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: ztap-packet-socket-isolation
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+  matchConditions:
+    - name: managed-network
+      expression: '!has(object.spec.hostNetwork) || !object.spec.hostNetwork'
+  variables:
+    - name: securityContexts
+      expression: >-
+        object.spec.containers.map(c, has(c.securityContext) ? c.securityContext : null) +
+        (has(object.spec.initContainers) ? object.spec.initContainers.map(c, has(c.securityContext) ? c.securityContext : null) : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers.map(c, has(c.securityContext) ? c.securityContext : null) : [])
+  validations:
+    - expression: >-
+        variables.securityContexts.all(s,
+          s != null &&
+          (!has(s.privileged) || !s.privileged) &&
+          has(s.allowPrivilegeEscalation) && !s.allowPrivilegeEscalation &&
+          has(s.capabilities) && has(s.capabilities.drop) &&
+          s.capabilities.drop.exists(c, c == 'ALL' || c == 'NET_RAW') &&
+          (!has(s.capabilities.add) || s.capabilities.add.all(c, c != 'NET_RAW' && c != 'SYS_ADMIN')))
+      message: 'ZTAP requires each container to drop NET_RAW or ALL, forbid NET_RAW/SYS_ADMIN additions and privileged mode, and set allowPrivilegeEscalation=false.'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: ztap-packet-socket-isolation
+spec:
+  policyName: ztap-packet-socket-isolation
+  validationActions: [Deny]
+---
 apiVersion: v1
 kind: Namespace
 metadata:
