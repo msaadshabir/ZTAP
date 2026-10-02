@@ -36,27 +36,24 @@ filesystem is read-only.
 
 ## Install
 
-The published `v0.1.0` assets predate the packet-socket admission guard and
-connection-state fixes in this checkout. Use a source build until a published
-release includes these fixes; the following historical release commands do
-not install the hardened checkout.
+The `v0.1.1` release includes the packet-socket admission guard and
+connection-state fixes. Update workload templates and recreate unsafe Pods
+as described below before installing it. The historical `v0.1.0` assets
+predate these fixes.
 
-Download the published `v0.1.0` install manifest, inspect it, then apply it:
+Download the `v0.1.1` install manifest, inspect it, then apply it:
 
 ```sh
-curl -fL -o ztap-agent-v0.1.0.yaml \
-  https://github.com/saadshabir/ZTAP/releases/download/v0.1.0/ztap-agent-v0.1.0.yaml
-kubectl apply -f ztap-agent-v0.1.0.yaml
+curl -fL -o ztap-agent-v0.1.1.yaml \
+  https://github.com/saadshabir/ZTAP/releases/download/v0.1.1/ztap-agent-v0.1.1.yaml
+kubectl apply -f ztap-agent-v0.1.1.yaml
 kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=5m
 kubectl -n ztap-system get pods -l app=ztap-agent -o wide
 ```
 
-The [release asset](https://github.com/saadshabir/ZTAP/releases/download/v0.1.0/ztap-agent-v0.1.0.yaml)
-pins the multi-architecture image to:
-
-```yaml
-image: ghcr.io/saadshabir/ztap@sha256:a4f7b5aa3ce33e937d4b3d45172c420899b26f8c27f48a4a392d07fa66f3fad7
-```
+The [release asset](https://github.com/saadshabir/ZTAP/releases/download/v0.1.1/ztap-agent-v0.1.1.yaml)
+pins `ghcr.io/saadshabir/ztap` to the immutable multi-architecture image digest
+verified by the release workflow.
 
 Check that an agent is Ready on each intended node. Then validate and apply
 your native `NetworkPolicy` documents; see [policy examples](policies.md#examples).
@@ -68,10 +65,10 @@ To deploy a source build, publish it to a registry reachable by your nodes:
 ```sh
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --build-arg VERSION=v0.1.0 \
+  --build-arg VERSION=v0.1.1 \
   --build-arg COMMIT="$(git rev-parse HEAD)" \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --tag your-registry/ztap:v0.1.0 \
+  --tag your-registry/ztap:v0.1.1 \
   --push .
 ```
 
@@ -318,7 +315,7 @@ kubectl -n ztap-system delete daemonset ztap-agent
 For a complete uninstall, delete the manifest you installed:
 
 ```sh
-kubectl delete -f ztap-agent-v0.1.0.yaml
+kubectl delete -f ztap-agent-v0.1.1.yaml
 ```
 
 This also deletes `ztap-system` and any other resources in that namespace.
