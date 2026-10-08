@@ -84,6 +84,63 @@ func TestCompileNativePoliciesExpandsSelectorsPortsAndAdditiveUnion(t *testing.T
 	assertRulePresent(t, result.PolicySet, Rule{CgroupID: 21, Direction: DirectionIngress, Peer: mustPrefix("10.0.0.4/32"), Protocol: ProtocolTCP, Port: 8443})
 }
 
+func TestCompileNativePoliciesPreservesDistinctRuleFields(t *testing.T) {
+	peerCIDRs := []string{"0.0.0.0/0", "10.0.0.0/8", "10.0.0.0/24", "10.0.0.0/32", "255.255.255.255/32"}
+	peers := make([]NativePeer, 0, len(peerCIDRs)+1)
+	for i := len(peerCIDRs) - 1; i >= 0; i-- {
+		peers = append(peers, NativePeer{IPBlock: &NativeIPBlock{CIDR: peerCIDRs[i]}})
+	}
+	// This noncanonical prefix duplicates the /24 peer after normalization.
+	peers = append(peers, NativePeer{IPBlock: &NativeIPBlock{CIDR: "10.0.0.17/24"}})
+	ports := []NativePort{
+		{Protocol: "UDP", Port: 1},
+		{Protocol: "TCP", Port: 65535},
+		{Protocol: "TCP", Port: 1},
+		{Protocol: "TCP", Port: 1},
+	}
+	policies := []NativeNetworkPolicy{
+		nativePolicy("default", "both-directions", map[string]string{"app": "web"}, []string{"Ingress", "Egress"},
+			[]NativeIngressRule{{From: peers, Ports: ports}},
+			[]NativeEgressRule{{To: peers, Ports: ports}}),
+	}
+	overlapping := policies[0]
+	metadata := *overlapping.Metadata
+	metadata.Name = "overlapping"
+	overlapping.Metadata = &metadata
+	policies = append(policies, overlapping)
+	cgroupIDs := []uint64{1, ^uint64(0)}
+	input := basicResolutionInput(ResolvedPod{
+		Namespace: "default", Name: "web", Labels: map[string]string{"app": "web"},
+		PodIPs: []netip.Addr{mustAddr("10.0.0.2")}, CgroupIDs: cgroupIDs, Local: true,
+	})
+	result, err := CompileNativePolicies(policies, input)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if len(result.Rejected) != 0 {
+		t.Fatalf("rejected = %#v, want none", result.Rejected)
+	}
+	var want []Rule
+	for _, cgroupID := range cgroupIDs {
+		for _, direction := range []Direction{DirectionEgress, DirectionIngress} {
+			for _, cidr := range peerCIDRs {
+				for _, transport := range []struct {
+					protocol uint8
+					port     uint16
+				}{{ProtocolTCP, 1}, {ProtocolTCP, 65535}, {ProtocolUDP, 1}} {
+					want = append(want, Rule{
+						CgroupID: cgroupID, Direction: direction, Peer: mustPrefix(cidr),
+						Protocol: transport.protocol, Port: transport.port,
+					})
+				}
+			}
+		}
+	}
+	if !reflect.DeepEqual(result.PolicySet.Rules, want) {
+		t.Fatalf("rules = %#v, want %#v", result.PolicySet.Rules, want)
+	}
+}
+
 func TestCompileNativePoliciesDeletionRemovesOnlyDeletedContribution(t *testing.T) {
 	dbPolicy := nativePolicy("default", "web-db", map[string]string{"app": "web"}, []string{"Egress"}, nil, []NativeEgressRule{{
 		To:    []NativePeer{{PodSelector: &NativeLabelSelector{MatchLabels: map[string]string{"app": "db"}}}},
