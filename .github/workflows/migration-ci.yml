@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       run_performance_preflight:
-        description: Run hosted Linux performance measurements without publishing a release
+        description: Run hosted Linux performance measurements and verify CI evidence
         type: boolean
         required: false
         default: false
@@ -442,8 +442,8 @@ jobs:
 
       - name: Build and load the agent image
         run: |
-          docker build --tag ztap:v0.1.0 .
-          kind load docker-image ztap:v0.1.0 --name ztap
+          make docker
+          kind load docker-image ztap:dev --name ztap
 
       - name: Exercise the shipped capability-only DaemonSet
         run: |
@@ -957,7 +957,7 @@ jobs:
           awk '/^apiVersion: networking\.k8s\.io\/v1$/ { seen=1 } seen { print }' \
             "$fixture" > "$policy_fixture"
           test "$(grep -c '^kind: NetworkPolicy$' "$policy_fixture")" -eq "$reference_policies"
-          docker run --rm -i ztap:v0.1.0 validate --file - < "$policy_fixture"
+          docker run --rm -i ztap:dev validate --file - < "$policy_fixture"
           kubectl apply --dry-run=client -f "$fixture" >/dev/null
           test "$(grep -c '^kind: Pod$' "$fixture")" -eq "$reference_pods"
           test "$(grep -c '^kind: NetworkPolicy$' "$fixture")" -eq "$reference_policies"
@@ -1887,7 +1887,6 @@ jobs:
           set -euo pipefail
           GOMAXPROCS=2 go run ./tools/phase5verify record-environment \
             --output performance-preflight-environment.txt \
-            --mode preflight \
             --phase5-run-id "$PHASE5_RUN_ID" \
             --migration-ci-run-id "$MIGRATION_CI_RUN_ID" \
             --commit "$GITHUB_SHA" \
@@ -1921,7 +1920,6 @@ jobs:
             PHASE5_EVIDENCE_DIR=dist \
             PHASE5_EXPECTED_RUN_ID="$PHASE5_RUN_ID" \
             PHASE5_ENVIRONMENT_FILE=performance-preflight-environment.txt \
-            PHASE5_ENVIRONMENT_MODE=preflight \
             PHASE5_EXPECTED_MIGRATION_RUN_ID="$MIGRATION_CI_RUN_ID" \
             PHASE5_EXPECTED_COMMIT="$GITHUB_SHA" \
             PHASE5_EXPECTED_REF="$GITHUB_REF" \

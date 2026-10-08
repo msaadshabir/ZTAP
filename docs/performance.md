@@ -1,21 +1,19 @@
-# Performance and release evidence
+# Performance evidence
 
-ZTAP's performance claims refer to a specific release, fixture, and Linux
+ZTAP's performance claims refer to a specific source commit, fixture, and Linux
 environment. Offline validation and Go-only benchmarks do not establish
 kernel-path performance or Kubernetes availability.
 
-- [Published v0.1.0 results](#published-v010-results)
-- [Verify the release archive](#verify-the-release-archive)
+- [Historical reference results](#historical-reference-results)
 - [Run measurements](#run-measurements)
 - [Evidence contract](#evidence-contract)
-- [Release gates](#release-gates)
+- [CI acceptance](#ci-acceptance)
 
-## Published v0.1.0 results
+## Historical reference results
 
-The [v0.1.0 release](https://github.com/saadshabir/ZTAP/releases/tag/v0.1.0)
-was published on September 24, 2026, at commit
+The measurements below were recorded on September 24, 2026, at source commit
 `1b196c068b9ea42d545303dc56c77c1c5dc1ff44`.
-[Release run 36055138894](https://github.com/saadshabir/ZTAP/actions/runs/36055138894)
+[Measurement run 36055138894](https://github.com/saadshabir/ZTAP/actions/runs/36055138894)
 produced fresh measurements and combined them with the privileged eBPF and
 capability-only Kubernetes evidence from the successful same-commit
 [Migration CI run 36052715910](https://github.com/saadshabir/ZTAP/actions/runs/36052715910).
@@ -49,61 +47,12 @@ probe through a controlled retry and subsequent blocked probe spanned
 2,056.943 ms. That is a probe-to-retry measurement, not a bound on watcher
 delay or failure recovery.
 
-Results are rounded from the archived raw data. They describe the release
-commit and fixtures, not later dependency updates, other nodes, or workloads.
+Results are rounded from the historical measurement data. They describe that
+source commit and those fixtures; later dependency updates, other nodes, and
+workloads require fresh measurements.
 Pod-start, restart, crash, and rollout measurements have different boundaries;
 none is a zero-gap availability guarantee. See
 [deployment limits](deployment.md#upgrade) for their operational meaning.
-
-Earlier runs [35810441612](https://github.com/saadshabir/ZTAP/actions/runs/35810441612)
-and [35812615459](https://github.com/saadshabir/ZTAP/actions/runs/35812615459)
-are historical pre-release measurements. Their smaller TCP samples and
-temporary Actions artifacts are superseded by the published release archive.
-
-## Verify the release archive
-
-The release retains
-[`ztap-v0.1.0-phase5-evidence.tar.gz`](https://github.com/saadshabir/ZTAP/releases/download/v0.1.0/ztap-v0.1.0-phase5-evidence.tar.gz),
-including the command log, environment record, ten measurement JSON files,
-and hosted eBPF and Kubernetes transcripts. Its published SHA-256 is:
-
-```text
-fb6d0bb097ff93db0d4afe8e4d2a5d12a018ff57669a65de41fd6309c694e25c
-```
-
-From the repository root, download it and inspect its checksum:
-
-```sh
-curl -fL -o ztap-v0.1.0-phase5-evidence.tar.gz \
-  https://github.com/saadshabir/ZTAP/releases/download/v0.1.0/ztap-v0.1.0-phase5-evidence.tar.gz
-shasum -a 256 ztap-v0.1.0-phase5-evidence.tar.gz
-```
-
-Compare the output with the digest above, then extract into a fresh directory
-and run the portable verifier with the release's expected provenance:
-
-```sh
-ztap_evidence_dir="$PWD/.cache/release-evidence/v0.1.0"
-mkdir -p "$ztap_evidence_dir"
-tar -xzf ztap-v0.1.0-phase5-evidence.tar.gz -C "$ztap_evidence_dir"
-make verify-performance \
-  PHASE5_EVIDENCE_DIR="$ztap_evidence_dir/dist" \
-  PHASE5_ENVIRONMENT_FILE="$ztap_evidence_dir/phase5-environment.txt" \
-  PHASE5_EXPECTED_RUN_ID=36055138894-1b196c068b9ea42d545303dc56c77c1c5dc1ff44 \
-  PHASE5_EXPECTED_COMMIT=1b196c068b9ea42d545303dc56c77c1c5dc1ff44 \
-  PHASE5_EXPECTED_REF=refs/tags/v0.1.0 \
-  PHASE5_EXPECTED_WORKFLOW_RUN_ID=36055138894 \
-  PHASE5_EXPECTED_WORKFLOW_EVENT=push \
-  PHASE5_EXPECTED_WORKFLOW_PATH=.github/workflows/release.yml \
-  PHASE5_EXPECTED_MIGRATION_RUN_ID=36052715910 \
-  PHASE5_EXPECTED_MIGRATION_BRANCH=main \
-  PHASE5_EXPECTED_ENVIRONMENT_ARCH=amd64 \
-  PHASE5_HOSTED_EBPF_DIR="$ztap_evidence_dir/dist/hosted-ebpf-engine-evidence" \
-  PHASE5_HOSTED_CAPABILITY_DIR="$ztap_evidence_dir/dist/hosted-capability-agent-evidence"
-```
-
-Success prints `validated Phase 5 evidence`. This validates retained data;
-it does not rerun Linux enforcement or require a Linux host.
 
 ## Run measurements
 
@@ -122,14 +71,14 @@ For before-and-after comparisons, use the same Go toolchain, host, and
 an idle host; concurrent builds and analysis can distort timings. Compare
 the median `ns/op` across runs alongside `B/op` and `allocs/op`, and record
 both source revisions and the environment. Local compiler improvements do
-not update the published release measurements above; those require fresh
+not update the historical reference measurements above; those require fresh
 Linux evidence for the changed commit.
 
 ### Linux performance harness
 
 Use a disposable Linux host with cgroup v2, mounted bpffs, and the privileges
 required by [the integration suite](development.md#test-layers). Pin the
-measurement process to CPUs `0,1`, as the release workflow does:
+measurement process to CPUs `0,1`, as the hosted performance job does:
 
 ```sh
 sudo --preserve-env=PATH,GOFLAGS,GOMODCACHE,GOCACHE \
@@ -144,10 +93,10 @@ cgroups and packets, while native-agent tests use a fake Kubernetes client.
 
 Local `make performance` does not produce the hosted kind resource, status,
 flow, or rollout transcripts. Verifying local JSON alone therefore does not
-establish the full release contract. If privileged execution leaves files
-owned by root, restore ownership before reusing the checkout.
+establish the full Linux/Kubernetes acceptance contract. If privileged execution
+leaves files owned by root, restore ownership before reusing the checkout.
 
-For a hosted preflight without publication, manually dispatch
+For a hosted measurement run, manually dispatch
 `.github/workflows/migration-ci.yml` with `run_performance_preflight=true`
 and `migration_ci_run_id` set to a successful push run for the exact selected
 commit and branch. The workflow downloads that run's eBPF and Kubernetes
@@ -205,18 +154,58 @@ performance tests in [`internal/enforcer`](../internal/enforcer) and
 [`internal/cli`](../internal/cli). Preserve field names and scope literals
 unless the producer and verifier are updated together.
 
-## Release gates
+## CI acceptance
 
-The [release workflow](../.github/workflows/release.yml) checks protected
-`main` and a successful same-commit `Migration CI` push run, validates both
-Linux image architectures, reruns performance measurements, and verifies
-the complete evidence bundle. Configure the repository secret
-`BRANCH_PROTECTION_TOKEN` with repository `Administration: read` permission;
-the gate fails if it cannot read the required status-check contexts.
+The [Migration CI workflow](../.github/workflows/migration-ci.yml) checks
+formatting, lint, vulnerabilities, generated bindings, portable tests,
+privileged Linux eBPF integration, the runtime image, and Kubernetes
+acceptance in a disposable kind cluster. It also builds the Linux arm64
+binary. Privileged jobs run only for trusted repository events.
 
-GoReleaser independently verifies the downloaded bundle and creates a draft
-release. The workflow publishes it only after the Linux amd64/arm64 image
-index and version aliases resolve to the verified digest and the immutable
-`ztap-agent-<tag>.yaml` manifest has been attached. The raw evidence archive
-is retained as `ztap-<tag>-phase5-evidence.tar.gz`, alongside the environment
-and exact release/source-workflow provenance inside the archive.
+The optional hosted performance job requires a successful push run for the
+same source commit and branch. It verifies fresh measurement JSON, the
+recorded Linux environment, and the downloaded eBPF/Kubernetes transcripts.
+It uploads the combined evidence as an Actions artifact retained for 14 days.
+
+### Verify downloaded hosted evidence
+
+Use a checkout of the measured source commit and run the following from the
+repository root. The download requires an authenticated GitHub CLI (`gh`)
+with access to the repository's Actions artifacts. Replace the four
+placeholders with the dispatch run ID, its selected commit and branch, and
+the successful push run ID supplied as `migration_ci_run_id`. Take these
+expected values from the workflow runs, rather than from the downloaded
+evidence itself.
+
+```sh
+ztap_measurement_run_id='<dispatch-run-id>'
+ztap_migration_run_id='<successful-push-run-id>'
+ztap_commit='<full-measured-commit-sha>'
+ztap_branch='<selected-branch>'
+ztap_evidence_dir="$(mktemp -d)"
+
+gh run download "$ztap_measurement_run_id" --repo saadshabir/ZTAP \
+  --name hosted-performance-preflight-evidence --dir "$ztap_evidence_dir"
+
+make verify-performance \
+  PHASE5_EVIDENCE_DIR="$ztap_evidence_dir/dist" \
+  PHASE5_EXPECTED_RUN_ID="${ztap_measurement_run_id}-${ztap_commit}" \
+  PHASE5_ENVIRONMENT_FILE="$ztap_evidence_dir/performance-preflight-environment.txt" \
+  PHASE5_EXPECTED_MIGRATION_RUN_ID="$ztap_migration_run_id" \
+  PHASE5_EXPECTED_COMMIT="$ztap_commit" \
+  PHASE5_EXPECTED_REF="refs/heads/$ztap_branch" \
+  PHASE5_EXPECTED_WORKFLOW_RUN_ID="$ztap_measurement_run_id" \
+  PHASE5_EXPECTED_WORKFLOW_EVENT=workflow_dispatch \
+  PHASE5_EXPECTED_WORKFLOW_PATH=.github/workflows/migration-ci.yml \
+  PHASE5_EXPECTED_MIGRATION_BRANCH="$ztap_branch" \
+  PHASE5_EXPECTED_ENVIRONMENT_ARCH=amd64 \
+  PHASE5_HOSTED_EBPF_DIR="$ztap_evidence_dir/dist/hosted-ebpf-engine-evidence" \
+  PHASE5_HOSTED_CAPABILITY_DIR="$ztap_evidence_dir/dist/hosted-capability-agent-evidence"
+```
+
+The environment file and both hosted directories enable provenance and
+transcript validation in addition to the ten measurement JSON files. Success
+prints `validated Phase 5 evidence`. Verification reads the retained data;
+it does not rerun Linux enforcement and can run on macOS. The downloaded
+files remain in `$ztap_evidence_dir`; retain them before the Actions artifact
+expires if you need a longer-lived copy.

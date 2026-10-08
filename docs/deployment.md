@@ -2,8 +2,8 @@
 
 ZTAP is deployed as one Linux DaemonSet. The maintained manifest is
 [`deployments/kubernetes/ztap-agent.yaml`](../deployments/kubernetes/ztap-agent.yaml).
-Its `ztap:v0.1.0` image is a local-build placeholder; published releases attach
-a separate manifest with the immutable image digest.
+Its `ztap:dev` image matches `make docker`. Load that image into a disposable
+local cluster, or use a copy of the manifest with your registry image's digest.
 
 ## Requirements
 
@@ -13,7 +13,7 @@ a separate manifest with the immutable image digest.
 - Kubernetes 1.36.x (CI uses `kindest/node:v1.36.4`) with a CNI that does not
   enforce NetworkPolicy. ZTAP does not disable another NetworkPolicy
   implementation; running both produces intersected enforcement and is
-  outside the first-release support contract.
+  outside the supported deployment contract.
 - Kubernetes access for the agent ServiceAccount to read Nodes, Namespaces,
   Pods, and NetworkPolicies.
 - Every non-host-network Pod in the cluster must explicitly drop `NET_RAW`
@@ -23,9 +23,10 @@ a separate manifest with the immutable image digest.
   The install manifest includes a cluster-wide, fail-closed
   `ValidatingAdmissionPolicy` and binding enforcing this prerequisite.
 - Linux amd64 or arm64 nodes with the eBPF capabilities required by the
-  kernel and runtime. The recorded release kernel is `6.17.0-1022-azure`;
-  see [the reference environment](performance.md#published-v010-results).
-- `kubectl` and `curl` on the machine used to install the agent.
+  kernel and runtime. The recorded reference kernel is `6.17.0-1022-azure`;
+  see [the reference environment](performance.md#historical-reference-results).
+- Docker with Buildx and `kubectl` on the machine used to build and install
+  the agent; kind when loading an image into a disposable kind cluster.
 
 The agent does not share the host network, PID, or IPC namespaces. It mounts
 the host cgroup hierarchy read-only, while bpffs and `/run/ztap` are writable
@@ -36,24 +37,23 @@ filesystem is read-only.
 
 ## Install
 
-The `v0.1.1` release includes the packet-socket admission guard and
-connection-state fixes. Update workload templates and recreate unsafe Pods
-as described below before installing it. The historical `v0.1.0` assets
-predate these fixes.
+Build from a source checkout. Update workload templates and recreate unsafe
+Pods as described below before applying the manifest. Inspect the
+checked-in manifest, including its cluster-wide admission guard.
 
-Download the `v0.1.1` install manifest, inspect it, then apply it:
+For an existing disposable kind cluster named `ztap` that meets the
+requirements above, build and load the local image:
 
 ```sh
-curl -fL -o ztap-agent-v0.1.1.yaml \
-  https://github.com/saadshabir/ZTAP/releases/download/v0.1.1/ztap-agent-v0.1.1.yaml
-kubectl apply -f ztap-agent-v0.1.1.yaml
+make docker
+kind load docker-image ztap:dev --name ztap
+kubectl apply -f deployments/kubernetes/ztap-agent.yaml
 kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=5m
 kubectl -n ztap-system get pods -l app=ztap-agent -o wide
 ```
 
-The [release asset](https://github.com/saadshabir/ZTAP/releases/download/v0.1.1/ztap-agent-v0.1.1.yaml)
-pins `ghcr.io/saadshabir/ztap` to the immutable multi-architecture image digest
-verified by the release workflow.
+For other clusters, use [your own registry image](#build-your-own-image).
+`make docker` builds the image locally; it does not push it or create a cluster.
 
 Check that an agent is Ready on each intended node. Then validate and apply
 your native `NetworkPolicy` documents; see [policy examples](policies.md#examples).
@@ -65,19 +65,18 @@ To deploy a source build, publish it to a registry reachable by your nodes:
 ```sh
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --build-arg VERSION=v0.1.1 \
-  --build-arg COMMIT="$(git rev-parse HEAD)" \
-  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --tag your-registry/ztap:v0.1.1 \
+  --tag your-registry/ztap:source \
   --push .
+docker buildx imagetools inspect your-registry/ztap:source
+cp deployments/kubernetes/ztap-agent.yaml ztap-agent.yaml
 ```
 
-Replace `your-registry` with your registry path. Change the source manifest's
-`image` field from `ztap:v0.1.0` to your published image, preferably by digest,
-then run:
+Replace `your-registry` with your registry path. In `ztap-agent.yaml`, change
+the `image` field from `ztap:dev` to `your-registry/ztap@sha256:<digest>` using
+the index digest reported by `imagetools inspect`, then run:
 
 ```sh
-kubectl apply -f deployments/kubernetes/ztap-agent.yaml
+kubectl apply -f ztap-agent.yaml
 kubectl -n ztap-system rollout status daemonset/ztap-agent
 kubectl -n ztap-system get pods -o wide
 ```
@@ -112,19 +111,16 @@ The image is built `CGO_ENABLED=0` from `scratch`. It contains the ZTAP binary
 and CA certificates only; use Kubernetes logs, probes, port forwarding, and
 node diagnostics rather than expecting a shell inside the container.
 
-`make docker` builds a local `ztap:dev` image only. It neither pushes an image
-nor changes the manifest; the local tag also differs from the manifest's
-placeholder. Load and retag the image explicitly for a disposable local
-cluster, or use the registry path above.
+The local `ztap:dev` tag is intended for disposable clusters. Use a digest
+in the registry-backed manifest so each node runs the same source build.
 
 ## Upgrade
 
-Download the next release's digest-pinned manifest, or update your source
-manifest to the new immutable digest. Apply that file (replace the filename
-below with the one you prepared):
+Build and push the updated source image, then update your prepared manifest
+to the new immutable digest. Apply that file:
 
 ```sh
-kubectl apply -f next-ztap-agent.yaml
+kubectl apply -f ztap-agent.yaml
 kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=5m
 kubectl -n ztap-system get pods -l app=ztap-agent -o wide
 ```
@@ -141,7 +137,7 @@ these intervals are zero-gap availability guarantees.
 
 ### Measured fail-open intervals
 
-The [published release evidence](performance.md#published-v010-results)
+The [historical reference evidence](performance.md#historical-reference-results)
 on Linux `6.17.0-1022-azure` recorded these separate boundaries for the
 250-Pod/25-policy/2,500-rule fixture:
 
@@ -315,8 +311,11 @@ kubectl -n ztap-system delete daemonset ztap-agent
 For a complete uninstall, delete the manifest you installed:
 
 ```sh
-kubectl delete -f ztap-agent-v0.1.1.yaml
+kubectl delete -f deployments/kubernetes/ztap-agent.yaml
 ```
+
+If you installed a registry-backed copy, use `kubectl delete -f ztap-agent.yaml`
+with that same file instead.
 
 This also deletes `ztap-system` and any other resources in that namespace.
 Deleting ZTAP does not delete your `NetworkPolicy` objects in other namespaces;

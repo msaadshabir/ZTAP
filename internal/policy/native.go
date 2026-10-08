@@ -76,7 +76,7 @@ type NativePeer struct {
 	IPBlock           *NativeIPBlock
 }
 
-// NativePort is the normalized numeric TCP/UDP port accepted by v0.1.0.
+// NativePort is the normalized numeric TCP/UDP port accepted by the compiler.
 type NativePort struct {
 	Protocol   string
 	Port       int
@@ -1055,10 +1055,10 @@ func validateNativePort(port NativePort, field string) error {
 		return NativeValidationError{Field: field + ".protocol", Message: "must be TCP or UDP"}
 	}
 	if strings.TrimSpace(port.PortName) != "" {
-		return NativeValidationError{Field: field + ".port", Message: "named ports are not supported in v0.1.0"}
+		return NativeValidationError{Field: field + ".port", Message: "named ports are not supported"}
 	}
 	if port.HasEndPort {
-		return NativeValidationError{Field: field + ".endPort", Message: "endPort is not supported in v0.1.0"}
+		return NativeValidationError{Field: field + ".endPort", Message: "endPort is not supported"}
 	}
 	if port.Port < 1 || port.Port > 65535 {
 		return NativeValidationError{Field: field + ".port", Message: "must be between 1 and 65535"}

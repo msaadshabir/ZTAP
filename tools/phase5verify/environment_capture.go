@@ -17,7 +17,6 @@ import (
 )
 
 type environmentContext struct {
-	Mode            string
 	RunID           string
 	MigrationRunID  string
 	Commit          string
@@ -44,7 +43,6 @@ type cgroup2Mount struct {
 func recordEnvironmentCommand(args []string) error {
 	flags := flag.NewFlagSet("record-environment", flag.ContinueOnError)
 	output := flags.String("output", "", "output environment evidence file")
-	mode := flags.String("mode", "", "workflow mode: preflight or release")
 	runID := flags.String("phase5-run-id", "", "Phase 5 evidence run ID")
 	migrationRunID := flags.String("migration-ci-run-id", "", "trusted Migration CI run ID")
 	commit := flags.String("commit", "", "source commit SHA")
@@ -63,7 +61,7 @@ func recordEnvironmentCommand(args []string) error {
 		return errors.New("--output is required")
 	}
 	context := environmentContext{
-		Mode: *mode, RunID: *runID, MigrationRunID: *migrationRunID, Commit: *commit, Ref: *ref,
+		RunID: *runID, MigrationRunID: *migrationRunID, Commit: *commit, Ref: *ref,
 		WorkflowRunID: *workflowRunID, WorkflowEvent: *workflowEvent, WorkflowPath: *workflowPath,
 		MigrationBranch: *migrationBranch,
 	}
@@ -85,7 +83,7 @@ func recordEnvironmentCommand(args []string) error {
 func captureEnvironment(context environmentContext) (map[string]string, []string) {
 	values := map[string]string{
 		"environment_schema":     "2",
-		"environment_mode":       context.Mode,
+		"environment_mode":       "preflight",
 		"timestamp_utc":          time.Now().UTC().Format(time.RFC3339Nano),
 		"phase5_run_id":          context.RunID,
 		"migration_ci_run_id":    context.MigrationRunID,

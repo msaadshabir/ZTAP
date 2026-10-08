@@ -48,10 +48,10 @@ func TestNativeAgentManifestsUseTheCapabilityOnlyProfile(t *testing.T) {
 			}
 			image, ok := container["image"].(string)
 			if !ok || strings.TrimSpace(image) == "" {
-				t.Fatalf("agent image = %#v, want an explicit release image", container["image"])
+				t.Fatalf("agent image = %#v, want an explicit source-built image", container["image"])
 			}
-			if strings.HasSuffix(image, ":latest") || (!strings.Contains(image, "@sha256:") && !strings.Contains(image, ":v0.1.0")) {
-				t.Fatalf("agent image = %q, want v0.1.0 or an immutable digest", image)
+			if image != "ztap:dev" && !strings.Contains(image, "@sha256:") {
+				t.Fatalf("agent image = %q, want ztap:dev or an immutable digest", image)
 			}
 			assertHTTPPort(t, container)
 			assertHTTPProbe(t, container, "livenessProbe", "/healthz")

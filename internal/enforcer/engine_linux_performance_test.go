@@ -106,7 +106,7 @@ type phase5FlowEvidence struct {
 // TestPhase5ReferenceFixtureApply measures the direct instance-owned engine
 // apply path for the documented 250-subject/2,500-rule fixture. It is gated
 // behind an explicit environment variable because the test creates real
-// cgroups and loads eBPF programs. The full Section 14.5 release evidence
+// cgroups and loads eBPF programs. The complete performance evidence
 // still requires agent activation, packet, resource, fail-open, and flow-loss
 // measurements outside this focused harness.
 func TestPhase5ReferenceFixtureApply(t *testing.T) {

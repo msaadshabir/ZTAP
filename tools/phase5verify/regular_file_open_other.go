@@ -8,7 +8,7 @@ import (
 )
 
 // openRegularFile provides the verifier's regular-file check on targets that
-// do not expose the Unix O_NOFOLLOW flag. Release verification itself runs on
+// do not expose the Unix O_NOFOLLOW flag. Hosted verification itself runs on
 // Linux; this fallback keeps the standard-library verifier buildable elsewhere.
 func openRegularFile(path, description string) (*os.File, error) {
 	file, err := os.Open(path)

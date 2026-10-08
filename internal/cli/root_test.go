@@ -98,9 +98,8 @@ func TestRootHelpListsOnlyPrimaryCommands(t *testing.T) {
 }
 
 func TestVersionCommandUsesStableRecord(t *testing.T) {
-	SetBuildInfo("9.9.9-test", "abc123", "2026-09-18T00:00:00Z")
-	t.Cleanup(func() { SetBuildInfo("dev", "unknown", "unknown") })
-	root := NewRootCmd("9.9.9-test")
+	t.Cleanup(func() { Version = "dev" })
+	root := NewRootCmd("test-version")
 	output := &bytes.Buffer{}
 	root.SetOut(output)
 	root.SetErr(&bytes.Buffer{})
@@ -109,7 +108,7 @@ func TestVersionCommandUsesStableRecord(t *testing.T) {
 		t.Fatalf("version command failed: %v", err)
 	}
 	line := strings.TrimSpace(output.String())
-	for _, field := range []string{"version=9.9.9-test", "commit=abc123", "build_date=2026-09-18T00:00:00Z", "go=", "os=", "arch="} {
+	for _, field := range []string{"version=test-version", "go=", "os=", "arch="} {
 		if !strings.Contains(line, field) {
 			t.Errorf("version output = %q, missing %q", line, field)
 		}

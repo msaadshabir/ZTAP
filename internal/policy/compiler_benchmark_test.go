@@ -13,7 +13,7 @@ const (
 )
 
 // TestReferenceFixtureShape protects the documented compiler workload from
-// drifting. This is deliberately a Go-only supporting fixture: release
+// drifting. This is deliberately a Go-only supporting fixture: product
 // acceptance still requires separate real-cgroup, real-packet, CPU, and
 // memory measurements on the documented Linux reference environment.
 func TestReferenceFixtureShape(t *testing.T) {

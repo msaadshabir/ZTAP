@@ -9,7 +9,7 @@ func FuzzHostedFixtureYAMLNeverPanics(f *testing.F) {
 	f.Add([]byte("a: &value\n  b: *value\n---\n"))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		// Keep ordinary seed execution bounded. The release verifier already
+		// Keep ordinary seed execution bounded. The evidence verifier already
 		// applies a 4 MiB input limit; fuzzing does not need to duplicate a
 		// large-input stress test in every package test run.
 		if len(data) > 64<<10 {
