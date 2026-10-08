@@ -529,16 +529,25 @@ spec:
 }
 
 func TestExpandNativeIPBlock(t *testing.T) {
-	prefixes, err := ExpandNativeIPBlock(NativeIPBlock{
-		CIDR:   "10.0.0.0/30",
-		Except: []string{"10.0.0.0/31"},
-	})
-	if err != nil {
-		t.Fatalf("ExpandNativeIPBlock failed: %v", err)
-	}
-	want := netip.MustParsePrefix("10.0.0.2/31")
-	if len(prefixes) != 1 || prefixes[0] != want {
-		t.Fatalf("prefixes = %v, want [%s]", prefixes, want)
+	for _, test := range []struct {
+		block NativeIPBlock
+		want  string
+	}{
+		{NativeIPBlock{CIDR: "10.0.0.0/30", Except: []string{"10.0.0.0/31"}}, "10.0.0.2/31"},
+		{NativeIPBlock{CIDR: "10.0.0.17/24"}, "10.0.0.0/24"},
+		{NativeIPBlock{CIDR: "203.0.113.9/0", Except: []string{}}, "0.0.0.0/0"},
+		{NativeIPBlock{CIDR: "255.255.255.255/32"}, "255.255.255.255/32"},
+	} {
+		t.Run(test.block.CIDR, func(t *testing.T) {
+			prefixes, err := ExpandNativeIPBlock(test.block)
+			if err != nil {
+				t.Fatalf("ExpandNativeIPBlock failed: %v", err)
+			}
+			want := netip.MustParsePrefix(test.want)
+			if len(prefixes) != 1 || prefixes[0] != want {
+				t.Fatalf("prefixes = %v, want [%s]", prefixes, want)
+			}
+		})
 	}
 }
 

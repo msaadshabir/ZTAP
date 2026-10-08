@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -143,11 +144,22 @@ type subjectState struct {
 	podKey  string
 }
 
+// ruleKey keeps deduplication keys free of netip.Prefix's IPv6 and zone state.
+// Peers have already been resolved to canonical IPv4 prefixes by addRules.
+type ruleKey struct {
+	cgroupID   uint64
+	peer       [4]byte
+	port       uint16
+	prefixBits uint8
+	direction  Direction
+	protocol   uint8
+}
+
 type compileState struct {
 	input      ResolutionInput
 	namespaces map[string]map[string]string
 	subjects   map[uint64]*subjectState
-	rules      map[Rule]struct{}
+	rules      map[ruleKey]struct{}
 	bypasses   int
 	rejected   []RejectedPolicy
 }
@@ -165,7 +177,7 @@ func CompileNativePolicies(policies []NativeNetworkPolicy, input ResolutionInput
 		input:      normalized,
 		namespaces: namespaces,
 		subjects:   make(map[uint64]*subjectState),
-		rules:      make(map[Rule]struct{}),
+		rules:      make(map[ruleKey]struct{}),
 		bypasses:   len(normalized.NodeIPs),
 	}
 	if observed := state.ruleEntryCount(); observed > MaxPolicyRules {
@@ -225,6 +237,7 @@ func normalizeResolutionInput(input ResolutionInput) (ResolutionInput, map[strin
 	}
 
 	namespaces := make(map[string]map[string]string, len(normalized.Namespaces))
+	// Label maps are only read, so retain them from the immutable input snapshot.
 	for i := range normalized.Namespaces {
 		namespace := &normalized.Namespaces[i]
 		if strings.TrimSpace(namespace.Name) == "" {
@@ -233,7 +246,6 @@ func normalizeResolutionInput(input ResolutionInput) (ResolutionInput, map[strin
 		if previous, exists := namespaces[namespace.Name]; exists && !labels.Equals(labels.Set(previous), labels.Set(namespace.Labels)) {
 			return ResolutionInput{}, nil, ResolutionError{Field: fmt.Sprintf("namespaces[%q]", namespace.Name), Message: "has conflicting duplicate entries"}
 		}
-		namespace.Labels = cloneLabels(namespace.Labels)
 		namespaces[namespace.Name] = namespace.Labels
 	}
 
@@ -258,7 +270,6 @@ func normalizeResolutionInput(input ResolutionInput) (ResolutionInput, map[strin
 			return ResolutionInput{}, nil, ResolutionError{Field: fmt.Sprintf("pods[%q]", key), Message: "has a duplicate entry"}
 		}
 		podKeys[key] = struct{}{}
-		pod.Labels = cloneLabels(pod.Labels)
 		pod.PodIPs = append([]netip.Addr(nil), pod.PodIPs...)
 		for j, address := range pod.PodIPs {
 			if !address.IsValid() {
@@ -307,10 +318,10 @@ func (s *compileState) compilePolicy(policy *NativeNetworkPolicy) error {
 
 	for _, pod := range selected {
 		quarantined := Direction(0)
-		if podHasIPv6(pod) {
+		if podHasIPv6(*pod) {
 			quarantined = directions
 		}
-		if err := s.addSelectedSubjects([]ResolvedPod{pod}, directions, quarantined); err != nil {
+		if err := s.addSelectedSubjects([]*ResolvedPod{pod}, directions, quarantined); err != nil {
 			return err
 		}
 	}
@@ -332,7 +343,7 @@ func (s *compileState) compilePolicy(policy *NativeNetworkPolicy) error {
 	return nil
 }
 
-func (s *compileState) selectedLocalPods(policy *NativeNetworkPolicy) ([]ResolvedPod, error) {
+func (s *compileState) selectedLocalPods(policy *NativeNetworkPolicy) ([]*ResolvedPod, error) {
 	if policy == nil || policy.Spec == nil || policy.Spec.PodSelector == nil {
 		return nil, errors.New("subject selector is unavailable")
 	}
@@ -341,8 +352,9 @@ func (s *compileState) selectedLocalPods(policy *NativeNetworkPolicy) ([]Resolve
 		return nil, err
 	}
 	namespace := nativePolicyNamespace(policy)
-	selected := make([]ResolvedPod, 0)
-	for _, pod := range s.input.Pods {
+	selected := make([]*ResolvedPod, 0)
+	for i := range s.input.Pods {
+		pod := &s.input.Pods[i]
 		if !pod.Local || pod.HostNetwork || pod.Namespace != namespace {
 			continue
 		}
@@ -353,9 +365,10 @@ func (s *compileState) selectedLocalPods(policy *NativeNetworkPolicy) ([]Resolve
 	return selected, nil
 }
 
-func (s *compileState) localPodsInNamespace(namespace string) []ResolvedPod {
-	result := make([]ResolvedPod, 0)
-	for _, pod := range s.input.Pods {
+func (s *compileState) localPodsInNamespace(namespace string) []*ResolvedPod {
+	result := make([]*ResolvedPod, 0)
+	for i := range s.input.Pods {
+		pod := &s.input.Pods[i]
 		if pod.Local && !pod.HostNetwork && pod.Namespace == namespace {
 			result = append(result, pod)
 		}
@@ -363,18 +376,18 @@ func (s *compileState) localPodsInNamespace(namespace string) []ResolvedPod {
 	return result
 }
 
-func (s *compileState) addSelectedSubjects(pods []ResolvedPod, isolated, quarantined Direction) error {
+func (s *compileState) addSelectedSubjects(pods []*ResolvedPod, isolated, quarantined Direction) error {
 	for _, pod := range pods {
 		switch pod.CgroupResolutionFailure {
 		case CgroupResolutionFailureNone:
 		case CgroupResolutionFailureNotFound:
 			return ResolutionError{
-				Field:   fmt.Sprintf("pods[%q].cgroupIDs", podKey(pod)),
+				Field:   fmt.Sprintf("pods[%q].cgroupIDs", podKey(*pod)),
 				Message: "contains a running container whose cgroup could not be resolved",
 			}
 		case CgroupResolutionFailureUnsupportedRuntime:
 			return ResolutionError{
-				Field:   fmt.Sprintf("pods[%q].cgroupIDs", podKey(pod)),
+				Field:   fmt.Sprintf("pods[%q].cgroupIDs", podKey(*pod)),
 				Message: "contains a running container with an unsupported runtime identity",
 			}
 		}
@@ -387,7 +400,7 @@ func (s *compileState) addSelectedSubjects(pods []ResolvedPod, isolated, quarant
 		for _, cgroupID := range pod.CgroupIDs {
 			entry, exists := s.subjects[cgroupID]
 			if !exists {
-				entry = &subjectState{subject: Subject{CgroupID: cgroupID, PodIPs: uniqueSortedAddrs(ipv4)}, podKey: podKey(pod)}
+				entry = &subjectState{subject: Subject{CgroupID: cgroupID, PodIPs: uniqueSortedAddrs(ipv4)}, podKey: podKey(*pod)}
 				s.subjects[cgroupID] = entry
 				s.bypasses += len(entry.subject.PodIPs)
 				if len(s.subjects) > MaxPolicySubjects {
@@ -396,7 +409,7 @@ func (s *compileState) addSelectedSubjects(pods []ResolvedPod, isolated, quarant
 				if observed := s.ruleEntryCount(); observed > MaxPolicyRules {
 					return CapacityError{Resource: "rule", Observed: observed, Allowed: MaxPolicyRules}
 				}
-			} else if entry.podKey != podKey(pod) {
+			} else if entry.podKey != podKey(*pod) {
 				return ResolutionError{Field: fmt.Sprintf("cgroupID[%d]", cgroupID), Message: "belongs to multiple pods"}
 			}
 			entry.subject.Isolated |= isolated
@@ -406,7 +419,7 @@ func (s *compileState) addSelectedSubjects(pods []ResolvedPod, isolated, quarant
 	return nil
 }
 
-func (s *compileState) addRules(policy *NativeNetworkPolicy, subjects []ResolvedPod, direction Direction, peers []NativePeer, ports []NativePort) error {
+func (s *compileState) addRules(policy *NativeNetworkPolicy, subjects []*ResolvedPod, direction Direction, peers []NativePeer, ports []NativePort) error {
 	prefixes, err := s.resolvePeers(policy, peers)
 	if err != nil {
 		return err
@@ -422,7 +435,10 @@ func (s *compileState) addRules(policy *NativeNetworkPolicy, subjects []Resolved
 					if port.Protocol == "UDP" {
 						protocol = ProtocolUDP
 					}
-					rule := Rule{CgroupID: cgroupID, Direction: direction, Peer: prefix, Protocol: protocol, Port: uint16(port.Port)} // #nosec G115 -- the port range is checked immediately above.
+					rule := ruleKey{
+						cgroupID: cgroupID, direction: direction, peer: prefix.Addr().As4(),
+						prefixBits: uint8(prefix.Bits()), protocol: protocol, port: uint16(port.Port), // #nosec G115 -- prefixes are IPv4 and the port range is checked immediately above.
+					}
 					if _, exists := s.rules[rule]; exists {
 						continue
 					}
@@ -533,11 +549,15 @@ func (s *compileState) policySet() PolicySet {
 		subject.PodIPs = append([]netip.Addr(nil), subject.PodIPs...)
 		set.Subjects = append(set.Subjects, subject)
 	}
-	for rule := range s.rules {
-		set.Rules = append(set.Rules, rule)
+	for key := range s.rules {
+		set.Rules = append(set.Rules, Rule{
+			CgroupID: key.cgroupID, Direction: key.direction,
+			Peer:     netip.PrefixFrom(netip.AddrFrom4(key.peer), int(key.prefixBits)),
+			Protocol: key.protocol, Port: key.port,
+		})
 	}
 	sort.Slice(set.Subjects, func(i, j int) bool { return set.Subjects[i].CgroupID < set.Subjects[j].CgroupID })
-	sort.Slice(set.Rules, func(i, j int) bool { return lessRule(set.Rules[i], set.Rules[j]) })
+	slices.SortFunc(set.Rules, compareRules)
 	return set
 }
 
@@ -693,17 +713,6 @@ func podHasIPv6(pod ResolvedPod) bool {
 
 func podKey(pod ResolvedPod) string { return pod.Namespace + "/" + pod.Name }
 
-func cloneLabels(source map[string]string) map[string]string {
-	if source == nil {
-		return nil
-	}
-	result := make(map[string]string, len(source))
-	for key, value := range source {
-		result[key] = value
-	}
-	return result
-}
-
 func uniqueSortedAddrs(values []netip.Addr) []netip.Addr {
 	result := make([]netip.Addr, len(values))
 	for i, value := range values {
@@ -734,21 +743,21 @@ func uniqueSortedUint64(values []uint64) []uint64 {
 	return slices.Compact(result)
 }
 
-func lessRule(left, right Rule) bool {
+func compareRules(left, right Rule) int {
 	if left.CgroupID != right.CgroupID {
-		return left.CgroupID < right.CgroupID
+		return cmp.Compare(left.CgroupID, right.CgroupID)
 	}
 	if left.Direction != right.Direction {
-		return left.Direction < right.Direction
+		return cmp.Compare(left.Direction, right.Direction)
 	}
-	if left.Peer.Addr() != right.Peer.Addr() {
-		return left.Peer.Addr().Less(right.Peer.Addr())
+	if order := left.Peer.Addr().Compare(right.Peer.Addr()); order != 0 {
+		return order
 	}
 	if left.Peer.Bits() != right.Peer.Bits() {
-		return left.Peer.Bits() < right.Peer.Bits()
+		return cmp.Compare(left.Peer.Bits(), right.Peer.Bits())
 	}
 	if left.Protocol != right.Protocol {
-		return left.Protocol < right.Protocol
+		return cmp.Compare(left.Protocol, right.Protocol)
 	}
-	return left.Port < right.Port
+	return cmp.Compare(left.Port, right.Port)
 }

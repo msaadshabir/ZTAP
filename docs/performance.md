@@ -74,6 +74,28 @@ both source revisions and the environment. Local compiler improvements do
 not update the historical reference measurements above; those require fresh
 Linux evidence for the changed commit.
 
+### Local compiler comparison (October 8, 2026)
+
+On an Apple M4 running macOS `27.0.1`, Go `1.27.1` (`darwin/arm64`), and
+`GOMAXPROCS=2`, the reference compiler fixture was measured before and after
+the compact IPv4 rule keys, typed rule sorting, Pod references, read-only
+label reuse, and exclusion-free CIDR fast path. The baseline was commit
+`210e0e68b41e9c7d2d37e8ffb8d1352cf2bfe9ea`.
+
+Both versions were compiled into test binaries and run sequentially with
+`-test.run '^$' -test.bench '^BenchmarkCompileReferenceFixture$' -test.benchmem
+-test.count=5`. The table reports the median of each metric across five runs:
+
+| Compiler metric | Before | After | Reduction |
+| --- | ---: | ---: | ---: |
+| Time per compile | 976,952 ns | 706,583 ns | 27.7% |
+| Allocated bytes per compile | 1,185,521 B | 726,073 B | 38.8% |
+| Allocations per compile | 5,330 | 3,826 | 28.2% |
+
+The fixture remains 250 Pods, 25 policies, and 2,500 ordinary rules. This
+comparison measures the Go compiler only; Linux reconciliation, packet,
+resource, and availability results require a fresh Linux measurement run.
+
 ### Linux performance harness
 
 Use a disposable Linux host with cgroup v2, mounted bpffs, and the privileges

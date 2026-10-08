@@ -1077,6 +1077,9 @@ func ExpandNativeIPBlock(block NativeIPBlock) ([]netip.Prefix, error) {
 	if !base.Addr().Is4() {
 		return nil, errors.New("only IPv4 CIDRs are supported")
 	}
+	if len(block.Except) == 0 {
+		return []netip.Prefix{base}, nil
+	}
 
 	type addressRange struct {
 		start uint64
