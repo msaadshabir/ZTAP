@@ -147,13 +147,12 @@ git diff --check
 The merge workflow also reruns `go mod tidy` and fails if it changes
 `go.mod` or `go.sum`.
 
-## Performance and release evidence
+## Performance evidence
 
-See [performance and release evidence](performance.md) for the published
-`v0.1.0` measurements, reference environment, compiler benchmark, Linux
-harness, hosted preflight, and archive-verification commands. Release numbers
-refer to the tagged commit; later dependency updates need their own Linux
-measurements.
+See [performance evidence](performance.md) for historical reference
+measurements, the reference environment, compiler benchmark, Linux harness,
+hosted preflight, and verification commands. Measurements refer to their
+recorded source commit; later dependency updates need their own Linux evidence.
 
 ## Adding policy behavior
 
@@ -162,7 +161,7 @@ or update validator tests for both accepted and rejected forms, then add a
 kernel-neutral compiler test before changing the eBPF representation. Keep
 unsupported behavior as a typed validation error; do not add a permissive
 fallback, compatibility flag, or dormant informer. Update `docs/policies.md`
-and the relevant deployment or release note when the supported contract
+and the relevant deployment guidance when the supported contract
 changes.
 
 ## Contribution guidance

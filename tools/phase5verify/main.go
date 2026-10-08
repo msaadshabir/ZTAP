@@ -435,7 +435,6 @@ func main() {
 	directory := flag.String("dir", "dist", "directory containing Phase 5 JSON evidence")
 	expectedRunID := flag.String("run-id", "", "expected run ID shared by the Phase 5 artifacts")
 	environmentPath := flag.String("environment", "", "optional phase5-environment.txt path to validate")
-	environmentMode := flag.String("environment-mode", "release", "environment provenance mode: release or preflight")
 	expectedMigrationRunID := flag.String("migration-ci-run-id", "", "expected trusted Migration CI workflow run ID")
 	expectedCommit := flag.String("commit", "", "expected source commit recorded in the environment file")
 	expectedRef := flag.String("ref", "", "expected workflow ref recorded in the environment file")
@@ -453,7 +452,7 @@ func main() {
 	}
 	if strings.TrimSpace(*environmentPath) != "" {
 		if err := verifyEnvironmentFileForContext(*environmentPath, environmentContext{
-			Mode: *environmentMode, RunID: *expectedRunID, MigrationRunID: *expectedMigrationRunID,
+			RunID: *expectedRunID, MigrationRunID: *expectedMigrationRunID,
 			Commit: *expectedCommit, Ref: *expectedRef, WorkflowRunID: *expectedWorkflowRunID,
 			WorkflowEvent: *expectedWorkflowEvent, WorkflowPath: *expectedWorkflowPath,
 			MigrationBranch: *expectedMigrationBranch, Arch: *expectedEnvironmentArch,
@@ -917,18 +916,6 @@ func readEnvironmentValues(path string) (values map[string]string, err error) {
 	return values, nil
 }
 
-func verifyEnvironmentFile(path, expectedRunID, expectedMigrationRunID, expectedCommit, expectedReleaseRef, expectedArch string) error {
-	expectedRef := ""
-	if expectedReleaseRef != "" {
-		expectedRef = "refs/tags/" + expectedReleaseRef
-	}
-	return verifyEnvironmentFileForContext(path, environmentContext{
-		Mode: "release", RunID: expectedRunID, MigrationRunID: expectedMigrationRunID,
-		Commit: expectedCommit, Ref: expectedRef, WorkflowEvent: "push",
-		WorkflowPath: ".github/workflows/release.yml", Arch: expectedArch,
-	})
-}
-
 func verifyEnvironmentFileForContext(path string, expected environmentContext) error {
 	values, err := readEnvironmentValues(path)
 	if err != nil {
@@ -981,8 +968,8 @@ func verifyEnvironmentFileForContext(path string, expected environmentContext) e
 	if values["environment_schema"] != "2" {
 		return fmt.Errorf("environment_schema %q is unsupported", values["environment_schema"])
 	}
-	if values["environment_mode"] != expected.Mode || (expected.Mode != "preflight" && expected.Mode != "release") {
-		return fmt.Errorf("environment_mode %q does not match expected %q", values["environment_mode"], expected.Mode)
+	if values["environment_mode"] != "preflight" {
+		return fmt.Errorf("environment_mode %q is unsupported", values["environment_mode"])
 	}
 	if expected.RunID != "" && values["phase5_run_id"] != expected.RunID {
 		return fmt.Errorf("phase5_run_id %q does not match expected %q", values["phase5_run_id"], expected.RunID)
@@ -1025,8 +1012,11 @@ func verifyEnvironmentFileForContext(path string, expected environmentContext) e
 	if values["migration_ci_workflow"] != ".github/workflows/migration-ci.yml" || values["migration_ci_event"] != "push" {
 		return errors.New("trusted Migration CI provenance is not a workflow push")
 	}
-	if !validRefForMode(values["environment_mode"], values["ref"], values["migration_ci_branch"]) {
-		return fmt.Errorf("ref %q, migration_ci_branch %q, and mode %q are inconsistent", values["ref"], values["migration_ci_branch"], values["environment_mode"])
+	if values["workflow_path"] != ".github/workflows/migration-ci.yml" || values["workflow_event"] != "workflow_dispatch" {
+		return errors.New("measurement provenance is not a Migration CI workflow dispatch")
+	}
+	if !validWorkflowRef(values["ref"], values["migration_ci_branch"]) {
+		return fmt.Errorf("ref %q and migration_ci_branch %q are inconsistent", values["ref"], values["migration_ci_branch"])
 	}
 	var captureErrors []string
 	if err := json.Unmarshal([]byte(values["capture_errors_json"]), &captureErrors); err != nil {
@@ -1065,36 +1055,8 @@ func verifyEnvironmentFileForContext(path string, expected environmentContext) e
 	return nil
 }
 
-func validRefForMode(mode, ref, migrationBranch string) bool {
-	switch mode {
-	case "release":
-		return strings.HasPrefix(ref, "refs/tags/") && validReleaseRef(strings.TrimPrefix(ref, "refs/tags/")) && migrationBranch == "main"
-	case "preflight":
-		return strings.HasPrefix(ref, "refs/heads/") && strings.TrimPrefix(ref, "refs/heads/") == migrationBranch
-	default:
-		return false
-	}
-}
-
-func validReleaseRef(value string) bool {
-	if !strings.HasPrefix(value, "v") {
-		return false
-	}
-	parts := strings.Split(strings.TrimPrefix(value, "v"), ".")
-	if len(parts) != 3 {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" || (len(part) > 1 && part[0] == '0') {
-			return false
-		}
-		for _, character := range part {
-			if character < '0' || character > '9' {
-				return false
-			}
-		}
-	}
-	return true
+func validWorkflowRef(ref, migrationBranch string) bool {
+	return migrationBranch != "" && strings.HasPrefix(ref, "refs/heads/") && strings.TrimPrefix(ref, "refs/heads/") == migrationBranch
 }
 
 func validCommit(value string) bool {
@@ -3191,7 +3153,7 @@ func validateEnvironment(name, runID, timestamp, goVersion, goos, goarch string,
 		return fmt.Errorf("%s evidence is missing timestamp or Go version", name)
 	}
 	if !validGoVersionToken(goVersion) {
-		return fmt.Errorf("%s evidence Go version %q is not a dotted release token", name, goVersion)
+		return fmt.Errorf("%s evidence Go version %q is not a dotted version token", name, goVersion)
 	}
 	if _, err := time.Parse(time.RFC3339Nano, timestamp); err != nil {
 		return fmt.Errorf("%s evidence timestamp %q is not RFC3339: %v", name, timestamp, err)

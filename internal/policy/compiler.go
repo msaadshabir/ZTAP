@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	// MaxPolicySubjects and MaxPolicyRules are the v0.1.0 active-slot limits.
+	// MaxPolicySubjects and MaxPolicyRules are the active-slot limits.
 	MaxPolicySubjects = 16_384
 	MaxPolicyRules    = 16_384
 

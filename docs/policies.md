@@ -77,7 +77,7 @@ IPv6, or an unsupported protocol; ICMP is not an allowed policy protocol.
 
 ## Supported policy matrix
 
-| Native behavior | `v0.1.0` result | Notes |
+| Native behavior | Result | Notes |
 | --- | --- | --- |
 | IPv4 `ipBlock`, including bounded `except` ranges | Supported | Matches the address visible at the cgroup hook. |
 | `podSelector` and `namespaceSelector` peers | Supported | Selector results are resolved into cluster-wide IPv4 Pod addresses; only enforced subjects are node-local. |
@@ -85,7 +85,7 @@ IPv6, or an unsupported protocol; ICMP is not an allowed policy protocol.
 | Empty directional rule list | Supported | Implements default-deny for the selected direction. |
 | Numeric TCP/UDP destination ports | Supported | Omitted protocol defaults to TCP. |
 | Explicit IPv4 ClusterIP `ipBlock` | Supported | No Service or EndpointSlice frontend synthesis occurs. |
-| Named ports or `endPort` ranges | Rejected | Destination-Pod port resolution is post-release scope. |
+| Named ports or `endPort` ranges | Rejected | Destination-Pod port resolution is outside the supported scope. |
 | SCTP or IPv6 CIDRs | Rejected | Isolated unsupported traffic is denied. |
 | Selected IPv6 or dual-stack Pod | Quarantined | The selected directions are quarantined; IPv4 node/self exceptions still apply. |
 | Peerless or portless allow-all rule | Rejected | Broad implicit wildcards are not approximated. |
@@ -149,7 +149,7 @@ For example, a named port is rejected with a field-specific error rather than
 being guessed:
 
 ```text
-document 1 (default/web-to-db): spec.egress[0].ports[0].port: named ports are not supported in v0.1.0
+document 1 (default/web-to-db): spec.egress[0].ports[0].port: named ports are not supported
 ```
 
 Duplicate YAML keys, unknown fields, malformed selectors, unrelated objects,

@@ -141,7 +141,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: agent
-          image: ztap:v0.1.0
+          image: ztap:dev
           imagePullPolicy: IfNotPresent
           args:
             - agent

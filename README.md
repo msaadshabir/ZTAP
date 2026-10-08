@@ -4,7 +4,7 @@ ZTAP is a Linux node agent that compiles the supported subset of Kubernetes
 `NetworkPolicy` and enforces it with per-container eBPF programs. The product
 is intentionally small: one binary, one DaemonSet, and explicit command-line
 flags. It is experimental software; the documented Linux and
-Kubernetes acceptance gates are part of the release contract.
+Kubernetes acceptance gates are part of the supported product contract.
 
 Enforcement is process-owned: new containers can transmit before they are
 classified, and agent restarts or DaemonSet updates temporarily fail open.
@@ -15,7 +15,7 @@ See [deployment limits](docs/deployment.md#upgrade) before installing it.
 | [Deployment](docs/deployment.md) | Install, upgrade, inspect readiness and flows, troubleshoot, and remove the agent |
 | [Policies](docs/policies.md) | Supported semantics, selector behavior, examples, and offline validation |
 | [Development](docs/development.md) | Build, test, regenerate eBPF bindings, and contribute |
-| [Performance and release evidence](docs/performance.md) | Published measurements, fixture limits, and evidence verification |
+| [Performance evidence](docs/performance.md) | Reference measurements, fixture limits, and evidence verification |
 
 ## Architecture
 
@@ -67,6 +67,8 @@ From a source checkout, build a binary for your current host and validate a
 policy offline:
 
 ```sh
+git clone https://github.com/saadshabir/ZTAP.git
+cd ZTAP
 make build
 ./bin/ztap version
 ./bin/ztap validate --file examples/native/web-to-db.yaml
@@ -79,25 +81,28 @@ require Linux. The Dockerfile builds a Linux image on either host; see
 [source builds](docs/deployment.md#build-your-own-image) to publish one.
 
 For a cluster that meets the [deployment requirements](docs/deployment.md#requirements),
-use the `v0.1.1` release manifest. It includes a cluster-wide admission guard:
+build a Linux image from the checkout and use the checked-in manifest.
+It includes a cluster-wide admission guard:
 non-host-network containers must drop `NET_RAW` (or `ALL`), disable privilege
 escalation, and avoid privileged mode and added `NET_RAW` or `SYS_ADMIN`.
 Existing unsafe Pods must be recreated; the agent refuses enforcement
 readiness while they remain. See [deployment requirements](docs/deployment.md#requirements)
 and [source-build installation](docs/deployment.md#build-your-own-image).
 
-The release manifest pins the image digest:
+For an existing disposable kind cluster named `ztap`, build and load the
+image before applying the manifest:
 
 ```sh
-curl -fL -o ztap-agent-v0.1.1.yaml \
-  https://github.com/saadshabir/ZTAP/releases/download/v0.1.1/ztap-agent-v0.1.1.yaml
-kubectl apply -f ztap-agent-v0.1.1.yaml
-kubectl -n ztap-system rollout status daemonset/ztap-agent
+make docker
+kind load docker-image ztap:dev --name ztap
+kubectl apply -f deployments/kubernetes/ztap-agent.yaml
+kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=5m
 ```
 
-The checked-in source manifest uses `ztap:v0.1.0` as a local-build placeholder.
-Replace that placeholder with your source-built image before applying the
-source manifest.
+The manifest uses the same `ztap:dev` tag as `make docker`. For other
+clusters, publish your source-built image to a registry reachable by the
+nodes and set the manifest's image to its digest; see
+[source builds](docs/deployment.md#build-your-own-image).
 
 The DaemonSet mounts the host cgroup v2 hierarchy and bpffs, requests only the
 capabilities needed by the eBPF engine, and exposes health, readiness, and
@@ -117,16 +122,17 @@ For reading flows inside the DaemonSet, see
 
 ## Measured Linux reference results
 
-The published [v0.1.0 release](https://github.com/saadshabir/ZTAP/releases/tag/v0.1.0)
-retains raw evidence for the 250-Pod/25-policy/2,500-rule fixture. Native
+Historical measurements at commit
+`1b196c068b9ea42d545303dc56c77c1c5dc1ff44` used the
+250-Pod/25-policy/2,500-rule fixture. Native
 reconciliation p95 was 146.319 ms using a synchronized fake informer cache
 and real engine apply, excluding API list latency and the fixed debounce.
 Three loopback samples measured a 0.996 µs UDP p99 increase and a maximum
 4.113% TCP throughput regression. The same-node kind DaemonSet rollout had
 a 1,652 ms fail-open interval.
 
-These results apply to the measured fixtures and release commit. See
-[performance and release evidence](docs/performance.md) for the environment,
+These results apply to the measured fixtures and source commit. See
+[performance evidence](docs/performance.md) for the environment,
 scope, resource and flow results, and verification commands.
 
 ## Supported policy model
@@ -166,4 +172,4 @@ See [development](docs/development.md) for prerequisites and test layers.
 
 ## License
 
-ZTAP is released under the MIT license; see [`LICENSE`](LICENSE).
+ZTAP uses the MIT license; see [`LICENSE`](LICENSE).

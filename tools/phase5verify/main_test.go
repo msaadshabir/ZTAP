@@ -679,18 +679,22 @@ func TestVerifyEnvironmentFileAcceptsReferenceProvenance(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "phase5-environment.txt")
 	commit := strings.Repeat("a", 40)
-	values := validEnvironmentValues("release")
+	values := validEnvironmentValues()
 	writeEnvironmentFixture(t, path, values)
-	if err := verifyEnvironmentFile(path, "github-77-commit", "12345", commit, "v0.1.0", "amd64"); err != nil {
+	if err := verifyEnvironmentFileForContext(path, validEnvironmentContext()); err != nil {
 		t.Fatalf("valid environment evidence rejected: %v", err)
 	}
-	if err := verifyEnvironmentFile(path, "github-77-commit", "12345", commit, "v0.2.0", "amd64"); err == nil {
-		t.Fatal("environment evidence accepted an unexpected release reference")
+	unexpectedRef := validEnvironmentContext()
+	unexpectedRef.Ref = "refs/heads/other"
+	if err := verifyEnvironmentFileForContext(path, unexpectedRef); err == nil {
+		t.Fatal("environment evidence accepted an unexpected source reference")
 	}
 	values["commit"] = "not-a-commit"
 	writeEnvironmentFixture(t, path, values)
-	if err := verifyEnvironmentFile(path, "github-77-commit", "12345", "", "v0.1.0", "amd64"); err == nil {
-		t.Fatal("environment evidence accepted a malformed release commit without an expected value")
+	withoutCommit := validEnvironmentContext()
+	withoutCommit.Commit = ""
+	if err := verifyEnvironmentFileForContext(path, withoutCommit); err == nil {
+		t.Fatal("environment evidence accepted a malformed source commit without an expected value")
 	}
 	referencePayload, err := json.Marshal(referenceEvidence{
 		RunID: "github-77-commit", GoVersion: "go1.26.6", GOOS: "linux", GOARCH: "amd64", CPUs: 2,
@@ -723,24 +727,26 @@ func TestVerifyEnvironmentFileAcceptsReferenceProvenance(t *testing.T) {
 		t.Fatalf("restore resource provenance: %v", err)
 	}
 	values["commit"] = commit
-	values["ref"] = "refs/tags/v0.1"
+	values["ref"] = "refs/heads/other"
 	writeEnvironmentFixture(t, path, values)
-	if err := verifyEnvironmentFile(path, "github-77-commit", "12345", commit, "v0.1.0", "amd64"); err == nil {
-		t.Fatal("environment evidence accepted an invalid release reference")
+	if err := verifyEnvironmentFileForContext(path, validEnvironmentContext()); err == nil {
+		t.Fatal("environment evidence accepted an invalid source reference")
 	}
-	values = validEnvironmentValues("release")
+	values = validEnvironmentValues()
 	values["workflow_path"] = ".github/workflows/other.yml"
 	writeEnvironmentFixture(t, path, values)
-	if err := verifyEnvironmentFile(path, "github-77-commit", "12345", commit, "v0.1.0", "amd64"); err == nil {
-		t.Fatal("environment evidence accepted an invalid release workflow")
+	if err := verifyEnvironmentFileForContext(path, validEnvironmentContext()); err == nil {
+		t.Fatal("environment evidence accepted an invalid measurement workflow")
 	}
-	values = validEnvironmentValues("release")
+	values = validEnvironmentValues()
 	values["phase5_run_id"] = "other-run"
 	writeEnvironmentFixture(t, path, values)
 	if err := verifyEnvironmentMatchesEvidence(path, directory); err == nil {
 		t.Fatal("environment provenance accepted a mismatched Phase 5 run ID")
 	}
-	if err := verifyEnvironmentFile(path, "different-run", "12345", commit, "v0.1.0", "amd64"); err == nil {
+	unexpectedRun := validEnvironmentContext()
+	unexpectedRun.RunID = "different-run"
+	if err := verifyEnvironmentFileForContext(path, unexpectedRun); err == nil {
 		t.Fatal("environment evidence accepted an unexpected Phase 5 run ID")
 	}
 }
@@ -748,7 +754,7 @@ func TestVerifyEnvironmentFileAcceptsReferenceProvenance(t *testing.T) {
 func TestVerifyEnvironmentMatchesEvidenceRejectsMixedToolchain(t *testing.T) {
 	directory := t.TempDir()
 	environmentPath := filepath.Join(directory, "phase5-environment.txt")
-	writeEnvironmentFixture(t, environmentPath, validEnvironmentValues("release"))
+	writeEnvironmentFixture(t, environmentPath, validEnvironmentValues())
 	payload, err := json.Marshal(referenceEvidence{GoVersion: "go1.27.1", GOOS: "linux", GOARCH: "amd64", CPUs: 2})
 	if err != nil {
 		t.Fatalf("marshal mixed reference evidence: %v", err)
@@ -764,11 +770,10 @@ func TestVerifyEnvironmentMatchesEvidenceRejectsMixedToolchain(t *testing.T) {
 func TestVerifyEnvironmentFileRequiresRecordedHostMetadata(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "phase5-environment.txt")
-	commit := strings.Repeat("a", 40)
-	values := validEnvironmentValues("release")
+	values := validEnvironmentValues()
 	delete(values, "go_version")
 	writeEnvironmentFixture(t, path, values)
-	if err := verifyEnvironmentFile(path, "github-77-commit", "12345", commit, "", "amd64"); err == nil {
+	if err := verifyEnvironmentFileForContext(path, validEnvironmentContext()); err == nil {
 		t.Fatal("environment verifier accepted missing recorded host metadata")
 	}
 }
@@ -776,11 +781,10 @@ func TestVerifyEnvironmentFileRequiresRecordedHostMetadata(t *testing.T) {
 func TestVerifyEnvironmentFileRejectsImpossibleReferenceCPUProfile(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "phase5-environment.txt")
-	commit := strings.Repeat("a", 40)
-	values := validEnvironmentValues("release")
+	values := validEnvironmentValues()
 	values["nproc"] = "1"
 	writeEnvironmentFixture(t, path, values)
-	if err := verifyEnvironmentFile(path, "github-77-commit", "12345", commit, "v0.1.0", "amd64"); err == nil {
+	if err := verifyEnvironmentFileForContext(path, validEnvironmentContext()); err == nil {
 		t.Fatal("environment verifier accepted a host smaller than the reference CPU profile")
 	}
 }
@@ -788,11 +792,12 @@ func TestVerifyEnvironmentFileRejectsImpossibleReferenceCPUProfile(t *testing.T)
 func TestVerifyEnvironmentFileRejectsZeroMigrationRunID(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "phase5-environment.txt")
-	commit := strings.Repeat("a", 40)
-	values := validEnvironmentValues("release")
+	values := validEnvironmentValues()
 	values["migration_ci_run_id"] = "0"
 	writeEnvironmentFixture(t, path, values)
-	if err := verifyEnvironmentFile(path, "github-77-commit", "", commit, "v0.1.0", "amd64"); err == nil {
+	withoutMigrationRun := validEnvironmentContext()
+	withoutMigrationRun.MigrationRunID = ""
+	if err := verifyEnvironmentFileForContext(path, withoutMigrationRun); err == nil {
 		t.Fatal("environment verifier accepted a zero trusted Migration CI run ID")
 	}
 }
@@ -800,26 +805,21 @@ func TestVerifyEnvironmentFileRejectsZeroMigrationRunID(t *testing.T) {
 func TestVerifyEnvironmentFileRejectsMalformedHostMetadata(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "phase5-environment.txt")
-	commit := strings.Repeat("a", 40)
-	values := validEnvironmentValues("release")
+	values := validEnvironmentValues()
 	values["go_version"] = "go version go1.26.6 darwin/arm64"
 	values["uname"] = "Darwin runner 24.0.0 arm64"
 	values["cpu_max"] = "not-a-quota"
 	writeEnvironmentFixture(t, path, values)
-	if err := verifyEnvironmentFile(path, "github-77-commit", "12345", commit, "", "amd64"); err == nil {
+	if err := verifyEnvironmentFileForContext(path, validEnvironmentContext()); err == nil {
 		t.Fatal("environment verifier accepted malformed host metadata")
 	}
 }
 
 func TestVerifyPreflightEnvironmentFileAcceptsDispatchProvenance(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "performance-preflight-environment.txt")
-	values := validEnvironmentValues("preflight")
+	values := validEnvironmentValues()
 	writeEnvironmentFixture(t, path, values)
-	expected := environmentContext{
-		Mode: "preflight", RunID: "github-77-commit", MigrationRunID: "12345", Commit: strings.Repeat("a", 40),
-		Ref: "refs/heads/codex/streamline-ztap", WorkflowRunID: "77", WorkflowEvent: "workflow_dispatch",
-		WorkflowPath: ".github/workflows/migration-ci.yml", MigrationBranch: "codex/streamline-ztap", Arch: "amd64",
-	}
+	expected := validEnvironmentContext()
 	if err := verifyEnvironmentFileForContext(path, expected); err != nil {
 		t.Fatalf("valid preflight environment rejected: %v", err)
 	}
@@ -831,7 +831,7 @@ func TestVerifyPreflightEnvironmentFileAcceptsDispatchProvenance(t *testing.T) {
 }
 
 func TestVerifyCPUQuotaProvenanceSelectsTightestObservedAncestor(t *testing.T) {
-	values := validEnvironmentValues("release")
+	values := validEnvironmentValues()
 	observations := []cpuMaxObservation{
 		{Path: "/sys/fs/cgroup/runner/job", Status: "recorded", Value: "max 100000"},
 		{Path: "/sys/fs/cgroup/runner", Status: "recorded", Value: "250000 100000"},
@@ -850,7 +850,7 @@ func TestVerifyCPUQuotaProvenanceSelectsTightestObservedAncestor(t *testing.T) {
 }
 
 func TestVerifyCPUQuotaProvenanceRejectsInventedOrInsufficientQuota(t *testing.T) {
-	values := validEnvironmentValues("release")
+	values := validEnvironmentValues()
 	values["cpu_max"] = "200000 100000"
 	if err := verifyCPUQuotaProvenance(values); err == nil {
 		t.Fatal("quota verifier accepted a value not recorded at its claimed path")
@@ -865,7 +865,7 @@ func TestVerifyCPUQuotaProvenanceRejectsInventedOrInsufficientQuota(t *testing.T
 	if err != nil {
 		t.Fatalf("marshal insufficient quota observations: %v", err)
 	}
-	values = validEnvironmentValues("release")
+	values = validEnvironmentValues()
 	values["cpu_max_hierarchy_json"] = string(encoded)
 	values["cpu_max_path"] = "/sys/fs/cgroup/runner/job/cpu.max"
 	values["cpu_max"] = "150000 100000"
@@ -873,7 +873,7 @@ func TestVerifyCPUQuotaProvenanceRejectsInventedOrInsufficientQuota(t *testing.T
 		t.Fatal("quota verifier accepted an effective limit below two CPUs")
 	}
 
-	values = validEnvironmentValues("release")
+	values = validEnvironmentValues()
 	observations = []cpuMaxObservation{
 		{Path: "/sys/fs/cgroup/runner/job", Status: "missing"},
 		{Path: "/sys/fs/cgroup/runner", Status: "missing"},
@@ -892,17 +892,16 @@ func TestVerifyCPUQuotaProvenanceRejectsInventedOrInsufficientQuota(t *testing.T
 	}
 }
 
-func validEnvironmentValues(mode string) map[string]string {
-	ref := "refs/tags/v0.1.0"
-	workflowPath := ".github/workflows/release.yml"
-	workflowEvent := "push"
-	migrationBranch := "main"
-	if mode == "preflight" {
-		ref = "refs/heads/codex/streamline-ztap"
-		workflowPath = ".github/workflows/migration-ci.yml"
-		workflowEvent = "workflow_dispatch"
-		migrationBranch = "codex/streamline-ztap"
+func validEnvironmentContext() environmentContext {
+	return environmentContext{
+		RunID: "github-77-commit", MigrationRunID: "12345", Commit: strings.Repeat("a", 40),
+		Ref: "refs/heads/main", WorkflowRunID: "77", WorkflowEvent: "workflow_dispatch",
+		WorkflowPath: ".github/workflows/migration-ci.yml", MigrationBranch: "main", Arch: "amd64",
 	}
+}
+
+func validEnvironmentValues() map[string]string {
+	context := validEnvironmentContext()
 	observations, _ := json.Marshal([]cpuMaxObservation{
 		{Path: "/sys/fs/cgroup/runner/job", Status: "recorded", Value: "max 100000"},
 		{Path: "/sys/fs/cgroup/runner", Status: "missing"},
@@ -910,18 +909,18 @@ func validEnvironmentValues(mode string) map[string]string {
 	})
 	return map[string]string{
 		"environment_schema":     "2",
-		"environment_mode":       mode,
+		"environment_mode":       "preflight",
 		"timestamp_utc":          "2026-09-19T00:00:00Z",
 		"phase5_run_id":          "github-77-commit",
 		"migration_ci_run_id":    "12345",
 		"commit":                 strings.Repeat("a", 40),
-		"ref":                    ref,
+		"ref":                    context.Ref,
 		"workflow_run_id":        "77",
-		"workflow_event":         workflowEvent,
-		"workflow_path":          workflowPath,
+		"workflow_event":         context.WorkflowEvent,
+		"workflow_path":          context.WorkflowPath,
 		"migration_ci_workflow":  ".github/workflows/migration-ci.yml",
 		"migration_ci_event":     "push",
-		"migration_ci_branch":    migrationBranch,
+		"migration_ci_branch":    context.MigrationBranch,
 		"go_version":             "go version go1.26.6 linux/amd64",
 		"goos":                   "linux",
 		"goarch":                 "amd64",
@@ -962,7 +961,7 @@ func writeEnvironmentFixture(t *testing.T, path string, values map[string]string
 	}
 }
 
-func TestRecordedGoVersionRequiresNumericRelease(t *testing.T) {
+func TestRecordedGoVersionRequiresNumericVersion(t *testing.T) {
 	for _, value := range []string{
 		"go version goevil linux/amd64",
 		"go version go linux/amd64",
@@ -979,16 +978,26 @@ func TestRecordedGoVersionRequiresNumericRelease(t *testing.T) {
 	}
 }
 
-func TestValidReleaseRefRejectsLeadingZeroComponents(t *testing.T) {
-	for _, value := range []string{"v01.2.3", "v1.02.3", "v1.2.03"} {
-		if validReleaseRef(value) {
-			t.Fatalf("validReleaseRef accepted non-canonical tag %q", value)
-		}
-	}
-	for _, value := range []string{"v0.1.0", "v1.2.3", "v10.20.30"} {
-		if !validReleaseRef(value) {
-			t.Fatalf("validReleaseRef rejected canonical tag %q", value)
-		}
+func TestVerifyEnvironmentFileRequiresDispatchProvenance(t *testing.T) {
+	for _, test := range []struct {
+		name, key, value string
+	}{
+		{name: "unsupported mode", key: "environment_mode", value: "unknown"},
+		{name: "tag reference", key: "ref", value: "refs/tags/snapshot"},
+		{name: "empty branch", key: "migration_ci_branch", value: ""},
+		{name: "different branch", key: "migration_ci_branch", value: "other"},
+		{name: "other workflow", key: "workflow_path", value: ".github/workflows/other.yml"},
+		{name: "push event", key: "workflow_event", value: "push"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			values := validEnvironmentValues()
+			values[test.key] = test.value
+			path := filepath.Join(t.TempDir(), "phase5-environment.txt")
+			writeEnvironmentFixture(t, path, values)
+			if err := verifyEnvironmentFileForContext(path, environmentContext{}); err == nil {
+				t.Fatalf("environment verifier accepted %s without explicit expectations", test.name)
+			}
+		})
 	}
 }
 
@@ -1019,7 +1028,7 @@ func TestVerifyEnvironmentFileRejectsDuplicateKeys(t *testing.T) {
 	if err := os.WriteFile(path, []byte("timestamp_utc=2026-09-19T00:00:00Z\ntimestamp_utc=2026-09-19T00:00:00Z\n"), 0o600); err != nil {
 		t.Fatalf("write duplicate environment evidence: %v", err)
 	}
-	if err := verifyEnvironmentFile(path, "", "", "", "", ""); err == nil {
+	if err := verifyEnvironmentFileForContext(path, validEnvironmentContext()); err == nil {
 		t.Fatal("environment verifier accepted duplicate keys")
 	}
 }
@@ -1030,7 +1039,7 @@ func TestVerifyEnvironmentFileRejectsUnknownKeys(t *testing.T) {
 	if err := os.WriteFile(path, []byte("timestamp_utc=2026-09-19T00:00:00Z\nunknown=value\n"), 0o600); err != nil {
 		t.Fatalf("write unknown environment evidence: %v", err)
 	}
-	if err := verifyEnvironmentFile(path, "", "", "", "", ""); err == nil {
+	if err := verifyEnvironmentFileForContext(path, validEnvironmentContext()); err == nil {
 		t.Fatal("environment verifier accepted an unknown key")
 	}
 }

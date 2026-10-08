@@ -9,7 +9,7 @@ import (
 )
 
 // openRegularFile protects the final evidence path component on Darwin. The
-// release verifier runs on Linux, where the descriptor-relative implementation
+// hosted verifier runs on Linux, where the descriptor-relative implementation
 // also protects parent components; this fallback permits macOS system paths
 // such as /var -> /private/var while still rejecting final-file symlinks and
 // special files.
