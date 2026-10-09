@@ -36,7 +36,7 @@ GO_FILES := $(shell find . -type f -name '*.go' \
 	-not -path './bin/*' \
 	-not -path './dist/*')
 
-.PHONY: build test vet fmt-check lint vulncheck check generate check-generated integration performance verify-performance docker clean
+.PHONY: build test vet fmt-check actionlint lint vulncheck check generate check-generated integration performance verify-performance docker clean
 
 build:
 	@mkdir -p "$(BIN_DIR)"
@@ -62,6 +62,9 @@ $(GOLANGCI_LINT):
 $(ACTIONLINT):
 	@mkdir -p "$(TOOLS_DIR)"
 	GOBIN="$(TOOLS_DIR)" GOCACHE="$(GOCACHE)" GOFLAGS="$(GOFLAGS)" $(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
+
+actionlint: $(ACTIONLINT)
+	"$(ACTIONLINT)" .github/workflows/*.yml
 
 lint: fmt-check $(GOLANGCI_LINT) $(ACTIONLINT)
 	GOCACHE="$(GOCACHE)" GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE)" GOFLAGS="$(GOFLAGS)" "$(GOLANGCI_LINT)" run --timeout=5m
