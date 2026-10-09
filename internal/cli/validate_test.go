@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,5 +146,63 @@ spec:
 	}
 	if !strings.Contains(output.String(), "default/from-file") {
 		t.Fatalf("output = %q, want file policy name", output.String())
+	}
+}
+
+func TestValidateCommandBoundsInputReads(t *testing.T) {
+	const limit = 16 << 20
+	padding := &policyPaddingReader{remaining: 2 * limit}
+	root := NewRootCmd("test")
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetIn(io.MultiReader(strings.NewReader("apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: bounded\nspec:\n  podSelector: {}\n"), padding))
+	root.SetArgs([]string{"validate", "--file", "-"})
+	err := root.Execute()
+	if err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized input error = %v, want size rejection with exit code 2", err)
+	}
+	if padding.read > limit+1 {
+		t.Fatalf("read %d padding bytes, want at most %d", padding.read, limit+1)
+	}
+}
+
+// Supply more whitespace than the limit without allocating it all up front.
+type policyPaddingReader struct {
+	remaining int
+	read      int
+}
+
+func (r *policyPaddingReader) Read(p []byte) (int, error) {
+	if r.remaining == 0 {
+		return 0, io.EOF
+	}
+	n := min(len(p), r.remaining)
+	for i := range p[:n] {
+		p[i] = ' '
+	}
+	r.remaining -= n
+	r.read += n
+	return n, nil
+}
+
+func TestValidateCommandRejectsOversizedFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oversized.yaml")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate((16 << 20) + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	root := NewRootCmd("test")
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"validate", "--file", path})
+	if err := root.Execute(); err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized file error = %v, want size rejection with exit code 2", err)
 	}
 }

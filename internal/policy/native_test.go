@@ -66,6 +66,20 @@ func TestLoadNativePoliciesFromBytes(t *testing.T) {
 	}
 }
 
+func TestDecodeNativePoliciesInputSizeLimit(t *testing.T) {
+	const limit = 16 << 20
+	data := []byte(validNativePolicyYAML + strings.Repeat(" ", limit-len(validNativePolicyYAML)))
+	if _, err := DecodeNativePolicies(data); err != nil {
+		t.Fatalf("input at the size limit was rejected: %v", err)
+	}
+	data = append(data, ' ')
+	_, err := DecodeNativePolicies(data)
+	var decodeErr NativeDecodeError
+	if !errors.As(err, &decodeErr) || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized input error = %v, want NativeDecodeError for input size", err)
+	}
+}
+
 func TestNativePolicyDefaultingAndListItems(t *testing.T) {
 	input := `apiVersion: networking.k8s.io/v1
 kind: NetworkPolicyList

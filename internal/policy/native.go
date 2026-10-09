@@ -31,6 +31,10 @@ const (
 	// generated from one ipBlock after applying its except entries.
 	MaxIPBlockExpansion = 1024
 
+	// MaxNativePolicyBytes bounds the complete offline YAML stream, including
+	// lists and multiple documents, before allocating its decoded object tree.
+	MaxNativePolicyBytes = 16 << 20
+
 	maxNativeAnnotationsSize = 256 * 1024
 )
 
@@ -266,6 +270,9 @@ type nativeHeader struct {
 // NetworkPolicyList items. It performs strict structural decoding but leaves
 // semantic subset validation to ValidateNativePolicies.
 func DecodeNativePolicies(data []byte) ([]NativeNetworkPolicy, error) {
+	if len(data) > MaxNativePolicyBytes {
+		return nil, NativeDecodeError{Err: fmt.Errorf("policy input exceeds %d bytes", MaxNativePolicyBytes)}
+	}
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	var policies []NativeNetworkPolicy
 	document := 0
