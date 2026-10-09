@@ -1,6 +1,7 @@
 # Deployment
 
-ZTAP is deployed as one Linux DaemonSet. The maintained manifest is
+ZTAP is deployed as an agent and a node initializer, using two Linux DaemonSets
+and one runtime image. The maintained manifest is
 [`deployments/kubernetes/ztap-agent.yaml`](../deployments/kubernetes/ztap-agent.yaml).
 Its `ztap:dev` image matches `make docker`. Load that image into a disposable
 local cluster, or use a copy of the manifest with your registry image's digest.
@@ -8,6 +9,12 @@ local cluster, or use a copy of the manifest with your registry image's digest.
 ## Requirements
 
 - Linux nodes with cgroup v2 and a mounted bpffs at `/sys/fs/bpf`.
+- Pinnable cgroup BPF links with reopen and in-place program replacement,
+  inherited ingress/egress hooks, cgroup socket storage with listener cloning,
+  and socket network-namespace cookies. Startup probes these capabilities;
+  restart-safe mode has no legacy attachment fallback. The new gates were
+  exercised on Linux `7.0.14-orbstack-00380-ga7e0a2dc9535`, arm64,
+  with containerd `2.3.4` and Kubernetes `1.36.4`.
 - containerd configured to use the systemd cgroup driver; cgroupfs, cgroup v1,
   Docker Engine, and CRI-O layouts are unsupported.
 - Kubernetes 1.36.x (CI uses `kindest/node:v1.36.4`) with a CNI that does not
@@ -35,6 +42,16 @@ UID 0 without privileged mode or privilege escalation, drops all capabilities
 first, and adds only `BPF`, `NET_ADMIN`, `PERFMON`, and `SYS_RESOURCE`. The root
 filesystem is read-only.
 
+`ztap-node-init` shares the node network namespace, drops **all** capabilities,
+and mounts only the read-only cgroup hierarchy and `/run/ztap`. It authenticates
+the Node and local host-network Pod identities with the Kubernetes API and
+records the node socket namespace, supported cgroup parents, and verified
+IPv4 TCP API endpoints in an owner-only bootstrap file. The agent grants its
+exact verified container cgroup access only to those API endpoints before
+classification. There is no namespace-wide workload bypass. Static mirror
+identities also require an authenticated mirror hash and full runtime container
+ID. Keep both DaemonSets and their downward-API `POD_UID` environment values.
+
 ## Install
 
 Build from a source checkout. Update workload templates and recreate unsafe
@@ -48,6 +65,7 @@ requirements above, build and load the local image:
 make docker
 kind load docker-image ztap:dev --name ztap
 kubectl apply -f deployments/kubernetes/ztap-agent.yaml
+kubectl -n ztap-system rollout status daemonset/ztap-node-init --timeout=5m
 kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=5m
 kubectl -n ztap-system get pods -l app=ztap-agent -o wide
 ```
@@ -77,6 +95,7 @@ the index digest reported by `imagetools inspect`, then run:
 
 ```sh
 kubectl apply -f ztap-agent.yaml
+kubectl -n ztap-system rollout status daemonset/ztap-node-init
 kubectl -n ztap-system rollout status daemonset/ztap-agent
 kubectl -n ztap-system get pods -o wide
 ```
@@ -125,21 +144,41 @@ kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=5m
 kubectl -n ztap-system get pods -l app=ztap-agent -o wide
 ```
 
-The rolling update uses `maxUnavailable: 1` and `maxSurge: 0`, but links are
-process-owned. The node being updated therefore has a measured fail-open
-interval between the old agent exiting and the replacement completing its
-first successful reconciliation. Check `/readyz` and the agent logs after the
-rollout; readiness does not prevent that interval.
+The rolling update uses `maxUnavailable: 1` and `maxSurge: 0`. Normal exit,
+cancellation, SIGKILL, and a stale userspace heartbeat leave committed maps and
+both directional links pinned. The replacement validates boot identity,
+durable ABI **3**, packet semantics **2**, kernel object IDs, program map
+references, link targets, and full workload ownership before adopting them.
+Compatible programs replace pinned links in place; their old and new versions
+must share semantics while directional updates coexist. ABI or ownership errors
+preserve surviving enforcement and stop unsafe mutation.
 
-A SIGKILL crash has the same process-owned link behavior. The crash interval
-is measured separately from orderly restart and DaemonSet rollout; none of
-these intervals are zero-gap availability guarantees.
+During an outage, the contract is the **last committed snapshot**. Unobserved
+policy, label, and peer-address changes cannot take effect. Every reconciliation
+defers its complete candidate if a committed live identity is absent, pending,
+or inconsistent, even after informer synchronization. Confirmed cgroup
+termination or a verified change to unisolated policy permits cleanup. Unknown
+descendants remain blocked in both directions until the atomic policy/class
+commit; known unisolated containers resume NetworkPolicy default allow.
+
+The first migration from the historical process-owned version requires drained
+workloads or a maintenance traffic gate: that old process still detaches on
+exit. Fresh installation also requires preventing workload traffic until the
+guard is installed and classification completes. Persistence covers one kernel
+boot. A node reboot destroys these objects; this release does not provide or
+verify a host/runtime startup dependency that installs protection before
+workload traffic. Reboot continuity requires that separate gate and reboot test.
+
+The [restart evidence](performance.md#restart-continuity-results) records finite
+Linux and deployed-agent tests with zero observed prohibited traffic; it is not
+proof of every possible failure schedule.
 
 ### Measured fail-open intervals
 
 The [historical reference evidence](performance.md#historical-reference-results)
 on Linux `6.17.0-1022-azure` recorded these separate boundaries for the
-250-Pod/25-policy/2,500-rule fixture:
+250-Pod/25-policy/2,500-rule fixture. These describe the older process-owned
+implementation and remain historical measurements:
 
 | Boundary | Measurement | What was observed |
 | --- | ---: | --- |
@@ -154,9 +193,17 @@ created cgroup had no link and sent an allowed packet until a controlled
 retry classified it. The first allowed probe to the blocked probe after retry
 spanned 2,056.943 ms in that test. This is a probe-to-retry measurement, not a
 bound on Kubernetes watcher delay or failure recovery. A selected container
-can also send before its ID and cgroup become visible to the watcher.
+could also send before its ID and cgroup became visible to the watcher. The
+current inherited guard blocks that unclassified interval after installation.
 
 ## Agent flags
+
+The `--run-dir` directory and its ancestors must be owned by root or the
+effective user and must forbid group and other writes. A sticky ancestor
+such as `/tmp` is allowed when the final directory is protected. Lock files
+must be owned by the effective user, have owner-only permissions (normally
+`0600`), and have no hard links. The agent and flow reader reject unsafe
+existing paths without changing their ownership or permissions.
 
 The DaemonSet starts the equivalent of:
 
@@ -210,16 +257,15 @@ curl http://127.0.0.1:9090/metrics
 ```
 
 Readiness is false during initial cache synchronization, dry-run, an apply
-failure, or local quarantine. A selected container can transmit before the
-watcher observes its Kubernetes status and cgroup; this Pod-start
-classification interval is measured separately from reconciliation duration.
-The process-owned links also create separate, documented fail-open intervals
-on orderly restart, SIGKILL crash, and during a rolling DaemonSet update.
+failure, uncertain committed identity, or local quarantine. Controller readiness
+does not determine the lifetime of pinned enforcement. Unknown containers
+remain blocked while classification is pending. Existing containers retain the
+committed policy when the controller is unavailable.
 
 | `/readyz` reason | HTTP status | Meaning |
 | --- | --- | --- |
 | `starting` | 503 | Initial synchronization or first apply has not completed |
-| `dry_run` | 503 | Compilation succeeded without enforcement |
+| `dry_run` | 503 | Compilation succeeded without changing kernel state |
 | `quarantined` | 503 | At least one local subject has a quarantined direction |
 | `apply_error` | 503 | Compilation or application failed; inspect logs |
 | `stopping` | 503 | Graceful shutdown has begun |
@@ -228,6 +274,10 @@ on orderly restart, SIGKILL crash, and during a rolling DaemonSet update.
 Useful metrics include `ztap_agent_ready`, `ztap_agent_enforcing`,
 `ztap_enforced_cgroups`, `ztap_compiled_rules`, `ztap_quarantined_cgroups`,
 `ztap_unresolved_running_containers`, and `ztap_active_policy_epoch`.
+`ztap_active_enforcement_generation{generation="..."}` identifies the compatible
+program generation, and
+`ztap_last_successful_reconciliation_timestamp_seconds` reports this controller's
+last successful apply separately from the recovered policy epoch.
 `ztap_policy_reconciliations_total` counts attempts with a `result` label of
 `success`, `rejected`, or `error`; `ztap_policy_reconcile_duration_seconds` measures
 compile-and-apply duration, excluding API list latency and debounce.
@@ -301,14 +351,29 @@ kubectl -n ztap-system rollout undo daemonset/ztap-agent
 kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=5m
 ```
 
-Rollback has the same restart fail-open interval. To stop enforcement while
-keeping the namespace and RBAC, remove only the DaemonSet:
+Only roll back to a persistence-aware image with compatible ABI and packet
+semantics. The historical process-owned image is not a supported live rollback.
+Drain or gate traffic before an incompatible migration.
+
+Deleting the DaemonSets leaves enforcement active, including the unknown
+workload guard. Intentional removal has two steps:
 
 ```sh
-kubectl -n ztap-system delete daemonset ztap-agent
+kubectl -n ztap-system delete daemonset ztap-agent ztap-node-init
+kubectl -n ztap-system wait --for=delete pod -l app=ztap-agent --timeout=5m
 ```
 
-For a complete uninstall, delete the manifest you installed:
+Then run the matching Linux binary with administrator privileges on **each**
+node, using that node's actual bpffs and runtime directory:
+
+```sh
+sudo /path/to/ztap cleanup --bpffs-root=/sys/fs/bpf --run-dir=/run/ztap
+```
+
+Cleanup acquires the agent lock, refuses a competing agent, verifies ownership
+before mutation, preserves unrelated objects, and supports retry after partial
+removal. Run it before deleting the deployment's RBAC and admission resources.
+For a complete uninstall, then delete the manifest you installed:
 
 ```sh
 kubectl delete -f deployments/kubernetes/ztap-agent.yaml
@@ -319,6 +384,6 @@ with that same file instead.
 
 This also deletes `ztap-system` and any other resources in that namespace.
 Deleting ZTAP does not delete your `NetworkPolicy` objects in other namespaces;
-they remain stored without ZTAP enforcement. The manifest is the complete
-shipped deployment surface; there is no operator, auxiliary control plane,
-or second runtime image.
+they remain stored. After explicit node cleanup they have no ZTAP enforcement.
+The manifest is the complete shipped deployment surface; both DaemonSets use
+the same runtime image.

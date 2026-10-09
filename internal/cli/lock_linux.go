@@ -44,7 +44,7 @@ func openZTAPLock(runDir, lockName, owner string) (result *os.File, resultPath s
 		}
 	}()
 
-	fd, err := unix.Openat(directoryFD, lockName, unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0o600)
+	fd, err := unix.Openat(directoryFD, lockName, unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0o600)
 	if err != nil {
 		if errors.Is(err, unix.ELOOP) {
 			return nil, "", fmt.Errorf("%s lock %q is a symlink", owner, lockPath)
@@ -59,18 +59,28 @@ func openZTAPLock(runDir, lockName, owner string) (result *os.File, resultPath s
 		_ = unix.Close(fd)
 		return nil, "", fmt.Errorf("open %s lock %q returned no file handle", owner, lockPath)
 	}
-	info, err := file.Stat()
-	if err != nil {
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
 		return nil, "", errors.Join(
 			fmt.Errorf("stat %s lock %q: %w", owner, lockPath, err),
 			file.Close(),
 		)
 	}
-	if !info.Mode().IsRegular() {
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
 		return nil, "", errors.Join(
 			fmt.Errorf("%s lock %q is not a regular file", owner, lockPath),
 			file.Close(),
 		)
+	}
+	if uint64(stat.Uid) != uint64(os.Geteuid()) {
+		return nil, "", errors.Join(fmt.Errorf("%s lock %q has an untrusted owner", owner, lockPath), file.Close())
+	}
+	// Even read permission lets another user flock the file and deny startup.
+	if stat.Mode&0o077 != 0 {
+		return nil, "", errors.Join(fmt.Errorf("%s lock %q has unsafe permissions; require owner-only access", owner, lockPath), file.Close())
+	}
+	if stat.Nlink != 1 {
+		return nil, "", errors.Join(fmt.Errorf("%s lock %q has a hard link", owner, lockPath), file.Close())
 	}
 	return file, lockPath, nil
 }
@@ -93,8 +103,14 @@ func openDirectoryNoFollow(path, owner string, createMissing bool) (int, error) 
 		return -1, fmt.Errorf("open root for %s directory %q: %w", owner, path, err)
 	}
 	currentFD := rootFD
+	if createMissing {
+		if err := validateLockDirectory(rootFD, "/", owner, path == "/"); err != nil {
+			_ = unix.Close(rootFD)
+			return -1, err
+		}
+	}
 	components := strings.Split(strings.TrimPrefix(path, string(filepath.Separator)), string(filepath.Separator))
-	for _, component := range components {
+	for index, component := range components {
 		if component == "" || component == "." {
 			continue
 		}
@@ -118,10 +134,36 @@ func openDirectoryNoFollow(path, owner string, createMissing bool) (int, error) 
 			}
 			return -1, fmt.Errorf("inspect %s directory component %q: %w", owner, component, openErr)
 		}
+		if createMissing {
+			if err := validateLockDirectory(nextFD, component, owner, index == len(components)-1); err != nil {
+				_ = unix.Close(nextFD)
+				_ = unix.Close(currentFD)
+				return -1, err
+			}
+		}
 		_ = unix.Close(currentFD)
 		currentFD = nextFD
 	}
 	return currentFD, nil
+}
+
+// Validate the opened directory before creating entries or traversing further.
+// A writable ancestor could let another user replace the lock directory and
+// start a second agent with a different lock inode. A trusted sticky ancestor
+// (such as /tmp) protects its owner-controlled children; the final directory
+// must always forbid group and other writes.
+func validateLockDirectory(fd int, component, owner string, final bool) error {
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		return fmt.Errorf("inspect %s directory component %q: %w", owner, component, err)
+	}
+	if stat.Uid != 0 && uint64(stat.Uid) != uint64(os.Geteuid()) {
+		return fmt.Errorf("%s directory component %q has an untrusted owner", owner, component)
+	}
+	if stat.Mode&0o022 != 0 && (final || stat.Mode&unix.S_ISVTX == 0) {
+		return fmt.Errorf("%s directory component %q has unsafe permissions; forbid group and other writes", owner, component)
+	}
+	return nil
 }
 
 func isSymlinkEntryAt(directoryFD int, name string) bool {

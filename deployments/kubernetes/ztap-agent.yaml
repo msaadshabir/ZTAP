@@ -105,6 +105,106 @@ subjects:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
+  name: ztap-node-init
+  namespace: ztap-system
+spec:
+  selector:
+    matchLabels:
+      app: ztap-node-init
+  template:
+    metadata:
+      labels:
+        app: ztap-node-init
+    spec:
+      serviceAccountName: ztap-agent
+      hostNetwork: true
+      hostPID: false
+      hostIPC: false
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: bootstrap
+          image: ztap:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - node-init
+            - --node-name=$(NODE_NAME)
+            - --cgroup-root=/host/sys/fs/cgroup
+            - --run-dir=/run/ztap
+            - --stay
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: cgroup
+              mountPath: /host/sys/fs/cgroup
+              readOnly: true
+            - name: run-dir
+              mountPath: /run/ztap
+      volumes:
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: run-dir
+          hostPath:
+            path: /run/ztap
+            type: DirectoryOrCreate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ztap-bootstrap-api
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: [endpoints]
+    resourceNames: [kubernetes]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ztap-bootstrap-api
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ztap-bootstrap-api
+subjects:
+  - kind: ServiceAccount
+    name: ztap-agent
+    namespace: ztap-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
   name: ztap-agent
   namespace: ztap-system
 spec:
@@ -154,6 +254,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
           securityContext:
             runAsUser: 0
             runAsGroup: 0

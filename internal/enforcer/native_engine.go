@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/saadshabir/ZTAP/internal/policy"
 )
@@ -29,6 +30,13 @@ func ReconcileNativePolicySnapshot(ctx context.Context, engine Engine, policies 
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
+	for _, pod := range input.Pods {
+		if pod.Local && !pod.HostNetwork {
+			result.PolicySet.ClassifiedCgroups = append(result.PolicySet.ClassifiedCgroups, pod.CgroupIDs...)
+		}
+	}
+	slices.Sort(result.PolicySet.ClassifiedCgroups)
+	result.PolicySet.ClassifiedCgroups = slices.Compact(result.PolicySet.ClassifiedCgroups)
 	if err := engine.Apply(ctx, result.PolicySet); err != nil {
 		return result, fmt.Errorf("apply native policy snapshot: %w", err)
 	}

@@ -11,6 +11,49 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
+func TestNodeInitializerHasNoEnforcementCapabilitiesOrPins(t *testing.T) {
+	objects, err := loadManifestObjects("ztap-agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initializer := findObject(objects, "DaemonSet", "ztap-node-init")
+	spec, ok := nestedMap(initializer, "spec", "template", "spec")
+	if !ok || spec["hostNetwork"] != true || spec["hostPID"] != false || spec["hostIPC"] != false {
+		t.Fatalf("initializer namespace profile: %#v", spec)
+	}
+	containers, ok := spec["containers"].([]interface{})
+	if !ok || len(containers) != 1 {
+		t.Fatal("initializer must have one container")
+	}
+	container := containers[0].(map[string]interface{})
+	security, ok := container["securityContext"].(map[string]interface{})
+	if !ok || security["privileged"] != false || security["allowPrivilegeEscalation"] != false || security["readOnlyRootFilesystem"] != true {
+		t.Fatalf("unsafe initializer: %#v", security)
+	}
+	caps, ok := security["capabilities"].(map[string]interface{})
+	if !ok || len(stringSlice(caps["add"])) != 0 || fmt.Sprint(stringSlice(caps["drop"])) != "[ALL]" {
+		t.Fatalf("initializer capabilities: %#v", caps)
+	}
+	for _, volume := range spec["volumes"].([]interface{}) {
+		v := volume.(map[string]interface{})
+		if host, ok := v["hostPath"].(map[string]interface{}); ok && host["path"] == "/sys/fs/bpf" {
+			t.Fatal("initializer must not mount enforcement pins")
+		}
+	}
+	role := findObject(objects, "Role", "ztap-bootstrap-api")
+	if role == nil || role["metadata"].(map[string]interface{})["namespace"] != "default" {
+		t.Fatal("missing default namespace bootstrap Role")
+	}
+	rules, ok := role["rules"].([]interface{})
+	if !ok || len(rules) != 1 {
+		t.Fatal("bootstrap Role must have one rule")
+	}
+	rule := rules[0].(map[string]interface{})
+	if fmt.Sprint(stringSlice(rule["resources"])) != "[endpoints]" || fmt.Sprint(stringSlice(rule["resourceNames"])) != "[kubernetes]" || fmt.Sprint(stringSlice(rule["verbs"])) != "[get]" {
+		t.Fatalf("broad bootstrap API role: %#v", rule)
+	}
+}
+
 func TestNativeAgentManifestsUseTheCapabilityOnlyProfile(t *testing.T) {
 	for _, path := range []string{"ztap-agent.yaml"} {
 		t.Run(path, func(t *testing.T) {

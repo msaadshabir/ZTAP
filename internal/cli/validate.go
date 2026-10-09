@@ -33,12 +33,19 @@ func newValidateCmd() *cobra.Command {
 				return &ExitError{Status: 2, Err: errors.New("required flag --file is missing")}
 			}
 
-			var data []byte
-			if path == "-" {
-				data, err = io.ReadAll(cmd.InOrStdin())
-			} else {
-				data, err = os.ReadFile(path) // #nosec G304 -- --file intentionally selects the user-provided validation input.
+			input := cmd.InOrStdin()
+			if path != "-" {
+				file, openErr := os.Open(path) // #nosec G304 -- --file intentionally selects the user-provided validation input.
+				if openErr != nil {
+					return &ExitError{Status: 2, Err: fmt.Errorf("read policy input: %w", openErr)}
+				}
+				defer func() { _ = file.Close() }()
+				input = file
 			}
+			// Read one extra byte so an oversized stream is rejected rather than
+			// silently validating a truncated prefix. This also bounds stdin and
+			// special files whose size cannot be determined with Stat.
+			data, err := io.ReadAll(io.LimitReader(input, policy.MaxNativePolicyBytes+1))
 			if err != nil {
 				return &ExitError{Status: 2, Err: fmt.Errorf("read policy input: %w", err)}
 			}

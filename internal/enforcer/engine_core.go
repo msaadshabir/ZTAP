@@ -90,6 +90,20 @@ func (e *engineCore) Apply(ctx context.Context, desired policy.PolicySet) error 
 	if e.closed {
 		return errors.New("eBPF engine is closed")
 	}
+	// Identity uncertainty rejects the whole transaction, including the no-op
+	// path. A synchronized informer cache may still omit a live container.
+	if validator, ok := e.store.(interface {
+		ValidateCandidate(context.Context, policy.PolicySet) error
+	}); ok {
+		if err := validator.ValidateCandidate(ctx, desired); err != nil {
+			return fmt.Errorf("preserve committed enforcement: %w", err)
+		}
+	}
+	if e.pendingCleanup != nil {
+		if err := e.reclaimPendingSlot(ctx, 1-e.active.Slot); err != nil {
+			return err
+		}
+	}
 	if err := e.retryOrphanLinks(); err != nil {
 		return fmt.Errorf("retry cleanup of candidate cgroup links: %w", err)
 	}
@@ -138,6 +152,7 @@ func (e *engineCore) Apply(ctx context.Context, desired policy.PolicySet) error 
 	if err := ctx.Err(); err != nil {
 		return e.rollbackCandidate(candidate.Slot, nil, err)
 	}
+	e.observeCheckpoint("inactive-slot-populated")
 
 	desiredIDs := policySetCgroupIDs(desired)
 	newLinks := make(map[uint64]io.Closer)
@@ -151,7 +166,7 @@ func (e *engineCore) Apply(ctx context.Context, desired policy.PolicySet) error 
 		link, err := e.linker.Attach(ctx, cgroupID)
 		if err != nil {
 			if link != nil {
-				if closeErr := link.Close(); closeErr != nil {
+				if closeErr := removeSubjectLink(link); closeErr != nil {
 					e.orphanLinks[cgroupID] = append(e.orphanLinks[cgroupID], link)
 					err = errors.Join(err, fmt.Errorf("close partial link: %w", closeErr))
 				}
@@ -169,10 +184,12 @@ func (e *engineCore) Apply(ctx context.Context, desired policy.PolicySet) error 
 	if err := ctx.Err(); err != nil {
 		return e.rollbackCandidate(candidate.Slot, newLinks, err)
 	}
+	e.observeCheckpoint("candidate-links-pinned")
 	if err := e.store.Flip(candidate); err != nil {
 		return e.rollbackCandidate(candidate.Slot, newLinks,
 			fmt.Errorf("commit active slot %d at epoch %d: %w", candidate.Slot, candidate.PolicyEpoch, err))
 	}
+	e.observeCheckpoint("active-config-committed")
 
 	old := e.active
 	e.active = candidate
@@ -194,7 +211,7 @@ func (e *engineCore) Apply(ctx context.Context, desired policy.PolicySet) error 
 
 func equalEncodedPolicySets(a, b encodedPolicySet) bool {
 	return slices.Equal(a.Subjects, b.Subjects) && slices.Equal(a.Nodes, b.Nodes) &&
-		slices.Equal(a.Self, b.Self) && slices.Equal(a.Rules, b.Rules)
+		slices.Equal(a.Self, b.Self) && slices.Equal(a.Rules, b.Rules) && slices.Equal(a.Classified, b.Classified)
 }
 
 func (e *engineCore) markEnforcing() error {
@@ -204,6 +221,12 @@ func (e *engineCore) markEnforcing() error {
 		}
 	}
 	return nil
+}
+
+func (e *engineCore) observeCheckpoint(name string) {
+	if observer, ok := e.store.(interface{ ObserveCheckpoint(string) }); ok {
+		observer.ObserveCheckpoint(name)
+	}
 }
 
 func lockEngineMutex(ctx context.Context, mu *sync.Mutex) error {
@@ -249,7 +272,7 @@ func (e *engineCore) reclaimPendingSlot(ctx context.Context, candidateSlot uint3
 func (e *engineCore) rollbackCandidate(slot uint32, newLinks map[uint64]io.Closer, cause error) error {
 	var rollbackErrors []error
 	for cgroupID, link := range newLinks {
-		if err := link.Close(); err != nil {
+		if err := removeSubjectLink(link); err != nil {
 			// Keep ownership separately from active links. A failed candidate may
 			// have only one direction attached and must never be reused as active.
 			e.orphanLinks[cgroupID] = append(e.orphanLinks[cgroupID], link)
@@ -269,7 +292,7 @@ func (e *engineCore) retryOrphanLinks() error {
 	for cgroupID, links := range e.orphanLinks {
 		remaining := links[:0]
 		for _, link := range links {
-			if err := link.Close(); err != nil {
+			if err := removeSubjectLink(link); err != nil {
 				remaining = append(remaining, link)
 				closeErrors = append(closeErrors, fmt.Errorf("close candidate link for cgroup %d: %w", cgroupID, err))
 			}
@@ -292,7 +315,7 @@ func (e *engineCore) closeRemovedLinks(desiredIDs []uint64) {
 		if _, keep := desired[cgroupID]; keep {
 			continue
 		}
-		if err := link.Close(); err != nil {
+		if err := removeSubjectLink(link); err != nil {
 			e.logger.Warn("failed to detach removed subject cgroup", "cgroup_id", cgroupID, "error", err)
 			// The committed policy no longer selects this cgroup. Keep any
 			// partially detached link separate so a future Apply retries it
@@ -314,12 +337,14 @@ func (e *engineCore) reclaimCommittedSlot(slot uint32) {
 		e.logger.Warn("policy slot cleanup deferred until packet readers quiesce", "slot", slot, "error", err)
 		return
 	}
+	e.observeCheckpoint("retired-slot-cleanup-started")
 	if err := e.store.ClearSlot(slot); err != nil {
 		e.pendingCleanup = slotPointer(slot)
 		e.slotCleanupFailures++
 		e.logger.Warn("policy slot cleanup failed; it will be retried before the next apply", "slot", slot, "error", err)
 		return
 	}
+	e.observeCheckpoint("retired-slot-cleared")
 	e.pendingCleanup = nil
 }
 
@@ -331,9 +356,8 @@ func (e *engineCore) Close() error {
 	var closeErrors []error
 	if !e.storeClosed {
 		if lifecycle, ok := e.store.(interface{ MarkStopping() error }); ok {
-			// Publish shutdown before detaching links so a flow reader stops
-			// consuming the ring as soon as teardown begins. The engine continues
-			// cleanup even if status publication itself fails.
+			// This is controller lifecycle only. Pinned enforcement survives
+			// release of every local descriptor, including on startup failure.
 			if err := lifecycle.MarkStopping(); err != nil {
 				closeErrors = append(closeErrors, fmt.Errorf("publish stopping lifecycle status: %w", err))
 			}
@@ -372,11 +396,40 @@ func (e *engineCore) Close() error {
 	return errors.Join(closeErrors...)
 }
 
+// Close releases a local handle. Remove is reserved for an uncommitted
+// candidate or an obsolete subject after the authoritative kernel commit.
+func removeSubjectLink(handle io.Closer) error {
+	if removable, ok := handle.(interface{ Remove() error }); ok {
+		return removable.Remove()
+	}
+	return handle.Close()
+}
+
+func (e *engineCore) recover(active activeConfiguration, encoded encodedPolicySet, links map[uint64]io.Closer) error {
+	if active.Slot > 1 {
+		return fmt.Errorf("invalid recovered policy slot %d", active.Slot)
+	}
+	for _, subject := range encoded.Subjects {
+		if links[subject.Key.CgroupID] == nil {
+			return fmt.Errorf("committed cgroup %d has no verified directional links", subject.Key.CgroupID)
+		}
+	}
+	e.active = active
+	e.applied = encoded
+	e.hasApplied = active.PolicyEpoch != 0
+	e.links = links
+	// Even an apparently empty retired slot may have readers from a crash
+	// immediately following a flip. Never reset its packet-reader counters.
+	e.pendingCleanup = slotPointer(1 - active.Slot)
+	return nil
+}
+
 func clonePolicySet(source policy.PolicySet) policy.PolicySet {
 	copySet := policy.PolicySet{
-		NodeIPs:  append([]netip.Addr(nil), source.NodeIPs...),
-		Subjects: make([]policy.Subject, len(source.Subjects)),
-		Rules:    append([]policy.Rule(nil), source.Rules...),
+		NodeIPs:           append([]netip.Addr(nil), source.NodeIPs...),
+		Subjects:          make([]policy.Subject, len(source.Subjects)),
+		Rules:             append([]policy.Rule(nil), source.Rules...),
+		ClassifiedCgroups: append([]uint64(nil), source.ClassifiedCgroups...),
 	}
 	for i, subject := range source.Subjects {
 		copySet.Subjects[i] = subject

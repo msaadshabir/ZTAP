@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,10 +19,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/saadshabir/ZTAP/internal/restartproof"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -354,36 +357,40 @@ type podStartEvidence struct {
 }
 
 type restartEvidence struct {
-	TimestampUTC  string    `json:"timestamp_utc"`
-	RunID         string    `json:"run_id"`
-	GoVersion     string    `json:"go_version"`
-	GOOS          string    `json:"goos"`
-	GOARCH        string    `json:"goarch"`
-	CPUs          int       `json:"cpus"`
-	KernelRelease string    `json:"kernel_release"`
-	Subjects      int       `json:"subjects"`
-	Policies      int       `json:"policies"`
-	Rules         int       `json:"rules"`
-	RestartMS     []float64 `json:"restart_samples_ms"`
-	RestartP95    float64   `json:"restart_p95_ms"`
-	Scope         string    `json:"scope"`
+	SchemaVersion int                   `json:"schema_version,omitempty"`
+	Continuity    []restartproof.Sample `json:"continuity_samples,omitempty"`
+	TimestampUTC  string                `json:"timestamp_utc"`
+	RunID         string                `json:"run_id"`
+	GoVersion     string                `json:"go_version"`
+	GOOS          string                `json:"goos"`
+	GOARCH        string                `json:"goarch"`
+	CPUs          int                   `json:"cpus"`
+	KernelRelease string                `json:"kernel_release"`
+	Subjects      int                   `json:"subjects"`
+	Policies      int                   `json:"policies"`
+	Rules         int                   `json:"rules"`
+	RestartMS     []float64             `json:"restart_samples_ms"`
+	RestartP95    float64               `json:"restart_p95_ms"`
+	Scope         string                `json:"scope"`
 }
 
 type crashEvidence struct {
-	TimestampUTC  string    `json:"timestamp_utc"`
-	RunID         string    `json:"run_id"`
-	GoVersion     string    `json:"go_version"`
-	GOOS          string    `json:"goos"`
-	GOARCH        string    `json:"goarch"`
-	CPUs          int       `json:"cpus"`
-	KernelRelease string    `json:"kernel_release"`
-	Subjects      int       `json:"subjects"`
-	Policies      int       `json:"policies"`
-	Rules         int       `json:"rules"`
-	Samples       int       `json:"samples"`
-	CrashGapMS    []float64 `json:"crash_fail_open_samples_ms"`
-	CrashGapP95   float64   `json:"crash_fail_open_p95_ms"`
-	Scope         string    `json:"scope"`
+	SchemaVersion int                   `json:"schema_version,omitempty"`
+	Continuity    []restartproof.Sample `json:"continuity_samples,omitempty"`
+	TimestampUTC  string                `json:"timestamp_utc"`
+	RunID         string                `json:"run_id"`
+	GoVersion     string                `json:"go_version"`
+	GOOS          string                `json:"goos"`
+	GOARCH        string                `json:"goarch"`
+	CPUs          int                   `json:"cpus"`
+	KernelRelease string                `json:"kernel_release"`
+	Subjects      int                   `json:"subjects"`
+	Policies      int                   `json:"policies"`
+	Rules         int                   `json:"rules"`
+	Samples       int                   `json:"samples"`
+	CrashGapMS    []float64             `json:"crash_fail_open_samples_ms"`
+	CrashGapP95   float64               `json:"crash_fail_open_p95_ms"`
+	Scope         string                `json:"scope"`
 }
 
 type resourceEvidence struct {
@@ -445,7 +452,24 @@ func main() {
 	expectedEnvironmentArch := flag.String("environment-arch", "", "expected environment GOARCH")
 	hostedEBPFDirectory := flag.String("hosted-ebpf-dir", "", "optional directory containing trusted hosted eBPF evidence")
 	hostedCapabilityDirectory := flag.String("hosted-capability-dir", "", "optional directory containing trusted hosted capability-agent evidence")
+	restartDirectory := flag.String("restart-dir", "", "verify only a version-2 deployed restart, guard, and uninstall evidence bundle")
 	flag.Parse()
+	if *restartDirectory != "" {
+		path := filepath.Join(*restartDirectory, "rolling-fail-open-evidence.txt")
+		values, err := hostedKeyValues(path)
+		if err == nil {
+			err = requireHostedValue(values, path, "schema_version", "2")
+		}
+		if err == nil {
+			err = validateHostedContinuityRolling(values, path)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "phase5verify: restart evidence: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("validated restart evidence in %s\n", *restartDirectory)
+		return
+	}
 	if err := verifyDirectory(*directory, *expectedRunID); err != nil {
 		fmt.Fprintf(os.Stderr, "phase5verify: %v\n", err)
 		os.Exit(1)
@@ -759,9 +783,36 @@ func validateRequiredJSONValue(data []byte, typeOfValue reflect.Type, path strin
 		if fields == nil {
 			return fmt.Errorf("%s must be a JSON object", path)
 		}
+		// Restart evidence is a versioned union. Keep every field required
+		// within its version, including zero-valued prohibited counters.
+		var omittedFields map[string]bool
+		if typeOfValue == reflect.TypeFor[restartEvidence]() || typeOfValue == reflect.TypeFor[crashEvidence]() {
+			var version int
+			if raw, ok := fields["schema_version"]; ok {
+				if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+					return fmt.Errorf("%s evidence version must not be null", path)
+				}
+				if err := json.Unmarshal(raw, &version); err != nil {
+					return fmt.Errorf("%s has an invalid evidence version: %w", path, err)
+				}
+			}
+			if version == restartproof.EvidenceVersion {
+				omittedFields = map[string]bool{"RestartMS": true, "RestartP95": true, "CrashGapMS": true, "CrashGapP95": true}
+				for _, name := range []string{"restart_samples_ms", "restart_p95_ms", "crash_fail_open_samples_ms", "crash_fail_open_p95_ms"} {
+					if _, ok := fields[name]; ok {
+						return fmt.Errorf("%s continuity evidence contains legacy field %q", path, name)
+					}
+				}
+			} else {
+				omittedFields = map[string]bool{"SchemaVersion": true, "Continuity": true}
+				if _, ok := fields["continuity_samples"]; ok {
+					return fmt.Errorf("%s legacy evidence contains continuity samples", path)
+				}
+			}
+		}
 		for fieldIndex := 0; fieldIndex < typeOfValue.NumField(); fieldIndex++ {
 			field := typeOfValue.Field(fieldIndex)
-			if field.PkgPath != "" {
+			if field.PkgPath != "" || omittedFields[field.Name] {
 				continue
 			}
 			name, required := requiredJSONFieldName(field)
@@ -2569,6 +2620,13 @@ func validateHostedRollingEvidence(path string) error {
 	if err != nil {
 		return err
 	}
+	if versions, ok := values["schema_version"]; ok {
+		if len(versions) != 1 || versions[0] != "2" {
+			return errors.New("unsupported hosted continuity evidence version")
+		}
+		return validateHostedContinuityRolling(values, path)
+	}
+
 	if err := validateHostedKeySet(values, path, hostedRollingEvidenceKeys); err != nil {
 		return err
 	}
@@ -2759,6 +2817,30 @@ func validateReference(e referenceEvidence) error {
 func validateReferenceMapMemoryShape(entries []mapMemoryEvidence, cpus int) error {
 	expected := make([]mapMemoryEvidence, len(referenceMapMemoryShape))
 	copy(expected, referenceMapMemoryShape)
+	if len(entries) == len(referenceMapMemoryShape)+3 {
+		expected = append(expected,
+			mapMemoryEvidence{Name: "durable_v1", Type: "Array", MaxEntries: 1, KeySize: 4, ValueSize: 216, CapacityBounded: true},
+			mapMemoryEvidence{Name: "program_registry", Type: "Hash", MaxEntries: 1024, KeySize: 4, ValueSize: 56, CapacityBounded: true},
+			mapMemoryEvidence{Name: "subject_owners", Type: "Hash", MaxEntries: 32768, KeySize: 8, ValueSize: 656, CapacityBounded: true})
+		slices.SortFunc(expected, func(a, b mapMemoryEvidence) int { return cmp.Compare(a.Name, b.Name) })
+	}
+	if len(entries) == len(referenceMapMemoryShape)+12 {
+		expected = append(expected,
+			mapMemoryEvidence{Name: "durable_v3", Type: "Array", MaxEntries: 1, KeySize: 4, ValueSize: 216, CapacityBounded: true},
+			mapMemoryEvidence{Name: "configuration_0", Type: "Array", MaxEntries: 1, KeySize: 4, ValueSize: 16, CapacityBounded: true},
+			mapMemoryEvidence{Name: "configuration_1", Type: "Array", MaxEntries: 1, KeySize: 4, ValueSize: 16, CapacityBounded: true},
+			mapMemoryEvidence{Name: "program_registry", Type: "Hash", MaxEntries: 1024, KeySize: 4, ValueSize: 56, CapacityBounded: true},
+			mapMemoryEvidence{Name: "subject_owners", Type: "Hash", MaxEntries: 32768, KeySize: 8, ValueSize: 656, CapacityBounded: true},
+			mapMemoryEvidence{Name: "guard_owners", Type: "Hash", MaxEntries: 4, KeySize: 8, ValueSize: 536, CapacityBounded: true},
+			mapMemoryEvidence{Name: "workload_class", Type: "Hash", MaxEntries: 32768, KeySize: 16, ValueSize: 1, CapacityBounded: true},
+			mapMemoryEvidence{Name: "guard_config", Type: "Array", MaxEntries: 1, KeySize: 4, ValueSize: 16, CapacityBounded: true},
+			mapMemoryEvidence{Name: "bootstrap_peers", Type: "Hash", MaxEntries: 64, KeySize: 8, ValueSize: 1, CapacityBounded: true},
+			mapMemoryEvidence{Name: "host_owners", Type: "Hash", MaxEntries: 16384, KeySize: 8, ValueSize: 656, CapacityBounded: true},
+			mapMemoryEvidence{Name: "guard_blocks", Type: "LRUCPUHash", MaxEntries: 4096, KeySize: 24, ValueSize: 8, CapacityBounded: true},
+			mapMemoryEvidence{Name: "socket_netns", Type: "SkStorage", KeySize: 4, ValueSize: 8})
+		slices.SortFunc(expected, func(a, b mapMemoryEvidence) int { return cmp.Compare(a.Name, b.Name) })
+	}
+
 	for index := range expected {
 		capacity, err := calculatedMapCapacity(expected[index], cpus)
 		if err != nil {
@@ -2790,7 +2872,7 @@ func validateMapMemoryEntries(entries []mapMemoryEvidence, cpus int) error {
 	knownTypes := map[string]struct{}{
 		"Array": {}, "ArrayOfMaps": {}, "CGroupStorage": {}, "Hash": {},
 		"LPMTrie": {}, "LRUHash": {}, "LRUCPUHash": {}, "PerCPUArray": {},
-		"PerCPUHash": {}, "PerCPUCGroupStorage": {}, "RingBuf": {},
+		"PerCPUHash": {}, "PerCPUCGroupStorage": {}, "RingBuf": {}, "SkStorage": {},
 	}
 	for index, memory := range entries {
 		if memory.Name == "" || memory.Type == "" {
@@ -2802,7 +2884,7 @@ func validateMapMemoryEntries(entries []mapMemoryEvidence, cpus int) error {
 		if index > 0 && memory.Name <= entries[index-1].Name {
 			return fmt.Errorf("map entries are not strictly sorted by name at %q", memory.Name)
 		}
-		if memory.Type == "CGroupStorage" {
+		if memory.Type == "CGroupStorage" || memory.Type == "SkStorage" {
 			if memory.MaxEntries != 0 || memory.CapacityBounded || memory.CalculatedCapacityBytes != 0 {
 				return fmt.Errorf("cgroup-storage map %q must report an unbounded zero capacity", memory.Name)
 			}
@@ -2830,7 +2912,7 @@ func validateMapMemoryEntries(entries []mapMemoryEvidence, cpus int) error {
 }
 
 func calculatedMapCapacity(memory mapMemoryEvidence, cpus int) (uint64, error) {
-	if memory.Type == "CGroupStorage" {
+	if memory.Type == "CGroupStorage" || memory.Type == "SkStorage" {
 		return 0, nil
 	}
 	if memory.Type == "RingBuf" {
@@ -3077,6 +3159,16 @@ func validateRestart(e restartEvidence) error {
 	if err := validateEnvironment("restart", e.RunID, e.TimestampUTC, e.GoVersion, e.GOOS, e.GOARCH, e.CPUs); err != nil {
 		return err
 	}
+	if e.SchemaVersion == restartproof.EvidenceVersion {
+		if len(e.RestartMS) != 0 || e.RestartP95 != 0 {
+			return errors.New("continuity evidence contains legacy restart-gap measurements")
+		}
+		return validateContinuity(e.KernelRelease, e.Scope, e.Subjects, e.Policies, e.Rules, e.Continuity, "SIGTERM")
+	}
+	if e.SchemaVersion != 0 || len(e.Continuity) != 0 {
+		return errors.New("unsupported restart evidence version")
+	}
+
 	if err := validateAgentMetadata("restart", e.KernelRelease, e.Scope, restartScope); err != nil {
 		return err
 	}
@@ -3093,6 +3185,16 @@ func validateCrash(e crashEvidence) error {
 	if err := validateEnvironment("crash", e.RunID, e.TimestampUTC, e.GoVersion, e.GOOS, e.GOARCH, e.CPUs); err != nil {
 		return err
 	}
+	if e.SchemaVersion == restartproof.EvidenceVersion {
+		if len(e.CrashGapMS) != 0 || e.CrashGapP95 != 0 || e.Samples != repeatedSamples {
+			return errors.New("invalid continuity evidence shape or legacy crash-gap measurements")
+		}
+		return validateContinuity(e.KernelRelease, e.Scope, e.Subjects, e.Policies, e.Rules, e.Continuity, "SIGKILL")
+	}
+	if e.SchemaVersion != 0 || len(e.Continuity) != 0 {
+		return errors.New("unsupported crash evidence version")
+	}
+
 	if err := validateAgentMetadata("crash", e.KernelRelease, e.Scope, crashScope); err != nil {
 		return err
 	}
@@ -3106,6 +3208,18 @@ func validateCrash(e crashEvidence) error {
 		return err
 	}
 	return validateReportedMaximum("crash p95", e.CrashGapMS, e.CrashGapP95)
+}
+
+// Legacy unversioned measurements remain verifiable as historical performance
+// data. Version 2 has a different fixture and must meet continuity invariants.
+func validateContinuity(kernel, scope string, subjects, policies, rules int, samples []restartproof.Sample, mode string) error {
+	if err := validateAgentMetadata("continuity", kernel, scope, restartproof.ContinuityScope); err != nil {
+		return err
+	}
+	if subjects != 1 || policies != 1 || rules != 2 {
+		return errors.New("continuity fixture must have one subject, one policy, and two directional rules")
+	}
+	return restartproof.ValidateSamples(samples, repeatedSamples, mode)
 }
 
 func validateResource(e resourceEvidence) error {

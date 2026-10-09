@@ -299,8 +299,12 @@ jobs:
       - name: Verify Linux eBPF and agent integration suites
         run: |
           set -euo pipefail
-          sudo --preserve-env=PATH,HOME,GOFLAGS,GOMODCACHE,GOCACHE go test -race -tags integration -timeout=10m -v ./internal/enforcer/... ./internal/cli/... 2>&1 | tee ebpf-engine-tests.txt
-          printf '%s\n' 'ebpf_engine_runtime_gate=passed' >> ebpf-engine-tests.txt
+          if ! mountpoint -q /sys/fs/bpf; then
+            sudo mount -t bpf bpffs /sys/fs/bpf
+          fi
+          printf 'restart_safe_kernel=%s\n' "$(uname -r)" | tee ebpf-engine-tests.txt
+          sudo --preserve-env=PATH,HOME,GOFLAGS,GOMODCACHE,GOCACHE go test -race -count=1 -tags integration -timeout=10m -v ./internal/enforcer/... ./internal/cli/... 2>&1 | tee -a ebpf-engine-tests.txt
+          printf '%s\n' 'restart_safe_persistence_gate=passed' 'inherited_guard_feasibility_gate=passed' 'new_workload_guard_kernel_gate=passed' 'ebpf_engine_runtime_gate=passed' >> ebpf-engine-tests.txt
 
       - name: Upload privileged eBPF evidence
         if: always()
@@ -334,7 +338,14 @@ jobs:
             capability-agent-reference-fixture.txt \
             phase5-reference-fixture.yaml \
             capability-agent-resource.txt \
-            rolling-fail-open-evidence.txt; do
+            rolling-fail-open-evidence.txt \
+            rolling-continuity-ingress.jsonl \
+            rolling-continuity-ingress.jsonl.err \
+            rolling-continuity-egress.jsonl \
+            rolling-continuity-egress.jsonl.err \
+            rolling-compatible-upgrade.json \
+            explicit-uninstall-evidence.json \
+            restart-guard-evidence; do
             if [ -L "$path" ] || [ -e "$path" ]; then
               printf 'capability-agent evidence output path must not already exist: %s\n' "$path" >&2
               exit 1
@@ -444,6 +455,11 @@ jobs:
         run: |
           make docker
           kind load docker-image ztap:dev --name ztap
+          # A distinct OCI image with the same compatible binary exercises
+          # capability-only image replacement/rollback. The privileged kernel
+          # gate separately changes actual BPF tags at directional checkpoints.
+          docker build --label org.opencontainers.image.version=restart-compatibility-gate -t ztap:compat-gate .
+          kind load docker-image ztap:compat-gate --name ztap
 
       - name: Exercise the shipped capability-only DaemonSet
         run: |
@@ -461,6 +477,7 @@ jobs:
             -p '{"spec":{"template":{"spec":{"containers":[{"name":"local-path-provisioner","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["NET_RAW"]}}}]}}}}'
           kubectl -n local-path-storage rollout status deployment/local-path-provisioner --timeout=180s
           kubectl apply -f deployments/kubernetes/ztap-agent.yaml
+          kubectl -n ztap-system rollout status daemonset/ztap-node-init --timeout=180s
           kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=180s
           bash .github/scripts/verify-admission.sh
           kubectl apply -f - <<'EOF'
@@ -529,7 +546,7 @@ jobs:
             containers:
               - name: client
                 image: busybox:1.36.1
-                command: ["sh", "-c", "sleep 3600"]
+                command: ["sh", "-c", "mkdir -p /tmp/continuity-www; printf 'ok\\n' > /tmp/continuity-www/index.html; httpd -p 8090 -h /tmp/continuity-www; httpd -p 8091 -h /tmp/continuity-www; exec sleep 3600"]
                 securityContext:
                   allowPrivilegeEscalation: false
                   capabilities:
@@ -1302,213 +1319,13 @@ jobs:
           printf '%s\n' 'budget_result=passed'
           ) 2>&1 | tee capability-agent-resource.txt
 
-      - name: Measure DaemonSet rolling-update fail-open interval
-        run: |
-          set -euo pipefail
-          (
-          set -euo pipefail
-          server_ip="$(kubectl -n ztap-smoke get pod smoke-server -o jsonpath='{.status.podIP}')"
-          smoke_client_node="$(kubectl -n ztap-smoke get pod smoke-client -o jsonpath='{.spec.nodeName}')"
-          old_pods="$(kubectl -n ztap-system get pods -l app=ztap-agent -o json)"
-          old_pod="$(jq -r --arg node "$smoke_client_node" '
-            [
-              .items[]
-              | select(.spec.nodeName == $node)
-              | select(.status.phase == "Running")
-              | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))
-              | .metadata.name
-            ]
-            | if length == 1 then .[0] else empty end
-          ' <<< "$old_pods")"
-          old_uid="$(kubectl -n ztap-system get pod "$old_pod" -o jsonpath='{.metadata.uid}')"
-          old_node="$(kubectl -n ztap-system get pod "$old_pod" -o jsonpath='{.spec.nodeName}')"
-          test -n "$smoke_client_node"
-          test -n "$old_pod"
-          test -n "$old_uid"
-          test -n "$old_node"
-          test "$old_node" = "$smoke_client_node"
-          baseline_control_response="$(kubectl -n ztap-smoke exec smoke-control -- wget -qO- -T 1 "http://$server_ip:8080/" 2>/dev/null || true)"
-          test "$baseline_control_response" = ok
-          if kubectl -n ztap-smoke exec smoke-client -- wget -qO- -T 1 "http://$server_ip:8080/" >/dev/null 2>&1; then
-            printf '%s\n' 'selected smoke-client was already allowed before the rollout' >&2
-            exit 1
-          fi
-          printf '%s\n' 'baseline_selected_smoke_client=blocked'
+      - name: Verify deployed agent TCP continuity during pause, crash, and rollout
+        env:
+          ZTAP_COMPATIBLE_ROLLBACK_IMAGE: ztap:compat-gate
+        run: bash .github/scripts/verify-existing-continuity.sh
 
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/ztap-rollout-probe" ./tools/phase5probe
-          kubectl cp "$RUNNER_TEMP/ztap-rollout-probe" ztap-smoke/smoke-client:/tmp/ztap-rollout-probe -c client
-          kubectl -n ztap-smoke exec smoke-client -c client -- chmod 0755 /tmp/ztap-rollout-probe
-          kubectl -n ztap-smoke exec smoke-client -c client -- rm -f /tmp/ztap-rollout-probe.stop
-          probe_output="$RUNNER_TEMP/rolling-probe.txt"
-          : > "$probe_output"
-          probe_pid=""
-          # ShellCheck cannot see the indirect invocation through the EXIT trap.
-          # shellcheck disable=SC2329
-          cleanup_rollout_probe() {
-            if [ -n "$probe_pid" ]; then
-              if timeout 5s kubectl -n ztap-smoke exec smoke-client -c client -- touch /tmp/ztap-rollout-probe.stop >/dev/null 2>&1; then
-                wait "$probe_pid" 2>/dev/null || true
-              else
-                kill "$probe_pid" 2>/dev/null || true
-                wait "$probe_pid" 2>/dev/null || true
-              fi
-            fi
-          }
-          trap cleanup_rollout_probe EXIT
-          kubectl -n ztap-smoke exec smoke-client -c client -- /tmp/ztap-rollout-probe \
-            -url "http://$server_ip:8080/" \
-            -interval=10ms \
-            -request-timeout=100ms \
-            -max-duration=5m \
-            -stop-file=/tmp/ztap-rollout-probe.stop \
-            > "$probe_output" 2>&1 &
-          probe_pid=$!
-          sleep 0.2
-          probe_running=0
-          for running_pid in $(jobs -pr); do
-            if [ "$running_pid" = "$probe_pid" ]; then
-              probe_running=1
-            fi
-          done
-          if [ "$probe_running" -ne 1 ] || [ -s "$probe_output" ]; then
-            cat "$probe_output" >&2
-            printf '%s\n' 'rolling probe did not remain blocked and running before the rollout' >&2
-            exit 1
-          fi
-
-          rollout_started_ns="$(date +%s%N)"
-          printf 'smoke_client_node=%s\nold_namespace=ztap-system\nold_pod=%s\nold_uid=%s\nold_node=%s\nold_ready=true\nrollout_started_ns=%s\n' \
-            "$smoke_client_node" "$old_pod" "$old_uid" "$old_node" "$rollout_started_ns"
-          kubectl -n ztap-system rollout restart daemonset/ztap-agent >/dev/null
-
-          fail_open_start_ns=""
-          fail_open_end_ns=""
-          replacement_pod=""
-          replacement_uid=""
-          replacement_created_at=""
-          replacement_node=""
-          replacement_observed_ns=""
-          replacement_ready=""
-          probe_finished=0
-          for ((attempt = 0; attempt < 3600; attempt++)); do
-            if [ -z "$replacement_pod" ]; then
-              pod_records="$(kubectl -n ztap-system get pods -l app=ztap-agent -o json 2>/dev/null || true)"
-              mapfile -t replacement_rows < <(jq -r --arg old_pod "$old_pod" --arg old_node "$old_node" '
-                .items[]
-                | select(.metadata.name != $old_pod)
-                | select(.spec.nodeName == $old_node)
-                | select(.status.phase == "Running")
-                | [
-                    .metadata.name,
-                    .metadata.uid,
-                    .metadata.creationTimestamp,
-                    .spec.nodeName,
-                    (any(.status.conditions[]?; .type == "Ready" and .status == "True") | tostring)
-                  ]
-                | @tsv
-              ' <<< "$pod_records" 2>/dev/null || true)
-              if [ "${#replacement_rows[@]}" -eq 1 ]; then
-                IFS=$'\t' read -r current_pod current_uid current_created_at current_node current_ready <<< "${replacement_rows[0]}"
-                replacement_pod="$current_pod"
-                replacement_uid="$current_uid"
-                replacement_created_at="$current_created_at"
-                replacement_node="$current_node"
-                replacement_observed_ns="$(date +%s%N)"
-                replacement_ready="$current_ready"
-              fi
-            fi
-
-            if [ -n "$replacement_pod" ] && [ "$replacement_ready" != true ] && [ "$((attempt % 10))" -eq 0 ]; then
-              replacement_record="$(kubectl -n ztap-system get pod "$replacement_pod" -o json 2>/dev/null || true)"
-              if [ -n "$replacement_record" ]; then
-                current_uid="$(jq -r '.metadata.uid' <<< "$replacement_record")"
-                if [ "$current_uid" != "$replacement_uid" ]; then
-                  printf '%s\n' 'rolling probe failed: replacement Pod identity changed before Ready' >&2
-                  exit 1
-                fi
-                replacement_ready="$(jq -r 'any(.status.conditions[]?; .type == "Ready" and .status == "True") | tostring' <<< "$replacement_record")"
-              fi
-            fi
-
-            if [ "$((attempt % 10))" -eq 0 ]; then
-              control_response="$(kubectl -n ztap-smoke exec smoke-control -- wget -qO- -T 1 "http://$server_ip:8080/" 2>/dev/null || true)"
-              if [ "$control_response" != ok ]; then
-                printf 'rolling probe failed: unselected control client returned %q\n' "$control_response" >&2
-                exit 1
-              fi
-            fi
-
-            probe_start_count="$(awk -F= '$1 == "fail_open_start_ns" { count++ } END { print count + 0 }' "$probe_output")"
-            probe_end_count="$(awk -F= '$1 == "fail_open_end_ns" { count++ } END { print count + 0 }' "$probe_output")"
-            if [ "$probe_start_count" -gt 1 ] || [ "$probe_end_count" -gt 1 ]; then
-              printf '%s\n' 'rolling probe emitted duplicate fail-open timestamps' >&2
-              exit 1
-            fi
-            if [ "$probe_start_count" -eq 1 ]; then
-              fail_open_start_ns="$(awk -F= '$1 == "fail_open_start_ns" { print $2 }' "$probe_output")"
-            fi
-            if [ "$probe_end_count" -eq 1 ]; then
-              fail_open_end_ns="$(awk -F= '$1 == "fail_open_end_ns" { print $2 }' "$probe_output")"
-            fi
-            if [ -n "$replacement_pod" ] && [ "$replacement_ready" = true ] &&
-              [ -n "$fail_open_start_ns" ] && [ -n "$fail_open_end_ns" ]; then
-              if [ "$probe_finished" -ne 1 ]; then
-                wait "$probe_pid"
-                probe_finished=1
-              fi
-              probe_pid=""
-              break
-            fi
-
-            if [ "$probe_finished" -ne 1 ]; then
-              probe_running=0
-              for running_pid in $(jobs -pr); do
-                if [ "$running_pid" = "$probe_pid" ]; then
-                  probe_running=1
-                fi
-              done
-              if [ "$probe_running" -ne 1 ]; then
-                if [ -n "$fail_open_start_ns" ] && [ -n "$fail_open_end_ns" ]; then
-                  wait "$probe_pid"
-                  probe_finished=1
-                elif wait "$probe_pid"; then
-                  printf '%s\n' 'rolling probe exited without a complete fail-open interval' >&2
-                  exit 1
-                else
-                  cat "$probe_output" >&2
-                  printf '%s\n' 'rolling probe failed before a complete fail-open interval' >&2
-                  exit 1
-                fi
-              fi
-            fi
-
-            sleep 0.1
-          done
-
-          if [ -n "$probe_pid" ]; then
-            if [ "$probe_finished" -eq 1 ]; then
-              printf '%s\n' 'fail-open interval was captured, but no Ready replacement agent was observed before the deadline' >&2
-            else
-              printf '%s\n' 'rolling probe did not finish before the observation deadline' >&2
-            fi
-            exit 1
-          fi
-
-          kubectl -n ztap-system rollout status daemonset/ztap-agent --timeout=180s >/dev/null
-          test -n "$replacement_pod"
-          test -n "$replacement_uid"
-          test -n "$replacement_created_at"
-          test -n "$replacement_node"
-          test -n "$replacement_observed_ns"
-          test "$replacement_ready" = true
-          test "$old_uid" != "$replacement_uid"
-          test "$old_node" = "$replacement_node"
-          test -n "$fail_open_start_ns"
-          test -n "$fail_open_end_ns"
-          fail_open_ms=$(( (fail_open_end_ns - fail_open_start_ns) / 1000000 ))
-          printf 'replacement_namespace=ztap-system\nreplacement_pod=%s\nreplacement_uid=%s\nreplacement_created_at=%s\nreplacement_node=%s\nreplacement_ready=%s\nreplacement_observed_ns=%s\nfail_open_start_ns=%s\nfail_open_end_ns=%s\nfail_open_interval_ms=%s\n' \
-            "$replacement_pod" "$replacement_uid" "$replacement_created_at" "$replacement_node" "$replacement_ready" "$replacement_observed_ns" "$fail_open_start_ns" "$fail_open_end_ns" "$fail_open_ms"
-          ) 2>&1 | tee rolling-fail-open-evidence.txt
+      - name: Verify inherited guard during deployed agent outages
+        run: bash .github/scripts/verify-restart-guard.sh
 
       - name: Exercise live flow reader
         run: |
@@ -1584,6 +1401,11 @@ jobs:
           printf '%s\n' 'flow_streaming=passed'
           ) 2>&1 | tee -a capability-agent-smoke.txt
 
+      - name: Verify explicit enforcement removal
+        run: |
+          bash .github/scripts/verify-explicit-uninstall.sh
+          go run ./tools/phase5verify -restart-dir=.
+
       - name: Capture Kubernetes diagnostics
         if: always()
         run: |
@@ -1610,6 +1432,11 @@ jobs:
             phase5-reference-fixture.yaml
             capability-agent-resource.txt
             rolling-fail-open-evidence.txt
+            rolling-continuity-ingress.jsonl
+            rolling-continuity-egress.jsonl
+            rolling-compatible-upgrade.json
+            restart-guard-evidence/
+            explicit-uninstall-evidence.json
           if-no-files-found: warn
           retention-days: 14
 

@@ -40,6 +40,9 @@ type nativeAgentHTTP struct {
 	unresolvedRunning   prometheus.Gauge
 	classificationDelay prometheus.Histogram
 	activePolicyEpoch   prometheus.Gauge
+	programGeneration   *prometheus.GaugeVec
+	lastReconciliation  prometheus.Gauge
+	lastGeneration      string
 	packetDecisions     *prometheus.CounterVec
 	flowDrops           *prometheus.CounterVec
 	slotCleanupFailures prometheus.Counter
@@ -93,6 +96,8 @@ func startNativeAgentHTTPWithListener(listen string, supplied net.Listener) (*na
 		unresolvedRunning:   prometheus.NewGauge(prometheus.GaugeOpts{Name: "ztap_unresolved_running_containers", Help: "Running local containers with an identity that could not be resolved to a cgroup"}),
 		classificationDelay: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "ztap_pod_start_classification_delay_seconds", Help: "Time from observing a running container to installing its cgroup classification", Buckets: prometheus.DefBuckets}),
 		activePolicyEpoch:   prometheus.NewGauge(prometheus.GaugeOpts{Name: "ztap_active_policy_epoch", Help: "Active instance-owned policy epoch"}),
+		programGeneration:   prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "ztap_active_enforcement_generation", Help: "Active compatible pinned program generation"}, []string{"generation"}),
+		lastReconciliation:  prometheus.NewGauge(prometheus.GaugeOpts{Name: "ztap_last_successful_reconciliation_timestamp_seconds", Help: "Unix time of the last successful policy reconciliation by this controller"}),
 		packetDecisions:     prometheus.NewCounterVec(prometheus.CounterOpts{Name: "ztap_packet_decisions_total", Help: "Packet decisions reported by the persistent engine counters"}, []string{"action", "direction", "reason"}),
 		flowDrops:           prometheus.NewCounterVec(prometheus.CounterOpts{Name: "ztap_flow_events_dropped_total", Help: "Flow events suppressed or rejected by the engine"}, []string{"reason"}),
 		slotCleanupFailures: prometheus.NewCounter(prometheus.CounterOpts{Name: "ztap_policy_slot_cleanup_failures_total", Help: "Policy slot cleanup failures observed by the engine"}),
@@ -111,6 +116,8 @@ func startNativeAgentHTTPWithListener(listen string, supplied net.Listener) (*na
 	registry.MustRegister(agent.unresolvedRunning)
 	registry.MustRegister(agent.classificationDelay)
 	registry.MustRegister(agent.activePolicyEpoch)
+	registry.MustRegister(agent.programGeneration)
+	registry.MustRegister(agent.lastReconciliation)
 	registry.MustRegister(agent.packetDecisions)
 	registry.MustRegister(agent.flowDrops)
 	registry.MustRegister(agent.slotCleanupFailures)
@@ -200,6 +207,9 @@ func (a *nativeAgentHTTP) recordReconciliation(observed int, result policy.Compi
 			a.reconciliations.WithLabelValues("error").Inc()
 		}
 		return
+	}
+	if a.lastReconciliation != nil {
+		a.lastReconciliation.Set(float64(time.Now().Unix()))
 	}
 	resultLabel := "success"
 	if len(result.Rejected) != 0 {
@@ -347,6 +357,19 @@ func (a *nativeAgentHTTP) refreshEngineMetrics() {
 	if a.activePolicyEpoch != nil {
 		a.activePolicyEpoch.Set(float64(snapshot.ActivePolicyEpoch))
 	}
+	if snapshot.ActivePolicyEpoch != 0 {
+		a.enforcing = true
+		if a.enforcingMetric != nil {
+			a.enforcingMetric.Set(1)
+		}
+	}
+	if a.programGeneration != nil && snapshot.ProgramGeneration != "" {
+		if a.lastGeneration != "" && a.lastGeneration != snapshot.ProgramGeneration {
+			a.programGeneration.DeleteLabelValues(a.lastGeneration)
+		}
+		a.programGeneration.WithLabelValues(snapshot.ProgramGeneration).Set(1)
+		a.lastGeneration = snapshot.ProgramGeneration
+	}
 	for _, decision := range snapshot.Decisions {
 		key := decision.Action + "\x00" + decision.Direction + "\x00" + decision.Reason
 		previous := a.lastDecisions[key]
@@ -424,13 +447,9 @@ func (a *nativeAgentHTTP) markApplyFailure() {
 func (a *nativeAgentHTTP) markStopping() {
 	a.stateMu.Lock()
 	a.ready = false
-	a.enforcing = false
 	a.reason = "stopping"
 	if a.readyMetric != nil {
 		a.readyMetric.Set(0)
-	}
-	if a.enforcingMetric != nil {
-		a.enforcingMetric.Set(0)
 	}
 	a.stateMu.Unlock()
 }

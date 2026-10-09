@@ -13,6 +13,9 @@ import (
 )
 
 func main() {
+	continuity := flag.Bool("continuity", false, "require zero observed prohibited responses through an outage")
+	allowedURL := flag.String("allowed-url", "", "allowed control URL for continuity mode")
+	releaseFile := flag.String("unclassified-until", "", "continuity mode: reject even control connections until this classification-release marker exists")
 	urlFlag := flag.String("url", "", "HTTP URL that returns status 200 and the exact body ok")
 	interval := flag.Duration("interval", 10*time.Millisecond, "delay between fresh HTTP probes")
 	requestTimeout := flag.Duration("request-timeout", 250*time.Millisecond, "per-probe request timeout")
@@ -20,7 +23,13 @@ func main() {
 	stopFile := flag.String("stop-file", "", "optional file whose presence stops the probe")
 	flag.Parse()
 
-	if err := runProbe(*urlFlag, *interval, *requestTimeout, *maxDuration, *stopFile, os.Stdout); err != nil {
+	run := func() error {
+		if *continuity {
+			return runClassificationProbe(*urlFlag, *allowedURL, *interval, *requestTimeout, *maxDuration, *stopFile, *releaseFile, os.Stdout)
+		}
+		return runProbe(*urlFlag, *interval, *requestTimeout, *maxDuration, *stopFile, os.Stdout)
+	}
+	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "phase5 rollout probe: %v\n", err)
 		os.Exit(1)
 	}

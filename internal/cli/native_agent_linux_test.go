@@ -598,6 +598,71 @@ func TestNativeAgentReconciliationRetriesTransientFailureWithoutDirtyEvent(t *te
 	}
 }
 
+func TestNativeAgentRetriesInitialUncertainIdentity(t *testing.T) {
+	status := &nativeAgentHTTP{reason: "starting"}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	first, retried, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	calls := 0
+	go func() {
+		done <- runNativeAgentReconciliation(ctx, make(chan struct{}, 1), nil, status, NativeAgentOptions{NodeName: "node-a"}, func() (policy.CompileResult, int, nativeSnapshotTelemetry, error) {
+			calls++
+			if calls == 1 {
+				close(first)
+				return policy.CompileResult{}, 0, nativeSnapshotTelemetry{}, enforcer.ErrIdentityUncertain
+			}
+			close(retried)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return policy.CompileResult{}, 0, nativeSnapshotTelemetry{}, nil
+		})
+	}()
+	select {
+	case <-first:
+	case <-time.After(time.Second):
+		t.Fatal("initial reconciliation did not run")
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("uncertain startup exited: %v", err)
+	case <-retried:
+	case <-time.After(3 * time.Second):
+		t.Fatal("uncertain startup did not retry without a cache event")
+	}
+	status.stateMu.RLock()
+	ready, reason := status.ready, status.reason
+	status.stateMu.RUnlock()
+	if ready || reason != "apply_error" {
+		t.Fatalf("uncertain startup readiness = %t/%s", ready, reason)
+	}
+	close(release)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		status.stateMu.RLock()
+		ready = status.ready
+		status.stateMu.RUnlock()
+		if ready {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !ready {
+		t.Fatal("resolved identity did not restore readiness")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reconciliation did not stop")
+	}
+}
+
 func TestNativeDryRunEngineHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

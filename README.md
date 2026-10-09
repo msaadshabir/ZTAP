@@ -2,13 +2,16 @@
 
 ZTAP is a Linux node agent that compiles the supported subset of Kubernetes
 `NetworkPolicy` and enforces it with per-container eBPF programs. The product
-is intentionally small: one binary, one DaemonSet, and explicit command-line
+is intentionally small: one binary, two DaemonSets, and explicit command-line
 flags. It is experimental software; the documented Linux and
 Kubernetes acceptance gates are part of the supported product contract.
 
-Enforcement is process-owned: new containers can transmit before they are
-classified, and agent restarts or DaemonSet updates temporarily fail open.
-See [deployment limits](docs/deployment.md#upgrade) before installing it.
+Pinned maps and links retain the last committed policy during agent outages
+within the current kernel boot. An inherited guard blocks new containers until
+their verified identity and classification are committed. Compatible replacements
+recover those objects before synchronizing Kubernetes caches. See
+[deployment boundaries](docs/deployment.md#upgrade), including first migration,
+explicit cleanup, and the separate reboot requirement.
 
 | Guide | Contents |
 | --- | --- |
@@ -34,7 +37,8 @@ Kubernetes API -> informer snapshot -> validate/resolve -> compile
 
 ## Prerequisites
 
-- Go `1.26.6` or a compatible newer toolchain for local builds.
+- Go `1.26.9` or a compatible newer toolchain with current security patches
+  for local builds.
 - Linux with cgroup v2, bpffs, and a containerd systemd-cgroup runtime for
   enforcement.
 - `kubectl` access to a Kubernetes 1.36.x cluster with no other NetworkPolicy
@@ -51,6 +55,8 @@ claims.
 
 ```text
 ztap agent     reconcile Kubernetes NetworkPolicy on one Linux node
+ztap node-init authenticate node bootstrap identities and API endpoints
+ztap cleanup   intentionally remove owned enforcement under the node lock
 ztap validate  validate native NetworkPolicy YAML offline
 ztap flows     stream live eBPF flow events
 ztap version   print build metadata
@@ -104,10 +110,14 @@ clusters, publish your source-built image to a registry reachable by the
 nodes and set the manifest's image to its digest; see
 [source builds](docs/deployment.md#build-your-own-image).
 
-The DaemonSet mounts the host cgroup v2 hierarchy and bpffs, requests only the
+The agent DaemonSet mounts the host cgroup v2 hierarchy and bpffs, requests only the
 capabilities needed by the eBPF engine, and exposes health, readiness, and
 Prometheus-compatible metrics on port `9090`. The runtime image is `scratch`,
 so it intentionally contains no shell or debugging tools.
+
+The node initializer uses the same image, shares the node network namespace,
+drops all capabilities, and publishes protected bootstrap metadata. It does not
+mount bpffs. The agent keeps its separate network, PID, and IPC namespaces.
 
 On a Linux node with an active agent and permission to read its pinned maps,
 stream live flow events with:

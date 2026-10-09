@@ -14,6 +14,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/saadshabir/ZTAP/internal/enforcer"
 	"github.com/saadshabir/ZTAP/internal/policy"
 )
 
@@ -157,6 +158,43 @@ func (r *k8sSubjectResolver) ResolveCgroupPath(ctx context.Context, cgroupID uin
 		return "", fmt.Errorf("cgroup path for ID %d has not been resolved", cgroupID)
 	}
 	return path, nil
+}
+
+// ResolveWorkloadIdentity uses only the latest fully resolved snapshot. A
+// pending/missing container status cannot satisfy a committed identity merely
+// because the informer itself reports synchronized.
+func (r *k8sSubjectResolver) ResolveWorkloadIdentity(ctx context.Context, id uint64) (enforcer.WorkloadIdentity, error) {
+	if ctx == nil {
+		return enforcer.WorkloadIdentity{}, errors.New("workload identity context is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return enforcer.WorkloadIdentity{}, err
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for key, cached := range r.cgroupCache {
+		if cached.value.ID != id {
+			continue
+		}
+		relative, err := filepath.Rel(r.cgroupRoot, cached.value.Path)
+		if err != nil {
+			return enforcer.WorkloadIdentity{}, err
+		}
+		return enforcer.WorkloadIdentity{CgroupID: id, Device: cached.identity.device,
+			PodUID: key.podUID, ContainerID: key.containerID, Path: relative}, nil
+	}
+	return enforcer.WorkloadIdentity{}, fmt.Errorf("no complete running identity for cgroup %d in candidate snapshot", id)
+}
+
+func (r *k8sSubjectResolver) ValidateWorkloadIdentity(ctx context.Context, committed enforcer.WorkloadIdentity) error {
+	current, err := r.ResolveWorkloadIdentity(ctx, committed.CgroupID)
+	if err != nil {
+		return err
+	}
+	if current != committed {
+		return errors.New("candidate workload identity differs from committed ownership")
+	}
+	return nil
 }
 
 type resolvedPodCgroup struct {
