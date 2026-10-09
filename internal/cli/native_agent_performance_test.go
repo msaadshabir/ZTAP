@@ -416,7 +416,7 @@ func TestPhase5AgentPodStartClassification(t *testing.T) {
 			initialClassifications = int(baseline)
 		}
 
-		pod := newPhase5AgentPodStartFixture(t, 900+sample)
+		pod, cgroupPath := newPhase5AgentPodStartFixture(t, 900+sample)
 		started := time.Now()
 		if _, err := agent.client.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
 			agent.stop(t)
@@ -434,6 +434,14 @@ func TestPhase5AgentPodStartClassification(t *testing.T) {
 		}
 		samples = append(samples, time.Since(started))
 		agent.stop(t)
+		// Shutdown retains enforcement. Remove this sample's synthetic
+		// workload before starting the next agent with the base API snapshot.
+		if err := removePhase5CgroupDir(cgroupPath); err != nil {
+			t.Fatalf("remove Pod-start sample %d container cgroup: %v", sample+1, err)
+		}
+		if err := removePhase5CgroupDir(filepath.Dir(cgroupPath)); err != nil {
+			t.Fatalf("remove Pod-start sample %d Pod cgroup: %v", sample+1, err)
+		}
 	}
 
 	sorted := append([]time.Duration(nil), samples...)
@@ -992,7 +1000,7 @@ func newPhase5AgentFixture(t *testing.T) phase5AgentFixture {
 	return phase5AgentFixture{Objects: objects}
 }
 
-func newPhase5AgentPodStartFixture(t *testing.T, index int) *corev1.Pod {
+func newPhase5AgentPodStartFixture(t *testing.T, index int) (*corev1.Pod, string) {
 	t.Helper()
 	uid := fmt.Sprintf("00000000-0000-4000-8000-%012d", index+1)
 	containerID := fmt.Sprintf("%064x", index+1)
@@ -1020,7 +1028,7 @@ func newPhase5AgentPodStartFixture(t *testing.T, index int) *corev1.Pod {
 				State:       corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
 			}},
 		},
-	}
+	}, cgroupPath
 }
 
 func createPhase5AgentCrashCgroup(t *testing.T, index int) string {

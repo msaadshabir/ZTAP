@@ -15,8 +15,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/watch"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	networkinglisters "k8s.io/client-go/listers/networking/v1"
 	"k8s.io/client-go/tools/cache"
@@ -642,8 +644,23 @@ func TestNativeAgentPolicyInformerConvergesAddUpdateDeleteRelist(t *testing.T) {
 	}
 
 	policySource := cachetesting.NewFakeControllerSource()
+	watchStarted := make(chan struct{}, 1)
 	policyInformer := cache.NewSharedIndexInformer(
-		policySource,
+		&cache.ListWatch{
+			ListWithContextFunc: func(_ context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				return policySource.List(options)
+			},
+			WatchFuncWithContext: func(_ context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				watcher, err := policySource.Watch(options)
+				if err == nil {
+					select {
+					case watchStarted <- struct{}{}:
+					default:
+					}
+				}
+				return watcher, err
+			},
+		},
 		&networkingv1.NetworkPolicy{},
 		0,
 		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
@@ -701,6 +718,15 @@ func TestNativeAgentPolicyInformerConvergesAddUpdateDeleteRelist(t *testing.T) {
 	if !cache.WaitForCacheSync(ctx.Done(), policyInformer.HasSynced) {
 		t.Fatal("policy informer cache did not synchronize")
 	}
+	waitForWatch := func() {
+		t.Helper()
+		select {
+		case <-watchStarted:
+		case <-time.After(2 * time.Second):
+			t.Fatal("policy informer watch did not start")
+		}
+	}
+	waitForWatch()
 
 	protocol := corev1.ProtocolTCP
 	port := intstr.FromInt(443)
@@ -773,6 +799,10 @@ func TestNativeAgentPolicyInformerConvergesAddUpdateDeleteRelist(t *testing.T) {
 	waitForDirty("policy relist")
 	set = reconcile()
 	assertPort(set, 9443)
+	// Relist notifications can precede the replacement watch. Deleting in
+	// that gap makes the fake source expire the relist's resource version
+	// and introduces another retry instead of testing a watch deletion.
+	waitForWatch()
 
 	policySource.Delete(relisted)
 	waitForDirty("policy delete")
