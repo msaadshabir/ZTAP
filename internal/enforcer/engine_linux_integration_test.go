@@ -120,8 +120,8 @@ func TestLinuxEnginePublishesStoppingLifecycleStatus(t *testing.T) {
 	if stopping.SchemaVersion != engineAgentStatusSchema || stopping.LifecycleState != engineStateStopping || stopping.AgentEpoch != 42 || stopping.HeartbeatNS == 0 {
 		t.Fatalf("stopping agent status = %+v", stopping)
 	}
-	if _, err := os.Lstat(engine.store.agentStatusPin); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("agent status pin remains after close: %v", err)
+	if _, err := os.Lstat(engine.store.agentStatusPin); err != nil {
+		t.Fatalf("agent status pin was lost after close: %v", err)
 	}
 }
 
@@ -1214,9 +1214,12 @@ func TestLinuxEngineRepeatedApplyCloseReleasesOwnedResources(t *testing.T) {
 				cycle, len(engine.links), len(engine.orphanLinks), engine.store.collection != nil, engine.store.activeConfigMap != nil)
 		}
 		for _, pin := range []string{engine.store.flowEventsPin, engine.store.agentStatusPin} {
-			if _, err := os.Lstat(pin); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("cycle %d left engine pin %q: %v", cycle, pin, err)
+			if _, err := os.Lstat(pin); err != nil {
+				t.Fatalf("cycle %d lost persistent engine pin %q: %v", cycle, pin, err)
 			}
+		}
+		if err := RemoveEnforcement(context.Background(), filepath.Dir(engine.store.pinDirectoryPath)); err != nil {
+			t.Fatalf("cycle %d explicit cleanup: %v", cycle, err)
 		}
 	}
 }
@@ -1405,7 +1408,7 @@ func newLinuxEngineForTest(t *testing.T, cgroupPaths map[uint64]string) *LinuxEn
 	t.Helper()
 	engine, err := NewLinuxEngine(context.Background(), LinuxEngineOptions{
 		CgroupRoot: "/sys/fs/cgroup",
-		BPFFSRoot:  "/sys/fs/bpf",
+		BPFFSRoot:  createEngineTestBPFFSRoot(t),
 		ResolveCgroupPath: func(_ context.Context, cgroupID uint64) (string, error) {
 			path, ok := cgroupPaths[cgroupID]
 			if !ok {

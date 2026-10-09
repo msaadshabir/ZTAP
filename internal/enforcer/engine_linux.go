@@ -22,7 +22,6 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/rlimit"
 	"golang.org/x/sys/unix"
 )
 
@@ -37,6 +36,8 @@ const (
 	engineStateEnforcing = AgentLifecycleEnforcing
 	engineStateStopping  = AgentLifecycleStopping
 )
+
+var errCgroupReplaced = errors.New("cgroup path now identifies a replacement")
 
 var engineDecisionReasons = [...]string{
 	"unisolated",
@@ -106,20 +107,31 @@ type linuxEngineStore struct {
 	agentStatusPin   string
 	pinDirectory     *os.File
 	pinDirectoryPath string
-	ownedPins        []string
 	slotCounts       [2]slotMapCounts
 	statusMu         sync.Mutex
 	statusState      uint32
 	agentEpoch       uint64
 	heartbeatCancel  context.CancelFunc
 	heartbeatDone    chan struct{}
+	owners           map[uint64]WorkloadIdentity
+	resolveIdentity  func(context.Context, uint64) (WorkloadIdentity, error)
+	validateIdentity func(context.Context, WorkloadIdentity) error
+	cgroupRoot       string
+	programs         map[ebpf.ProgramID]*ebpf.Program
+	stalePrograms    []uint32
+	checkpoint       func(string)
+	guard            *WorkloadGuardOptions
+	guardOwners      map[uint64]durableGuardOwner
+	guardLinks       map[uint64][3]link.Link
+	resolvePath      CgroupPathResolver
 }
 
 type slotMapCounts struct {
-	subjects int
-	rules    int
-	nodes    int
-	self     int
+	subjects   int
+	rules      int
+	nodes      int
+	self       int
+	classified int
 }
 
 type subjectLinkPair struct {
@@ -134,6 +146,7 @@ type linuxSubjectLinker struct {
 	egress        *ebpf.Program
 	ingress       *ebpf.Program
 	cgroupStorage *ebpf.Map
+	store         *linuxEngineStore
 }
 
 type bpfAgentStatus struct {
@@ -143,9 +156,9 @@ type bpfAgentStatus struct {
 	HeartbeatNS    uint64
 }
 
-// RemoveStalePins removes only the two stable maps owned by the agent. It
-// never walks the directory or deletes unrelated bpffs entries. The caller
-// must hold the node-level agent lock before calling this at startup.
+// RemoveStalePins is retained for migration of the process-owned status pins.
+// It refuses durable installations. Startup uses validated recovery, and
+// intentional removal of a durable installation uses RemoveEnforcement.
 func RemoveStalePins(bpffsRoot string) (resultErr error) {
 	root, err := absoluteDirectoryPath(bpffsRoot, "/sys/fs/bpf")
 	if err != nil {
@@ -181,6 +194,12 @@ func RemoveStalePins(bpffsRoot string) (resultErr error) {
 			resultErr = errors.Join(resultErr, fmt.Errorf("close ZTAP bpffs directory: %w", err))
 		}
 	}()
+	var durableStat unix.Stat_t
+	if err := unix.Fstatat(pinDirectoryFD, durableMetadataPin, &durableStat, unix.AT_SYMLINK_NOFOLLOW); err == nil {
+		return errors.New("durable enforcement is present; use explicit enforcement cleanup")
+	} else if !errors.Is(err, unix.ENOENT) {
+		return err
+	}
 
 	for _, name := range []string{engineFlowEventsPinName, engineAgentStatusPinName} {
 		if err := removeOwnedEnginePinAt(pinDirectoryFD, name); err != nil {
@@ -229,101 +248,10 @@ func removeOwnedEnginePinAt(directoryFD int, name string) error {
 	return nil
 }
 
-// NewLinuxEngine creates one collection and keeps its programs and maps for
-// the engine lifetime. The caller must hold the agent lock before construction,
-// because construction removes stale flow/status pins from bpffsRoot.
+// NewLinuxEngine validates and adopts pinned enforcement before callers wait
+// for Kubernetes. The caller must hold the node lock for its entire lifetime.
 func NewLinuxEngine(ctx context.Context, options LinuxEngineOptions) (*LinuxEngine, error) {
-	if ctx == nil {
-		return nil, errors.New("engine context is nil")
-	}
-	if options.ResolveCgroupPath == nil {
-		return nil, errors.New("cgroup path resolver is required")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	cgroupRoot, err := absoluteDirectoryPath(options.CgroupRoot, "/sys/fs/cgroup")
-	if err != nil {
-		return nil, fmt.Errorf("cgroup root: %w", err)
-	}
-	if err := requireFilesystemType(cgroupRoot, cgroup2SuperMagic, "cgroup v2"); err != nil {
-		return nil, err
-	}
-	bpffsRoot, err := absoluteDirectoryPath(options.BPFFSRoot, "/sys/fs/bpf")
-	if err != nil {
-		return nil, fmt.Errorf("bpffs root: %w", err)
-	}
-	if err := requireFilesystemType(bpffsRoot, bpfSuperMagic, "bpffs"); err != nil {
-		return nil, err
-	}
-	logger := options.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-	if options.AgentEpoch == 0 {
-		options.AgentEpoch, err = newAgentEpoch()
-		if err != nil {
-			return nil, fmt.Errorf("create agent epoch: %w", err)
-		}
-	}
-	if err := RemoveStalePins(bpffsRoot); err != nil {
-		return nil, err
-	}
-	// The engine owns several large maps (including the two policy slots and
-	// the ring buffer). Raise the process memlock limit before asking the
-	// kernel to create the collection; the DaemonSet grants SYS_RESOURCE for
-	// this operation.
-	if err := rlimit.RemoveMemlock(); err != nil {
-		return nil, fmt.Errorf("remove eBPF memlock limit: %w", err)
-	}
-	spec, err := loadEngine()
-	if err != nil {
-		return nil, fmt.Errorf("load embedded engine collection spec: %w", err)
-	}
-	if err := validateEngineCollectionSpec(spec); err != nil {
-		return nil, err
-	}
-	collection, err := ebpf.NewCollection(spec)
-	if err != nil {
-		return nil, fmt.Errorf("load instance-owned eBPF collection: %w", err)
-	}
-	pinDirectoryPath := filepath.Join(bpffsRoot, "ztap")
-	pinDirectory, err := openOrCreateEnginePinDirectory(bpffsRoot)
-	if err != nil {
-		collection.Close()
-		return nil, fmt.Errorf("create ZTAP bpffs directory: %w", err)
-	}
-	store := &linuxEngineStore{
-		collection:       collection,
-		maps:             collection.Maps,
-		activeConfigSpec: spec.Maps["active_config"].InnerMap.Copy(),
-		logger:           logger,
-		flowEventsPin:    filepath.Join(pinDirectoryPath, engineFlowEventsPinName),
-		agentStatusPin:   filepath.Join(pinDirectoryPath, engineAgentStatusPinName),
-		pinDirectory:     pinDirectory,
-		pinDirectoryPath: pinDirectoryPath,
-		statusState:      engineStateStarting,
-		agentEpoch:       options.AgentEpoch,
-	}
-	if err := store.initializeActiveConfig(); err != nil {
-		return nil, errors.Join(fmt.Errorf("initialize active policy config: %w", err), store.Close())
-	}
-	if err := store.pinStableMaps(); err != nil {
-		return nil, errors.Join(fmt.Errorf("pin stable engine maps: %w", err), store.Close())
-	}
-	if err := store.writeAgentStatus(); err != nil {
-		return nil, errors.Join(fmt.Errorf("write initial agent status: %w", err), store.Close())
-	}
-	store.startHeartbeat()
-
-	linker := &linuxSubjectLinker{
-		cgroupRoot:    cgroupRoot,
-		resolvePath:   options.ResolveCgroupPath,
-		egress:        collection.Programs["ztap_egress"],
-		ingress:       collection.Programs["ztap_ingress"],
-		cgroupStorage: collection.Maps["attached_cgroup"],
-	}
-	return &LinuxEngine{engineCore: newEngineCore(store, linker, logger), store: store}, nil
+	return newPersistentLinuxEngine(ctx, options)
 }
 
 func ensureEnginePinDirectory(root string) error {
@@ -427,6 +355,11 @@ func (e *LinuxEngine) MetricsSnapshot(ctx context.Context) (EngineMetricsSnapsho
 		return EngineMetricsSnapshot{}, err
 	}
 	snapshot.SlotCleanupFailures = e.slotCleanupFailures
+	generation, err := e.store.programGeneration()
+	if err != nil {
+		return EngineMetricsSnapshot{}, err
+	}
+	snapshot.ProgramGeneration = generation
 	return snapshot, nil
 }
 
@@ -498,7 +431,7 @@ func validateEngineCollectionSpec(spec *ebpf.CollectionSpec) error {
 	if spec == nil {
 		return errors.New("engine collection spec is nil")
 	}
-	for _, name := range []string{"ztap_egress", "ztap_ingress"} {
+	for _, name := range []string{"ztap_egress", "ztap_ingress", "ztap_guard_egress", "ztap_guard_ingress", "ztap_socket_namespace"} {
 		if spec.Programs[name] == nil {
 			return fmt.Errorf("engine collection is missing program %q", name)
 		}
@@ -524,6 +457,12 @@ func validateEngineCollectionSpec(spec *ebpf.CollectionSpec) error {
 		"in_flight":               {typ: ebpf.PerCPUArray, max: 2, keySize: 4, valueSize: 8},
 		"attached_cgroup":         {typ: ebpf.CGroupStorage, keySize: 16, valueSize: 8},
 		"agent_status":            {typ: ebpf.Array, max: 1, keySize: 4, valueSize: 24},
+		"workload_class":          {typ: ebpf.Hash, max: 32768, keySize: 16, valueSize: 1},
+		"guard_config":            {typ: ebpf.Array, max: 1, keySize: 4, valueSize: 16},
+		"bootstrap_peers":         {typ: ebpf.Hash, max: 64, keySize: 8, valueSize: 1},
+		"host_owners":             {typ: ebpf.Hash, max: 16384, keySize: 8, valueSize: 656},
+		"guard_blocks":            {typ: ebpf.LRUCPUHash, max: 4096, keySize: 24, valueSize: 8},
+		"socket_netns":            {typ: ebpf.SkStorage, flags: 513, keySize: 4, valueSize: 8},
 	}
 	for name, requirement := range wanted {
 		mapSpec := spec.Maps[name]
@@ -561,7 +500,7 @@ func (s *linuxEngineStore) initializeActiveConfig() error {
 	if activeMap == nil || s.activeConfigSpec == nil {
 		return errors.New("active_config map or inner map spec is missing")
 	}
-	inner, err := ebpf.NewMap(s.activeConfigSpec)
+	inner, err := s.configurationHandle(0)
 	if err != nil {
 		return fmt.Errorf("create initial active-config inner map: %w", err)
 	}
@@ -576,34 +515,6 @@ func (s *linuxEngineStore) initializeActiveConfig() error {
 		return fmt.Errorf("publish initial active config: %w", err)
 	}
 	s.activeConfigMap = inner
-	return nil
-}
-
-func (s *linuxEngineStore) pinStableMaps() error {
-	if s.pinDirectory == nil {
-		return errors.New("ZTAP bpffs directory handle is missing")
-	}
-	pins := []struct {
-		name        string
-		displayPath string
-	}{
-		{name: engineFlowEventsPinName, displayPath: s.flowEventsPin},
-		{name: engineAgentStatusPinName, displayPath: s.agentStatusPin},
-	}
-	for _, pin := range pins {
-		m := s.maps[pin.name]
-		if m == nil {
-			return fmt.Errorf("map %q is missing", pin.name)
-		}
-		pinPath, err := enginePinPathAt(s.pinDirectory, pin.name)
-		if err != nil {
-			return err
-		}
-		if err := m.Pin(pinPath); err != nil {
-			return fmt.Errorf("pin map %q at %q: %w", pin.name, pin.displayPath, err)
-		}
-		s.ownedPins = append(s.ownedPins, pin.name)
-	}
 	return nil
 }
 
@@ -633,16 +544,18 @@ func (s *linuxEngineStore) PopulateSlot(ctx context.Context, slot uint32, set po
 	}
 	otherSlot := 1 - slot
 	counts := slotMapCounts{
-		subjects: len(encoded.Subjects),
-		rules:    len(encoded.Rules),
-		nodes:    len(encoded.Nodes),
-		self:     len(encoded.Self),
+		subjects:   len(encoded.Subjects),
+		rules:      len(encoded.Rules),
+		nodes:      len(encoded.Nodes),
+		self:       len(encoded.Self),
+		classified: len(encoded.Classified),
 	}
 	for name, usage := range map[string]int{
-		"subject_state": counts.subjects + s.slotCounts[otherSlot].subjects,
-		"policy_rules":  counts.rules + s.slotCounts[otherSlot].rules,
-		"node_bypass":   counts.nodes + s.slotCounts[otherSlot].nodes,
-		"self_bypass":   counts.self + s.slotCounts[otherSlot].self,
+		"subject_state":  counts.subjects + s.slotCounts[otherSlot].subjects,
+		"policy_rules":   counts.rules + s.slotCounts[otherSlot].rules,
+		"node_bypass":    counts.nodes + s.slotCounts[otherSlot].nodes,
+		"self_bypass":    counts.self + s.slotCounts[otherSlot].self,
+		"workload_class": counts.classified + s.slotCounts[otherSlot].classified,
 	} {
 		if err := ensureMapCapacity(s.maps[name], name, usage); err != nil {
 			return err
@@ -652,15 +565,33 @@ func (s *linuxEngineStore) PopulateSlot(ctx context.Context, slot uint32, set po
 	// conservatively accounted for until ClearSlot completes.
 	s.slotCounts[slot] = counts
 
-	for _, entry := range encoded.Subjects {
+	for index, entry := range encoded.Subjects {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := s.maps["subject_state"].Put(&entry.Key, &entry.Value); err != nil {
 			return fmt.Errorf("write subject state for cgroup %d: %w", entry.Key.CgroupID, err)
 		}
+		if index == 0 {
+			s.ObserveCheckpoint("inactive-slot-partial")
+		}
 	}
 	present := uint8(1)
+	for _, key := range encoded.Classified {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		path, err := s.resolvePath(ctx, key.CgroupID)
+		if err != nil {
+			return err
+		}
+		if err := s.rememberOwner(ctx, key.CgroupID, path); err != nil {
+			return err
+		}
+		if err := s.maps["workload_class"].Put(&key, &present); err != nil {
+			return err
+		}
+	}
 	for _, key := range encoded.Nodes {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -707,9 +638,13 @@ func (s *linuxEngineStore) ClearSlot(slot uint32) error {
 		return fmt.Errorf("policy slot %d is outside 0..1", slot)
 	}
 	var clearErrors []error
+	if err := clearClassifiedMap(s.maps["workload_class"], slot); err != nil {
+		clearErrors = append(clearErrors, err)
+	}
 	if err := clearSubjectMap(s.maps["subject_state"], slot); err != nil {
 		clearErrors = append(clearErrors, err)
 	}
+	s.ObserveCheckpoint("slot-subjects-cleared")
 	if err := clearNodeMap(s.maps["node_bypass"], slot); err != nil {
 		clearErrors = append(clearErrors, err)
 	}
@@ -723,7 +658,7 @@ func (s *linuxEngineStore) ClearSlot(slot uint32) error {
 		return fmt.Errorf("clear policy slot %d: %w", slot, err)
 	}
 	s.slotCounts[slot] = slotMapCounts{}
-	return nil
+	return s.pruneUnreferencedOwners()
 }
 
 func clearSubjectMap(m *ebpf.Map, slot uint32) error {
@@ -806,7 +741,7 @@ func (s *linuxEngineStore) Flip(config activeConfiguration) error {
 	if s.activeConfigSpec == nil || s.maps["active_config"] == nil {
 		return errors.New("active_config map is missing")
 	}
-	newConfig, err := ebpf.NewMap(s.activeConfigSpec)
+	newConfig, err := s.configurationHandle(config.Slot)
 	if err != nil {
 		return fmt.Errorf("create candidate active-config map: %w", err)
 	}
@@ -830,6 +765,14 @@ func (s *linuxEngineStore) Flip(config activeConfiguration) error {
 		}
 	}
 	return nil
+}
+
+func (s *linuxEngineStore) configurationHandle(slot uint32) (*ebpf.Map, error) {
+	if inner := s.maps[configurationMapName(slot)]; inner != nil {
+		return inner.Clone()
+	}
+	// The nonpersistent constructor is retained for isolated kernel fixtures.
+	return ebpf.NewMap(s.activeConfigSpec)
 }
 
 func (s *linuxEngineStore) WaitQuiescent(ctx context.Context, slot uint32) error {
@@ -957,27 +900,28 @@ func (s *linuxEngineStore) Close() error {
 			}
 		}
 	}
-	remainingPins := make([]string, 0, len(s.ownedPins))
-	for i := len(s.ownedPins) - 1; i >= 0; i-- {
-		name := s.ownedPins[i]
-		displayPath := filepath.Join(s.pinDirectoryPath, name)
-		if s.pinDirectory == nil {
-			closeErrors = append(closeErrors, fmt.Errorf("remove engine pin %q: ZTAP bpffs directory handle is missing", displayPath))
-			remainingPins = append(remainingPins, name)
-			continue
+	// Pins own the committed kernel state. Exit only releases local handles.
+	for id, handles := range s.guardLinks {
+		for _, handle := range handles {
+			if handle != nil {
+				if err := handle.Close(); err != nil {
+					closeErrors = append(closeErrors, err)
+				}
+			}
 		}
-		if err := removeOwnedEnginePinAt(int(s.pinDirectory.Fd()), name); err != nil {
-			closeErrors = append(closeErrors, fmt.Errorf("remove engine pin %q: %w", displayPath, err))
-			remainingPins = append(remainingPins, name)
-		}
+		delete(s.guardLinks, id)
 	}
-	s.ownedPins = remainingPins
-	if len(s.ownedPins) == 0 && s.pinDirectory != nil {
-		pinDirectory := s.pinDirectory
-		s.pinDirectory = nil
-		if err := pinDirectory.Close(); err != nil {
-			closeErrors = append(closeErrors, fmt.Errorf("close ZTAP bpffs directory: %w", err))
+	if s.pinDirectory != nil {
+		if err := s.pinDirectory.Close(); err != nil {
+			closeErrors = append(closeErrors, err)
 		}
+		s.pinDirectory = nil
+	}
+	for id, program := range s.programs {
+		if err := program.Close(); err != nil {
+			closeErrors = append(closeErrors, err)
+		}
+		delete(s.programs, id)
 	}
 	if s.activeConfigMap != nil {
 		if err := s.activeConfigMap.Close(); err != nil {
@@ -994,6 +938,9 @@ func (s *linuxEngineStore) Close() error {
 }
 
 func (l *linuxSubjectLinker) Attach(ctx context.Context, cgroupID uint64) (io.Closer, error) {
+	if l.store != nil {
+		return l.attachPersistent(ctx, cgroupID)
+	}
 	if ctx == nil {
 		return nil, errors.New("attach cgroup context is nil")
 	}
@@ -1307,7 +1254,7 @@ func openValidatedCgroup(root, target string, expectedID uint64) (*os.File, stri
 	}
 	cgroupID := uint64(stat.Ino)
 	if cgroupID != expectedID {
-		return nil, "", fmt.Errorf("cgroup path %q has ID %d, want %d", resolved, cgroupID, expectedID)
+		return nil, "", fmt.Errorf("%w: cgroup path %q has ID %d, want %d", errCgroupReplaced, resolved, cgroupID, expectedID)
 	}
 	cgroup := os.NewFile(uintptr(currentFD), "ztap validated cgroup")
 	if cgroup == nil {

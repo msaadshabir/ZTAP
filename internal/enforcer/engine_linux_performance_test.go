@@ -226,7 +226,7 @@ func phase5MapMemory(t *testing.T, engine *LinuxEngine) []phase5MapMemoryEvidenc
 			t.Fatalf("read map %q memory metadata: %v", name, err)
 		}
 		mapType := info.Type.String()
-		capacityBounded := mapType != "CGroupStorage"
+		capacityBounded := mapType != "CGroupStorage" && mapType != "SkStorage"
 		calculated, err := phase5MapCapacityBytes(mapType, info.MaxEntries, info.KeySize, info.ValueSize, runtime.NumCPU())
 		if err != nil {
 			t.Fatalf("calculate map %q capacity: %v", name, err)

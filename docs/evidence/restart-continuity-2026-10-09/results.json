@@ -1,0 +1,142 @@
+{
+  "schema_version": 2,
+  "recorded_date": "2026-10-09",
+  "scope": "Finite local Linux and capability-only kind tests of the working tree; not a universal failure-schedule or reboot proof.",
+  "base_commit": "3fe7d109dd68a95b13697031a8b87c73e4ebe7cf",
+  "go": "1.26.9",
+  "architecture": "arm64",
+  "kernel": "7.0.14-orbstack-00380-ga7e0a2dc9535",
+  "containerd": "containerd github.com/containerd/containerd/v2 v2.3.4 db8809540e1a7a9da5d518876894933ff55692ab",
+  "kubernetes": "1.36.4",
+  "durable_abi": 3,
+  "packet_semantics": 2,
+  "local_agent_image_config_id": "sha256:8bd3e76aac1bd6815a06be590b26fd749eb7b05043a0c0d9cd37ae0686ba84a1",
+  "existing_container_tcp": {
+    "observed_interval_ms": 52231.946,
+    "ingress_allowed": 5423,
+    "egress_allowed": 5424,
+    "ingress_prohibited": 0,
+    "egress_prohibited": 0,
+    "scenarios": [
+      "SIGSTOP",
+      "SIGKILL with delayed replacement",
+      "compatible image replacement and rollback"
+    ]
+  },
+  "new_container_tcp": [
+    {
+      "mode": "pause",
+      "observed_unclassified_ms": 3065.868,
+      "cgroup_id": 24420,
+      "policy_epoch": 14,
+      "kernel_blocked_ingress": 120,
+      "kernel_blocked_egress": 130,
+      "directions": {
+        "ingress": {
+          "allowed": 317,
+          "allowed_attempts": 350,
+          "prohibited": 0,
+          "prohibited_attempts": 65,
+          "unknown_tcp_connections": 0
+        },
+        "egress": {
+          "allowed": 326,
+          "allowed_attempts": 360,
+          "prohibited": 0,
+          "prohibited_attempts": 67,
+          "unknown_tcp_connections": 0
+        }
+      }
+    },
+    {
+      "mode": "term",
+      "observed_unclassified_ms": 3067.755,
+      "cgroup_id": 24920,
+      "policy_epoch": 16,
+      "kernel_blocked_ingress": 120,
+      "kernel_blocked_egress": 136,
+      "directions": {
+        "ingress": {
+          "allowed": 264,
+          "allowed_attempts": 333,
+          "prohibited": 0,
+          "prohibited_attempts": 96,
+          "unknown_tcp_connections": 0
+        },
+        "egress": {
+          "allowed": 256,
+          "allowed_attempts": 326,
+          "prohibited": 0,
+          "prohibited_attempts": 97,
+          "unknown_tcp_connections": 0
+        }
+      }
+    },
+    {
+      "mode": "kill",
+      "observed_unclassified_ms": 3065.184,
+      "cgroup_id": 25420,
+      "policy_epoch": 18,
+      "kernel_blocked_ingress": 128,
+      "kernel_blocked_egress": 136,
+      "directions": {
+        "ingress": {
+          "allowed": 238,
+          "allowed_attempts": 397,
+          "prohibited": 0,
+          "prohibited_attempts": 183,
+          "unknown_tcp_connections": 0
+        },
+        "egress": {
+          "allowed": 226,
+          "allowed_attempts": 387,
+          "prohibited": 0,
+          "prohibited_attempts": 184,
+          "unknown_tcp_connections": 0
+        }
+      }
+    },
+    {
+      "mode": "api",
+      "observed_unclassified_ms": 3065.353,
+      "cgroup_id": 25920,
+      "policy_epoch": 20,
+      "kernel_blocked_ingress": 120,
+      "kernel_blocked_egress": 136,
+      "directions": {
+        "ingress": {
+          "allowed": 337,
+          "allowed_attempts": 380,
+          "prohibited": 0,
+          "prohibited_attempts": 76,
+          "unknown_tcp_connections": 0
+        },
+        "egress": {
+          "allowed": 324,
+          "allowed_attempts": 368,
+          "prohibited": 0,
+          "prohibited_attempts": 76,
+          "unknown_tcp_connections": 0
+        }
+      }
+    }
+  ],
+  "linux_gate": {
+    "race_enabled": true,
+    "policy_transaction_and_subject_upgrade_cases": 17,
+    "parent_guard_upgrade_checkpoints": 3,
+    "minimum_sustained_outage_ms": 1500,
+    "both_systemd_parent_layouts": true,
+    "incomplete_committed_identity_recovery": true,
+    "capacity_and_partial_pin_failures": true,
+    "partial_cleanup_and_duplicate_lock": true,
+    "cgroup_replacement": true,
+    "flow_reader_new_agent_epoch": true
+  },
+  "limits": [
+    "Current kernel boot only.",
+    "Initial installation and migration require a traffic gate or drained workloads.",
+    "Unobserved Kubernetes changes are outside the last committed snapshot.",
+    "The full hosted performance fixture and remote CI run were not rerun for these local results."
+  ]
+}

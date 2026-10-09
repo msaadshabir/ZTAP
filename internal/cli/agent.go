@@ -67,13 +67,15 @@ func newAgentCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return runNativeKubernetesAgent(ctx, clientset, NativeAgentOptions{
-				NodeName:   nodeName,
-				Kubeconfig: kubeconfig,
-				CgroupRoot: cgroupRoot,
-				BPFFSRoot:  bpffsRoot,
-				RunDir:     runDir,
-				Listen:     listen,
-				DryRun:     dryRun,
+				NodeName:      nodeName,
+				Kubeconfig:    kubeconfig,
+				CgroupRoot:    cgroupRoot,
+				BPFFSRoot:     bpffsRoot,
+				RunDir:        runDir,
+				Listen:        listen,
+				DryRun:        dryRun,
+				WorkloadGuard: true,
+				PodUID:        os.Getenv("POD_UID"),
 			})
 		},
 	}

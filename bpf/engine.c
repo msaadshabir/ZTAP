@@ -21,8 +21,10 @@ typedef unsigned long long __u64;
 #define BPF_MAP_TYPE_ARRAY_OF_MAPS 12
 #define BPF_MAP_TYPE_CGROUP_STORAGE 19
 #define BPF_MAP_TYPE_RINGBUF 27
+#define BPF_MAP_TYPE_SK_STORAGE 24
 
 #define BPF_F_NO_PREALLOC 1
+#define BPF_F_CLONE 512
 #define BPF_NOEXIST 1
 
 #define IPPROTO_TCP 6
@@ -42,6 +44,9 @@ static long (*bpf_skb_load_bytes)(const void *skb, __u32 offset, void *to, __u32
 static void *(*bpf_get_local_storage)(void *map, __u64 flags) = (void *)81;
 static void *(*bpf_ringbuf_reserve)(void *ringbuf, __u64 size, __u64 flags) = (void *)131;
 static void (*bpf_ringbuf_submit)(void *data, __u64 flags) = (void *)132;
+static __u64 (*bpf_skb_cgroup_id)(void *skb) = (void *)79;
+static __u64 (*bpf_get_netns_cookie)(void *ctx) = (void *)122;
+static void *(*bpf_sk_storage_get)(void *map, void *sk, void *value, __u64 flags) = (void *)107;
 
 #define bpf_ntohs(x) __builtin_bswap16(x)
 #define bpf_ntohl(x) __builtin_bswap32(x)
@@ -77,10 +82,12 @@ struct __sk_buff {
     __u64 tstamp;
     __u32 wire_len;
     __u32 gso_segs;
+    void *sk;
 };
 
 _Static_assert(__builtin_offsetof(struct __sk_buff, gso_segs) == 164,
                "__sk_buff GSO segment ABI changed");
+_Static_assert(__builtin_offsetof(struct __sk_buff, sk) == 168, "__sk_buff socket ABI changed");
 
 struct ipv4_header {
     __u8 version_ihl;
@@ -365,6 +372,77 @@ struct {
     __type(key, __u32);
     __type(value, struct agent_status_value);
 } agent_status SEC(".maps");
+
+// Classification is committed with the policy slot. A missing entry never
+// grants a descendant network use, including while userspace is unavailable.
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 32768);
+    __type(key, struct subject_key);
+    __type(value, __u8);
+} workload_class SEC(".maps");
+
+struct guard_config_value {
+    __u64 host_netns_cookie;
+    __u64 bootstrap_cgroup;
+};
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct guard_config_value);
+} guard_config SEC(".maps");
+
+// Capture the actual socket namespace at creation. This works on supported
+// kernels that do not expose get_netns_cookie to cgroup_skb programs.
+struct {
+    __uint(type, BPF_MAP_TYPE_SK_STORAGE);
+    __uint(map_flags, BPF_F_NO_PREALLOC | BPF_F_CLONE);
+    __type(key, __u32);
+    __type(value, __u64);
+} socket_netns SEC(".maps");
+
+struct bootstrap_peer_key {
+    __u8 address[4];
+    __u16 port;
+    __u8 direction;
+    __u8 _padding;
+};
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 64);
+    __type(key, struct bootstrap_peer_key);
+    __type(value, __u8);
+} bootstrap_peers SEC(".maps");
+
+// Exact, authenticated host-network identities cover sockets that existed
+// before the creation hook. New host-network sockets use socket_netns.
+struct host_owner_value {
+    __u64 cgroup_id;
+    __u64 device;
+    __u8 pod_uid[64];
+    __u8 container_id[64];
+    __u8 path[512];
+};
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 16384);
+    __type(key, __u64);
+    __type(value, struct host_owner_value);
+} host_owners SEC(".maps");
+
+struct guard_block_key {
+    __u64 cgroup_id;
+    __u64 policy_epoch;
+    __u32 direction;
+    __u32 _padding;
+};
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_PERCPU_HASH);
+    __uint(max_entries, 4096);
+    __type(key, struct guard_block_key);
+    __type(value, __u64);
+} guard_blocks SEC(".maps");
 
 #define DIR_EGRESS 0
 #define DIR_INGRESS 1
@@ -907,6 +985,101 @@ SEC("cgroup_skb/ingress")
 int ztap_ingress(struct __sk_buff *skb)
 {
     return enforce_packet(skb, DIR_INGRESS, attached_cgroup_id());
+}
+
+SEC("cgroup/sock_create")
+int ztap_socket_namespace(void *socket)
+{
+    __u64 cookie = bpf_get_netns_cookie(socket);
+    __u64 *stored = bpf_sk_storage_get(&socket_netns, socket, &cookie, 1);
+    if (stored)
+        *stored = cookie;
+    return 1;
+}
+
+static __always_inline int guard_packet(struct __sk_buff *skb, __u8 direction)
+{
+    // skb_cgroup_id identifies the actual sending/receiving socket, including
+    // descendants created after the parent link's owner has disappeared.
+    __u64 id = bpf_skb_cgroup_id(skb);
+    __u32 zero = 0;
+    struct guard_config_value *guard = bpf_map_lookup_elem(&guard_config, &zero);
+    if (guard && guard->host_netns_cookie) {
+        __u64 *cookie = 0;
+        void *socket = skb->sk;
+        if (socket)
+            cookie = bpf_sk_storage_get(&socket_netns, socket, 0, 0);
+        if (cookie && *cookie == guard->host_netns_cookie)
+            return 1;
+        if (bpf_map_lookup_elem(&host_owners, &id))
+            return 1;
+        if (id && id == guard->bootstrap_cgroup) {
+            struct packet_info packet = {};
+            if (parse_packet(skb, &packet) == PACKET_VALID && packet.protocol == IPPROTO_TCP) {
+                struct bootstrap_peer_key peer = {.direction = direction};
+                if (direction == DIR_EGRESS) {
+                    __builtin_memcpy(peer.address, packet.destination_ip, 4);
+                    peer.port = packet.destination_port;
+                } else if ((packet.tcp_flags & 0x10) && !(packet.tcp_flags & 0x02)) {
+                    __builtin_memcpy(peer.address, packet.source_ip, 4);
+                    peer.port = packet.source_port;
+                } else {
+                    // SYN-ACK is a reply to the bootstrap client's handshake.
+                    if ((packet.tcp_flags & 0x12) != 0x12)
+                        goto classified;
+                    __builtin_memcpy(peer.address, packet.source_ip, 4);
+                    peer.port = packet.source_port;
+                }
+                if (bpf_map_lookup_elem(&bootstrap_peers, &peer))
+                    return 1;
+            }
+        }
+    }
+
+classified:;
+    __u64 *readers = 0;
+    __u32 slot = 0;
+    __u64 epoch = 0;
+#pragma unroll
+    for (int attempt = 0; attempt < 3; attempt++) {
+        struct active_config_value *config = current_config();
+        if (!config || config->active_slot > 1)
+            break;
+        slot = config->active_slot;
+        epoch = config->policy_epoch;
+        readers = bpf_map_lookup_elem(&in_flight, &slot);
+        if (!readers)
+            break;
+        __sync_fetch_and_add(readers, 1);
+        config = current_config();
+        if (config && config->active_slot == slot && config->policy_epoch == epoch)
+            break;
+        __sync_fetch_and_sub(readers, 1);
+        readers = 0;
+    }
+    int allowed = 0;
+    if (readers) {
+        struct subject_key key = {.cgroup_id = id, .slot = slot};
+        allowed = bpf_map_lookup_elem(&workload_class, &key) != 0;
+        __sync_fetch_and_sub(readers, 1);
+    }
+    if (!allowed) {
+        struct guard_block_key key = {.cgroup_id = id, .policy_epoch = epoch, .direction = direction};
+        increment_epoch_counter(&guard_blocks, &key);
+    }
+    return allowed;
+}
+
+SEC("cgroup_skb/egress")
+int ztap_guard_egress(struct __sk_buff *skb)
+{
+    return guard_packet(skb, DIR_EGRESS);
+}
+
+SEC("cgroup_skb/ingress")
+int ztap_guard_ingress(struct __sk_buff *skb)
+{
+    return guard_packet(skb, DIR_INGRESS);
 }
 
 char _license[] SEC("license") = "GPL";

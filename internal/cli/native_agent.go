@@ -12,6 +12,9 @@ type NativeAgentOptions struct {
 	RunDir     string
 	Listen     string
 	DryRun     bool
+	// WorkloadGuard requires protected node bootstrap and an exact Pod UID.
+	WorkloadGuard bool
+	PodUID        string
 
 	// StatusListener is used by the Linux integration harness to transfer an
 	// already-bound listener into the agent without reopening its address.

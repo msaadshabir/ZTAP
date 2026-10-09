@@ -1,0 +1,11 @@
+{"schema_version":2,"timestamp_ns":1791533462439698915,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":3,"prohibited_attempts":3,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533462689950852,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":5,"prohibited_attempts":5,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533462940874289,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":8,"prohibited_attempts":8,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533463191095226,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":10,"prohibited_attempts":10,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533463437307117,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":12,"prohibited_attempts":12,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533463695519437,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":15,"prohibited_attempts":15,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533463939414909,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":17,"prohibited_attempts":17,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533464190260763,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":20,"prohibited_attempts":20,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533464442130326,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":22,"prohibited_attempts":22,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533464689395927,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":25,"prohibited_attempts":25,"unknown_tcp_connections":0}
+{"schema_version":2,"timestamp_ns":1791533464939186905,"started_ns":1791533462186797142,"allowed":0,"prohibited":0,"allowed_attempts":27,"prohibited_attempts":27,"unknown_tcp_connections":0}

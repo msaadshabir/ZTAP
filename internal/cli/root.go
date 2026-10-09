@@ -11,7 +11,7 @@ import (
 )
 
 // primaryUsageTemplate keeps Cobra's support commands callable without
-// presenting them as part of ZTAP's four-command product surface. Cobra's
+// presenting them as part of ZTAP's primary command surface. Cobra's
 // default template special-cases a command named "help" and lists it even
 // when Hidden is true.
 const primaryUsageTemplate = `Usage:{{if .Runnable}}
@@ -68,8 +68,10 @@ compiles the supported subset, and enforces it with per-container eBPF programs.
 	root.PersistentFlags().String("log-format", "json", "Log format (json, text)")
 	root.AddCommand(
 		newAgentCmd(),
+		newCleanupCmd(),
 		newValidateCmd(),
 		newFlowsCmd(),
+		newNodeInitCmd(),
 		newVersionCmd(),
 	)
 	root.InitDefaultHelpCmd()

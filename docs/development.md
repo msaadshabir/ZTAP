@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-Go `1.26.6` or a compatible newer toolchain is required. Linux is required
-for privileged eBPF and Kubernetes acceptance tests; a non-Linux checkout is
-suitable for the non-privileged unit tests.
+Go `1.26.9` or a compatible newer toolchain with current security patches is
+required. Linux is required for privileged eBPF and Kubernetes acceptance
+tests; a non-Linux checkout is suitable for the non-privileged unit tests.
 
 The privileged Linux integration gate vet-checks and executes both the
 enforcer and CLI integration-tagged package trees, including the native
@@ -77,13 +77,34 @@ binary; run `make build` again before local offline validation on macOS.
 ## Test layers
 
 The default Go suite covers the policy compiler, native engine, flow monitor,
-CLI, and Kubernetes agent helpers. The Linux eBPF gate runs the instance-owned
+CLI, and Kubernetes agent helpers. The Linux eBPF gate runs the persistent
 engine with the `integration` build tag and requires host bpffs and the
 appropriate privileges. The privileged suite includes the policy-deletion
 boundary: deleting the last selecting policy must clear both slots, detach all
 owned cgroup links, and allow traffic from the formerly selected cgroup again.
 CI also builds the scratch image, runs the offline validator through that image
 over stdin, and exercises the capability-only DaemonSet in kind.
+
+The restart gates run continuous sequenced traffic in separate ingress and
+egress topologies. The Linux suite exercises TERM/KILL/STOP, delayed API
+recovery, every policy transaction checkpoint, compatible mixed program
+generations and rollback, capacity and partial-pin failures, incomplete live
+identities, cgroup replacement, node-lock contention, and partial uninstall.
+Both supported systemd parent layouts have inherited-guard feasibility tests.
+Production guard tests cover new descendants and crashes after each of its
+three program updates. Real pinned status recovery also verifies flow-reader
+reconnection on a new `AgentEpoch` with an unchanged policy epoch.
+
+In kind, `.github/scripts/verify-existing-continuity.sh` tests the actual
+capability-only agent's pause, crash, and replacement. The companion
+`verify-restart-guard.sh` creates new workloads while that process is paused,
+terminated, killed, or disconnected from the API. It requires zero premature
+TCP connections and zero prohibited traffic, then working allowed controls,
+host-network sockets, node/self exceptions, and unisolated workloads. It records
+full container/cgroup identity and directional epoch-keyed kernel counters.
+`verify-explicit-uninstall.sh` verifies retained enforcement after DaemonSet
+deletion and intentional removal under the node lock. These scripts are fault
+injection for a disposable kind cluster, not production diagnostics.
 
 With a host C compiler (`clang` or `cc`), the portable suite also runs the
 actual packet C program with deterministic BPF helpers to check TCP
@@ -125,9 +146,17 @@ the retained handle. Symlink substitutions fail closed; missing pins are
 reported by the kernel loader as the actionable runtime error.
 
 Engine startup uses the same descriptor-relative, no-follow traversal for
-configured bpffs and cgroup roots before creating the pin directory, cleaning
-stale pins, or validating a subject cgroup. This keeps a replaced parent path
+configured bpffs and cgroup roots before creating the pin directory, validating
+and adopting owned objects, or validating a subject cgroup. This keeps a replaced parent path
 from redirecting startup or cleanup into another directory.
+
+Durable ABI 3 journals all enforcement map IDs before pin publication and
+registers programs before link updates. The active configuration points at one
+of two pinned configuration maps; inactive reuse follows packet-reader
+quiescence and advances the epoch. Recovery can therefore validate and open the
+committed map through its owned pin with the shipped capabilities, without a
+global map-ID lookup requiring `SYS_ADMIN`. `Engine.Close()` releases only local
+handles. Tests remove their own enforcement explicitly before deleting fixtures.
 
 ## Generated code and review
 

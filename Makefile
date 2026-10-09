@@ -128,7 +128,7 @@ performance:
 	ZTAP_PHASE5_AGENT_CRASH_OUTPUT="$(CURDIR)/dist/phase5-agent-crash.json" \
 	ZTAP_PHASE5_AGENT_RESOURCE_OUTPUT="$(CURDIR)/dist/phase5-agent-resource.json" \
 	ZTAP_PHASE5_AGENT_RECONCILE_OUTPUT="$(CURDIR)/dist/phase5-agent-reconcile.json" \
-	$(GO) test -count=1 -tags=integration -run '^TestPhase5Agent(Reconciliation|Activation|EventActivation|PodStartClassification|RestartGap|CrashGap|ResourceUsage)$$' -timeout=10m -v ./internal/cli
+	$(GO) test -count=1 -tags=integration -run '^TestPhase5Agent(Reconciliation|Activation|EventActivation|PodStartClassification|RestartContinuity|CrashContinuity|ResourceUsage)$$' -timeout=10m -v ./internal/cli
 
 verify-performance:
 	GOCACHE="$(GOCACHE)" GOFLAGS="$(GOFLAGS)" $(GO) run ./tools/phase5verify --dir "$(PHASE5_EVIDENCE_DIR)" $(PHASE5_VERIFY_FLAGS)

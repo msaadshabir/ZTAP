@@ -56,6 +56,9 @@ type PolicySet struct {
 	NodeIPs  []netip.Addr
 	Subjects []Subject
 	Rules    []Rule
+	// ClassifiedCgroups explicitly includes verified unisolated workloads.
+	// The parent guard releases these identities with the same policy commit.
+	ClassifiedCgroups []uint64
 }
 
 // ResolvedNamespace is the immutable namespace fact needed for peer matching.
@@ -578,6 +581,16 @@ func policySetRuleEntryCount(set PolicySet) int {
 
 // ValidatePolicySet checks the invariants required by the enforcement boundary.
 func ValidatePolicySet(set PolicySet) error {
+	if len(set.ClassifiedCgroups) > MaxPolicySubjects {
+		return CapacityError{Resource: "classifications", Observed: len(set.ClassifiedCgroups), Allowed: MaxPolicySubjects}
+	}
+	classified := make(map[uint64]bool, len(set.ClassifiedCgroups))
+	for _, id := range set.ClassifiedCgroups {
+		if id == 0 || classified[id] {
+			return ResolutionError{Field: "classifiedCgroups", Message: "must contain unique non-zero cgroup IDs"}
+		}
+		classified[id] = true
+	}
 	if len(set.NodeIPs) == 0 {
 		return ResolutionError{Field: "nodeIPs", Message: "must contain at least one IPv4 Node address"}
 	}

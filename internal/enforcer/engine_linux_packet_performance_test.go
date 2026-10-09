@@ -97,7 +97,7 @@ func TestPhase5PacketAndTCPPerformance(t *testing.T) {
 
 		engine, err := NewLinuxEngine(context.Background(), LinuxEngineOptions{
 			CgroupRoot: "/sys/fs/cgroup",
-			BPFFSRoot:  "/sys/fs/bpf",
+			BPFFSRoot:  createEngineTestBPFFSRoot(t),
 			ResolveCgroupPath: func(_ context.Context, id uint64) (string, error) {
 				subjectCgroup, ok := cgroupPaths[id]
 				if !ok {

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"net/http"
@@ -22,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/saadshabir/ZTAP/internal/enforcer"
+	"github.com/saadshabir/ZTAP/internal/restartproof"
 	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -132,36 +131,40 @@ type phase5AgentPodStartEvidence struct {
 }
 
 type phase5AgentRestartEvidence struct {
-	TimestampUTC  string    `json:"timestamp_utc"`
-	RunID         string    `json:"run_id"`
-	GoVersion     string    `json:"go_version"`
-	GOOS          string    `json:"goos"`
-	GOARCH        string    `json:"goarch"`
-	KernelRelease string    `json:"kernel_release"`
-	CPUs          int       `json:"cpus"`
-	Subjects      int       `json:"subjects"`
-	Policies      int       `json:"policies"`
-	Rules         int       `json:"rules"`
-	RestartMS     []float64 `json:"restart_samples_ms"`
-	RestartP95    float64   `json:"restart_p95_ms"`
-	Scope         string    `json:"scope"`
+	SchemaVersion int                   `json:"schema_version"`
+	Continuity    []restartproof.Sample `json:"continuity_samples"`
+	TimestampUTC  string                `json:"timestamp_utc"`
+	RunID         string                `json:"run_id"`
+	GoVersion     string                `json:"go_version"`
+	GOOS          string                `json:"goos"`
+	GOARCH        string                `json:"goarch"`
+	KernelRelease string                `json:"kernel_release"`
+	CPUs          int                   `json:"cpus"`
+	Subjects      int                   `json:"subjects"`
+	Policies      int                   `json:"policies"`
+	Rules         int                   `json:"rules"`
+	RestartMS     []float64             `json:"restart_samples_ms,omitempty"`
+	RestartP95    float64               `json:"restart_p95_ms,omitempty"`
+	Scope         string                `json:"scope"`
 }
 
 type phase5AgentCrashEvidence struct {
-	TimestampUTC  string    `json:"timestamp_utc"`
-	RunID         string    `json:"run_id"`
-	GoVersion     string    `json:"go_version"`
-	GOOS          string    `json:"goos"`
-	GOARCH        string    `json:"goarch"`
-	KernelRelease string    `json:"kernel_release"`
-	CPUs          int       `json:"cpus"`
-	Subjects      int       `json:"subjects"`
-	Policies      int       `json:"policies"`
-	Rules         int       `json:"rules"`
-	Samples       int       `json:"samples"`
-	CrashGapMS    []float64 `json:"crash_fail_open_samples_ms"`
-	CrashGapP95   float64   `json:"crash_fail_open_p95_ms"`
-	Scope         string    `json:"scope"`
+	SchemaVersion int                   `json:"schema_version"`
+	Continuity    []restartproof.Sample `json:"continuity_samples"`
+	TimestampUTC  string                `json:"timestamp_utc"`
+	RunID         string                `json:"run_id"`
+	GoVersion     string                `json:"go_version"`
+	GOOS          string                `json:"goos"`
+	GOARCH        string                `json:"goarch"`
+	KernelRelease string                `json:"kernel_release"`
+	CPUs          int                   `json:"cpus"`
+	Subjects      int                   `json:"subjects"`
+	Policies      int                   `json:"policies"`
+	Rules         int                   `json:"rules"`
+	Samples       int                   `json:"samples"`
+	CrashGapMS    []float64             `json:"crash_fail_open_samples_ms,omitempty"`
+	CrashGapP95   float64               `json:"crash_fail_open_p95_ms,omitempty"`
+	Scope         string                `json:"scope"`
 }
 
 type phase5AgentResourceEvidence struct {
@@ -454,351 +457,6 @@ func TestPhase5AgentPodStartClassification(t *testing.T) {
 		Scope:                  "new running Pod added to a synchronized fake informer cache with a pre-created exact containerd systemd cgroup; excludes API-server and container-runtime startup",
 	}
 	writePhase5AgentPodStartEvidence(t, evidence)
-}
-
-// TestPhase5AgentRestartGap records the process-owned enforcement gap after an
-// orderly agent stop and replacement startup. It intentionally does not claim
-// to measure a SIGKILL crash or a Kubernetes DaemonSet rolling update.
-func TestPhase5AgentRestartGap(t *testing.T) {
-	if os.Getenv("ZTAP_PHASE5_PERFORMANCE") != "1" {
-		t.Skip("set ZTAP_PHASE5_PERFORMANCE=1 to run the real-cgroup agent harness")
-	}
-	if os.Geteuid() != 0 {
-		t.Skip("agent performance harness requires root privileges")
-	}
-
-	fixture := newPhase5AgentFixture(t)
-	samples := make([]time.Duration, 0, phase5AgentRestartSamples)
-	for sample := 0; sample < phase5AgentRestartSamples; sample++ {
-		current := startPhase5Agent(t, fixture.Objects)
-		if _, err := waitPhase5AgentMetrics(current, phase5AgentIsActive, 30*time.Second); err != nil {
-			current.stop(t)
-			t.Fatalf("restart gap sample %d initial activation: %v", sample+1, err)
-		}
-		stoppedAt := current.stopAt(t)
-
-		replacement := startPhase5Agent(t, fixture.Objects)
-		if _, err := waitPhase5AgentMetrics(replacement, phase5AgentIsActive, 30*time.Second); err != nil {
-			replacement.stop(t)
-			t.Fatalf("restart gap sample %d replacement activation: %v", sample+1, err)
-		}
-		samples = append(samples, time.Since(stoppedAt))
-		replacement.stop(t)
-	}
-
-	sorted := append([]time.Duration(nil), samples...)
-	sortPhase5Durations(sorted)
-	p95 := sorted[len(sorted)-1]
-	evidence := phase5AgentRestartEvidence{
-		TimestampUTC:  time.Now().UTC().Format(time.RFC3339Nano),
-		RunID:         phase5AgentRunID(t),
-		GoVersion:     runtime.Version(),
-		GOOS:          runtime.GOOS,
-		GOARCH:        runtime.GOARCH,
-		KernelRelease: phase5AgentKernelRelease(t),
-		CPUs:          runtime.NumCPU(),
-		Subjects:      phase5AgentSubjects,
-		Policies:      phase5AgentPolicies,
-		Rules:         phase5AgentRules,
-		RestartMS:     phase5AgentDurationsMilliseconds(samples),
-		RestartP95:    float64(p95) / float64(time.Millisecond),
-		Scope:         "orderly process-owned engine shutdown followed by replacement startup and initial native policy apply; crash and DaemonSet rollout are excluded",
-	}
-	writePhase5AgentRestartEvidence(t, evidence)
-}
-
-// TestPhase5AgentCrashGap measures the packet-level fail-open interval after
-// SIGKILL terminates a process that owns the native engine links. A separate
-// helper continuously sends an allowed UDP packet only after the kill, so the
-// first received packet is the first observable point after link detachment.
-func TestPhase5AgentCrashGap(t *testing.T) {
-	if os.Getenv("ZTAP_PHASE5_PERFORMANCE") != "1" {
-		t.Skip("set ZTAP_PHASE5_PERFORMANCE=1 to run the real-cgroup agent harness")
-	}
-	if os.Geteuid() != 0 {
-		t.Skip("agent performance harness requires root privileges")
-	}
-
-	samples := make([]time.Duration, 0, phase5AgentCrashSamples)
-	for sample := 0; sample < phase5AgentCrashSamples; sample++ {
-		samples = append(samples, runPhase5AgentCrashSample(t, sample))
-	}
-	sorted := append([]time.Duration(nil), samples...)
-	sortPhase5Durations(sorted)
-	p95 := sorted[len(sorted)-1]
-	evidence := phase5AgentCrashEvidence{
-		TimestampUTC:  time.Now().UTC().Format(time.RFC3339Nano),
-		RunID:         phase5AgentRunID(t),
-		GoVersion:     runtime.Version(),
-		GOOS:          runtime.GOOS,
-		GOARCH:        runtime.GOARCH,
-		KernelRelease: phase5AgentKernelRelease(t),
-		CPUs:          runtime.NumCPU(),
-		Subjects:      phase5AgentSubjects,
-		Policies:      phase5AgentPolicies,
-		Rules:         phase5AgentRules,
-		Samples:       phase5AgentCrashSamples,
-		CrashGapMS:    phase5AgentDurationsMilliseconds(samples),
-		CrashGapP95:   float64(p95) / float64(time.Millisecond),
-		Scope:         "SIGKILL of a child process owning the real engine links after applying the full 250-Pod/25-policy/2,500-rule fixture, followed by an allowed UDP sender in one selected cgroup; Kubernetes restart scheduling and DaemonSet rollout are excluded",
-	}
-	writePhase5AgentCrashEvidence(t, evidence)
-}
-
-func runPhase5AgentCrashSample(t *testing.T, sample int) time.Duration {
-	t.Helper()
-	listener, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	if err != nil {
-		t.Fatalf("listen crash-gap UDP target: %v", err)
-	}
-	defer listener.Close()
-	index := sample + 100
-	cgroup := createPhase5AgentCrashCgroup(t, index)
-	runDir := t.TempDir()
-	// The helper creates the remaining fixture cgroups in a child process that
-	// is intentionally SIGKILLed. Register cleanup in the parent, whose test
-	// cleanup handlers still run after the child and sender have exited. The
-	// parent also owns the helper run directory and stable engine-pin cleanup.
-	registerPhase5AgentCrashFixtureCleanup(t, index)
-	address := listener.LocalAddr().String()
-	agentStatusListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve crash-gap agent status listener: %v", err)
-	}
-	agentStatusAddress := agentStatusListener.Addr().String()
-	tcpListener, ok := agentStatusListener.(*net.TCPListener)
-	if !ok {
-		_ = agentStatusListener.Close()
-		t.Fatalf("crash-gap agent status listener type = %T, want *net.TCPListener", agentStatusListener)
-	}
-	agentStatusListenerFile, err := tcpListener.File()
-	if err != nil {
-		_ = agentStatusListener.Close()
-		t.Fatalf("export crash-gap agent status listener: %v", err)
-	}
-
-	agentStatusReader, agentStatusWriter, err := os.Pipe()
-	if err != nil {
-		_ = agentStatusListenerFile.Close()
-		_ = agentStatusListener.Close()
-		t.Fatalf("create crash-gap agent status pipe: %v", err)
-	}
-	agentCmd := exec.Command(os.Args[0], "-test.run", "^TestPhase5AgentCrashHelper$")
-	agentCmd.Env = append(os.Environ(),
-		"ZTAP_PHASE5_AGENT_CRASH_HELPER=1",
-		"ZTAP_PHASE5_AGENT_CRASH_INDEX="+strconv.Itoa(index),
-		"ZTAP_PHASE5_AGENT_CRASH_LISTEN="+address,
-		"ZTAP_PHASE5_AGENT_CRASH_HTTP_LISTEN="+agentStatusAddress,
-		"ZTAP_PHASE5_AGENT_RUN_DIR="+runDir,
-	)
-	agentCmd.ExtraFiles = []*os.File{agentStatusWriter, agentStatusListenerFile}
-	agentCmd.Stdout = os.Stdout
-	agentCmd.Stderr = os.Stderr
-	if err := agentCmd.Start(); err != nil {
-		_ = agentStatusReader.Close()
-		_ = agentStatusWriter.Close()
-		_ = agentStatusListenerFile.Close()
-		_ = agentStatusListener.Close()
-		t.Fatalf("start crash-gap agent: %v", err)
-	}
-	if err := agentStatusListenerFile.Close(); err != nil {
-		_ = agentStatusListener.Close()
-		t.Fatalf("close parent crash-gap agent status listener file: %v", err)
-	}
-	if err := agentStatusListener.Close(); err != nil {
-		t.Fatalf("release parent crash-gap agent status listener: %v", err)
-	}
-	t.Cleanup(func() {
-		if agentCmd.ProcessState == nil {
-			_ = agentCmd.Process.Kill()
-			_ = agentCmd.Wait()
-		}
-		_ = agentStatusReader.Close()
-	})
-	_ = agentStatusWriter.Close()
-	if got := readPhase5AgentStatusLine(t, agentStatusReader); strings.TrimSpace(got) != "ready" {
-		t.Fatalf("crash-gap agent status = %q, want ready", got)
-	}
-
-	preReader, preWriter, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("create crash-gap sender pre-signal pipe: %v", err)
-	}
-	crashReader, crashWriter, err := os.Pipe()
-	if err != nil {
-		_ = preReader.Close()
-		_ = preWriter.Close()
-		t.Fatalf("create crash-gap sender kill-signal pipe: %v", err)
-	}
-	senderStatusReader, senderStatusWriter, err := os.Pipe()
-	if err != nil {
-		_ = preReader.Close()
-		_ = preWriter.Close()
-		_ = crashReader.Close()
-		_ = crashWriter.Close()
-		t.Fatalf("create crash-gap sender status pipe: %v", err)
-	}
-	senderCmd := exec.Command(os.Args[0], "-test.run", "^TestPhase5AgentCrashUDPSender$")
-	senderCmd.Env = append(os.Environ(),
-		"ZTAP_PHASE5_AGENT_CRASH_UDP_SENDER=1",
-		"ZTAP_PHASE5_AGENT_CRASH_LISTEN="+address,
-	)
-	senderCmd.ExtraFiles = []*os.File{preReader, crashReader, senderStatusWriter}
-	senderCmd.Stdout = os.Stdout
-	senderCmd.Stderr = os.Stderr
-	if err := senderCmd.Start(); err != nil {
-		_ = preReader.Close()
-		_ = preWriter.Close()
-		_ = crashReader.Close()
-		_ = crashWriter.Close()
-		_ = senderStatusReader.Close()
-		_ = senderStatusWriter.Close()
-		t.Fatalf("start crash-gap UDP sender: %v", err)
-	}
-	t.Cleanup(func() {
-		if senderCmd.ProcessState == nil {
-			_ = senderCmd.Process.Kill()
-			_ = senderCmd.Wait()
-		}
-		_ = senderStatusReader.Close()
-	})
-	_ = preReader.Close()
-	_ = crashReader.Close()
-	_ = senderStatusWriter.Close()
-	movePhase5AgentProcessToCgroup(t, senderCmd, cgroup)
-	if _, err := preWriter.Write([]byte{'1'}); err != nil {
-		t.Fatalf("release crash-gap UDP sender: %v", err)
-	}
-	_ = preWriter.Close()
-	if got := readPhase5AgentStatusLine(t, senderStatusReader); strings.TrimSpace(got) != "pre" {
-		t.Fatalf("crash-gap sender pre-status = %q, want pre", got)
-	}
-	if err := listener.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatalf("set crash-gap pre-packet deadline: %v", err)
-	}
-	var packet [32]byte
-	if _, _, err := listener.ReadFromUDP(packet[:]); err != nil {
-		t.Fatalf("read allowed pre-crash packet: %v", err)
-	}
-
-	crashStarted := time.Now()
-	if err := agentCmd.Process.Kill(); err != nil {
-		t.Fatalf("SIGKILL crash-gap agent: %v", err)
-	}
-	if err := agentCmd.Wait(); err == nil {
-		t.Fatal("crash-gap agent exited cleanly; want SIGKILL termination")
-	}
-	if _, err := crashWriter.Write([]byte{'1'}); err != nil {
-		t.Fatalf("release crash-gap sender after SIGKILL: %v", err)
-	}
-	_ = crashWriter.Close()
-	if err := listener.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		t.Fatalf("set crash-gap post-kill deadline: %v", err)
-	}
-	for {
-		n, _, readErr := listener.ReadFromUDP(packet[:])
-		if readErr != nil {
-			t.Fatalf("read first post-crash packet: %v", readErr)
-		}
-		if string(packet[:n]) == "crash" {
-			_ = senderCmd.Process.Kill()
-			_ = senderCmd.Wait()
-			return time.Since(crashStarted)
-		}
-	}
-}
-
-func TestPhase5AgentCrashHelper(t *testing.T) {
-	if os.Getenv("ZTAP_PHASE5_AGENT_CRASH_HELPER") != "1" {
-		t.Skip("helper")
-	}
-	status := os.NewFile(uintptr(3), "status")
-	if status == nil {
-		t.Fatal("crash-gap agent status pipe is missing")
-	}
-	defer status.Close()
-	listenerFile := os.NewFile(uintptr(4), "status-listener")
-	if listenerFile == nil {
-		t.Fatal("crash-gap agent status listener is missing")
-	}
-	statusListener, err := net.FileListener(listenerFile)
-	closeErr := listenerFile.Close()
-	if err != nil {
-		t.Fatalf("open crash-gap agent status listener: %v", err)
-	}
-	if closeErr != nil {
-		t.Fatalf("close crash-gap agent status listener file: %v", closeErr)
-	}
-	defer statusListener.Close()
-	index, err := strconv.Atoi(os.Getenv("ZTAP_PHASE5_AGENT_CRASH_INDEX"))
-	if err != nil {
-		t.Fatalf("parse crash-gap fixture index: %v", err)
-	}
-	listen := os.Getenv("ZTAP_PHASE5_AGENT_CRASH_LISTEN")
-	if listen == "" {
-		t.Fatal("ZTAP_PHASE5_AGENT_CRASH_LISTEN is required")
-	}
-	statusListen := os.Getenv("ZTAP_PHASE5_AGENT_CRASH_HTTP_LISTEN")
-	if statusListen == "" {
-		t.Fatal("ZTAP_PHASE5_AGENT_CRASH_HTTP_LISTEN is required")
-	}
-	_, portText, err := net.SplitHostPort(listen)
-	if err != nil {
-		t.Fatalf("parse crash-gap listener: %v", err)
-	}
-	port, err := strconv.Atoi(portText)
-	if err != nil {
-		t.Fatalf("parse crash-gap listener port: %v", err)
-	}
-	agent := startPhase5AgentWithListen(t, newPhase5AgentCrashObjects(t, index, port), statusListen, statusListener)
-	if _, err := waitPhase5AgentMetrics(agent, phase5AgentIsActive, 30*time.Second); err != nil {
-		agent.stop(t)
-		t.Fatalf("crash-gap agent activation: %v", err)
-	}
-	if _, err := fmt.Fprintln(status, "ready"); err != nil {
-		t.Fatalf("signal crash-gap agent readiness: %v", err)
-	}
-	select {}
-}
-
-func TestPhase5AgentCrashUDPSender(t *testing.T) {
-	if os.Getenv("ZTAP_PHASE5_AGENT_CRASH_UDP_SENDER") != "1" {
-		t.Skip("helper")
-	}
-	pre := os.NewFile(uintptr(3), "pre")
-	crash := os.NewFile(uintptr(4), "crash")
-	status := os.NewFile(uintptr(5), "status")
-	if pre == nil || crash == nil || status == nil {
-		t.Fatal("crash-gap UDP sender pipes are missing")
-	}
-	defer pre.Close()
-	defer crash.Close()
-	defer status.Close()
-	listen := os.Getenv("ZTAP_PHASE5_AGENT_CRASH_LISTEN")
-	connection, err := net.DialTimeout("udp4", listen, 2*time.Second)
-	if err != nil {
-		t.Fatalf("dial crash-gap UDP target: %v", err)
-	}
-	defer connection.Close()
-	if _, err := io.ReadFull(pre, make([]byte, 1)); err != nil {
-		t.Fatalf("read crash-gap pre-signal: %v", err)
-	}
-	if _, err := connection.Write([]byte("pre")); err != nil {
-		t.Fatalf("write pre-crash packet: %v", err)
-	}
-	if _, err := fmt.Fprintln(status, "pre"); err != nil {
-		t.Fatalf("signal pre-crash packet: %v", err)
-	}
-	if _, err := io.ReadFull(crash, make([]byte, 1)); err != nil {
-		t.Fatalf("read crash-gap post-kill signal: %v", err)
-	}
-	for attempt := 0; attempt < 10000; attempt++ {
-		if _, err := connection.Write([]byte("crash")); err != nil {
-			t.Fatalf("write post-crash packet: %v", err)
-		}
-		time.Sleep(time.Millisecond)
-	}
-	_, _ = fmt.Fprintln(status, "done")
 }
 
 // TestPhase5AgentResourceUsage samples a dedicated helper process after the
@@ -1383,82 +1041,6 @@ func phase5AgentCrashUID(index int) string {
 	return fmt.Sprintf("00000000-0000-4000-8000-%012d", index+1)
 }
 
-func newPhase5AgentCrashObjects(t *testing.T, index, port int) []k8sruntime.Object {
-	t.Helper()
-	qosRoot := filepath.Join(phase5AgentCgroupRoot, "kubepods.slice", "kubepods-burstable.slice")
-	ensurePhase5CgroupDir(t, filepath.Dir(qosRoot))
-	ensurePhase5CgroupDir(t, qosRoot)
-	objects := make([]k8sruntime.Object, 0, phase5AgentSubjects+phase5AgentPolicies+2)
-	objects = append(objects,
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "default"}},
-		&corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
-			Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{{
-				Type:    corev1.NodeInternalIP,
-				Address: "192.0.2.10",
-			}}},
-		},
-	)
-	for subjectIndex := 0; subjectIndex < phase5AgentSubjects; subjectIndex++ {
-		uid, containerID := phase5CrashFixtureIdentity(index, subjectIndex)
-		if subjectIndex != 0 {
-			podSlice := filepath.Join(qosRoot, "kubepods-burstable-pod"+strings.ReplaceAll(uid, "-", "_")+".slice")
-			createPhase5CgroupDir(t, podSlice)
-			createPhase5CgroupDir(t, filepath.Join(podSlice, "cri-containerd-"+containerID+".scope"))
-		}
-		bucket := fmt.Sprintf("%02d", subjectIndex/(phase5AgentSubjects/phase5AgentPolicies))
-		objects = append(objects, &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("reference-pod-%03d", subjectIndex),
-				Namespace: "default",
-				UID:       types.UID(uid),
-				Labels:    map[string]string{"reference-bucket": bucket},
-			},
-			Spec: corev1.PodSpec{NodeName: "node-a"},
-			Status: corev1.PodStatus{
-				Phase:    corev1.PodRunning,
-				PodIP:    fmt.Sprintf("10.0.4.%d", subjectIndex+1),
-				PodIPs:   []corev1.PodIP{{IP: fmt.Sprintf("10.0.4.%d", subjectIndex+1)}},
-				QOSClass: corev1.PodQOSBurstable,
-				ContainerStatuses: []corev1.ContainerStatus{{
-					Name:        "agent-test",
-					ContainerID: "containerd://" + containerID,
-					State:       corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
-				}},
-			},
-		})
-	}
-
-	for policyIndex := 0; policyIndex < phase5AgentPolicies; policyIndex++ {
-		bucket := fmt.Sprintf("%02d", policyIndex)
-		protocol := corev1.ProtocolTCP
-		portValue := intstr.FromInt(10000 + policyIndex)
-		peers := make([]networkingv1.NetworkPolicyPeer, 0, 10)
-		for peerIndex := 0; peerIndex < 10; peerIndex++ {
-			cidr := fmt.Sprintf("203.0.113.%d/32", policyIndex*10+peerIndex+1)
-			if policyIndex == 0 && peerIndex == 0 {
-				cidr = "127.0.0.0/8"
-				protocol = corev1.ProtocolUDP
-				portValue = intstr.FromInt(port)
-			}
-			peers = append(peers, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}})
-		}
-		objects = append(objects, &networkingv1.NetworkPolicy{
-			ObjectMeta: metav1.ObjectMeta{Name: "reference-policy-" + bucket, Namespace: "default"},
-			Spec: networkingv1.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"reference-bucket": bucket}},
-				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
-				Egress: []networkingv1.NetworkPolicyEgressRule{{
-					To:    peers,
-					Ports: []networkingv1.NetworkPolicyPort{{Protocol: &protocol, Port: &portValue}},
-				}},
-			},
-		})
-	}
-	validatePhase5AgentFixtureShape(t, objects)
-	return objects
-}
-
 func validatePhase5AgentFixtureShape(t *testing.T, objects []k8sruntime.Object) {
 	t.Helper()
 	if phase5AgentSubjects%phase5AgentPolicies != 0 || phase5AgentRules%phase5AgentSubjects != 0 {
@@ -1588,35 +1170,6 @@ func phase5AgentFixtureIndex(t *testing.T, name, prefix string, width, count int
 		t.Fatalf("Phase 5 agent fixture object name %q has invalid index", name)
 	}
 	return index
-}
-
-func phase5CrashFixtureIdentity(index, subjectIndex int) (string, string) {
-	if subjectIndex == 0 {
-		return phase5AgentCrashUID(index), fmt.Sprintf("%064x", index+1)
-	}
-	identity := (index+1)*phase5AgentSubjects + subjectIndex + 1
-	return fmt.Sprintf("00000000-0000-4000-8000-%012d", identity), fmt.Sprintf("%064x", identity)
-}
-
-func registerPhase5AgentCrashFixtureCleanup(t *testing.T, index int) {
-	t.Helper()
-	qosRoot := filepath.Join(phase5AgentCgroupRoot, "kubepods.slice", "kubepods-burstable.slice")
-	t.Cleanup(func() {
-		if err := enforcer.RemoveStalePins(phase5AgentBPFFSRoot); err != nil {
-			t.Errorf("remove crash fixture engine pins: %v", err)
-		}
-		for subjectIndex := phase5AgentSubjects - 1; subjectIndex >= 0; subjectIndex-- {
-			uid, containerID := phase5CrashFixtureIdentity(index, subjectIndex)
-			podSlice := filepath.Join(qosRoot, "kubepods-burstable-pod"+strings.ReplaceAll(uid, "-", "_")+".slice")
-			cgroupPath := filepath.Join(podSlice, "cri-containerd-"+containerID+".scope")
-			if err := removePhase5CgroupDir(cgroupPath); err != nil {
-				t.Errorf("remove crash fixture cgroup %s: %v", cgroupPath, err)
-			}
-			if err := removePhase5CgroupDir(podSlice); err != nil {
-				t.Errorf("remove crash fixture pod slice %s: %v", podSlice, err)
-			}
-		}
-	})
 }
 
 func ensurePhase5CgroupDir(t *testing.T, path string) {
@@ -1792,21 +1345,6 @@ func (agent *phase5AgentProcess) stopAt(t *testing.T) time.Time {
 	case <-time.After(30 * time.Second):
 		t.Errorf("native agent did not stop after cancellation")
 		return time.Now()
-	}
-}
-
-func movePhase5AgentProcessToCgroup(t *testing.T, cmd *exec.Cmd, cgroup string) {
-	t.Helper()
-	file, err := openPhase5CgroupProcs(cgroup)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		t.Fatalf("open crash-gap cgroup %s control file: %v", cgroup, err)
-	}
-	_, writeErr := fmt.Fprintf(file, "%d\n", cmd.Process.Pid)
-	_ = file.Close()
-	if writeErr != nil {
-		_ = cmd.Process.Kill()
-		t.Fatalf("move crash-gap process to cgroup: %v", writeErr)
 	}
 }
 
@@ -1997,7 +1535,7 @@ func writePhase5AgentRestartEvidence(t *testing.T, evidence phase5AgentRestartEv
 	if err != nil {
 		t.Fatalf("encode agent restart performance evidence: %v", err)
 	}
-	t.Logf("agent restart gap evidence:\n%s", payload)
+	t.Logf("agent restart continuity evidence:\n%s", payload)
 	output := os.Getenv("ZTAP_PHASE5_AGENT_RESTART_OUTPUT")
 	if output == "" {
 		return
@@ -2012,7 +1550,7 @@ func writePhase5AgentCrashEvidence(t *testing.T, evidence phase5AgentCrashEviden
 	if err != nil {
 		t.Fatalf("encode agent crash evidence: %v", err)
 	}
-	t.Logf("agent crash fail-open evidence:\n%s", payload)
+	t.Logf("agent crash continuity evidence:\n%s", payload)
 	output := os.Getenv("ZTAP_PHASE5_AGENT_CRASH_OUTPUT")
 	if output == "" {
 		return

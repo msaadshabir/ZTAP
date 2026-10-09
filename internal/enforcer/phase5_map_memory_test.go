@@ -7,7 +7,7 @@ import (
 )
 
 func phase5MapCapacityBytes(mapType string, maxEntries, keySize, valueSize uint32, cpus int) (uint64, error) {
-	if mapType == "CGroupStorage" {
+	if mapType == "CGroupStorage" || mapType == "SkStorage" {
 		if maxEntries != 0 {
 			return 0, errors.New("cgroup-storage map has bounded entries")
 		}

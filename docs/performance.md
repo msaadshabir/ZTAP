@@ -5,6 +5,7 @@ environment. Offline validation and Go-only benchmarks do not establish
 kernel-path performance or Kubernetes availability.
 
 - [Historical reference results](#historical-reference-results)
+- [Restart continuity results](#restart-continuity-results)
 - [Run measurements](#run-measurements)
 - [Evidence contract](#evidence-contract)
 - [CI acceptance](#ci-acceptance)
@@ -53,6 +54,45 @@ workloads require fresh measurements.
 Pod-start, restart, crash, and rollout measurements have different boundaries;
 none is a zero-gap availability guarantee. See
 [deployment limits](deployment.md#upgrade) for their operational meaning.
+
+## Restart continuity results
+
+The October 9, 2026 working-tree implementation was tested on arm64 Linux
+`7.0.14-orbstack-00380-ga7e0a2dc9535`, containerd `2.3.4`, Kubernetes `1.36.4`,
+and Go `1.26.9`. The capability-only agent retained enforcement through a
+3-second pause, a kill with replacement delayed under the node lock, compatible
+image replacement, and rollback. Across the 52.232-second observation interval,
+the directional TCP probes recorded **zero prohibited connections**, with
+5,423 allowed ingress responses and 5,424 allowed egress responses. The images
+shared durable ABI 3 and packet semantics 2; Linux tests separately changed
+actual BPF tags and crashed between directional updates.
+
+New selected Pods were created during agent pause, termination, kill, and API
+disconnection. Each had a sustained pre-recovery observation of at least
+3.065 seconds, zero premature TCP connections, and zero prohibited connections
+in both directions. After classification, allowed controls and unisolated Pods
+worked. New host-network sockets, accepted TCP sockets, and node/self exceptions
+also passed. The evidence binds full Pod/container identities to actual cgroup
+IDs and directional kernel counters at the protected policy epoch.
+
+The privileged race-enabled Linux suite covers 17 existing-subject outage and
+transaction/upgrade cases, plus crashes after all three parent-guard program
+updates, both supported systemd layouts, incomplete committed identities,
+capacity/partial-pin failures, cgroup replacement, partial cleanup, duplicate
+locks, and flow-reader recovery. Explicit deployed uninstall retained protection
+after DaemonSet deletion and removed it only through the locked cleanup command.
+
+These are finite observations of these source images and failure schedules.
+They establish neither reboot continuity nor a universal absence of failure
+windows. The historical latency, throughput, and resource figures above remain
+unchanged; the full hosted performance fixture was not rerun for this local
+record. The [result summary and raw transcripts](evidence/restart-continuity-2026-10-09/results.json)
+retain durations, counts, identities, kernel/runtime versions, and image identity.
+Revalidate the recorded restart bundle with:
+
+```sh
+go run ./tools/phase5verify -restart-dir=docs/evidence/restart-continuity-2026-10-09
+```
 
 ## Run measurements
 
@@ -136,8 +176,8 @@ The harness retains these files under `dist/`:
 | `phase5-agent-reconcile.json` | Native compile-and-apply reconciliation |
 | `phase5-agent-event.json` | Informer event to active policy epoch |
 | `phase5-agent-pod-start.json` | New Pod classification |
-| `phase5-agent-restart.json` | Orderly restart interval |
-| `phase5-agent-crash.json` | SIGKILL to onset of fail-open |
+| `phase5-agent-restart.json` | Version 2 directional continuity through orderly restart |
+| `phase5-agent-crash.json` | Version 2 directional continuity through SIGKILL and delayed API recovery |
 | `phase5-agent-resource.json` | Quiet helper CPU and RSS |
 | `phase5-packet.json` | UDP latency and TCP throughput comparison |
 | `phase5-flow.json` | Delivered, rate-limited, and ring-full accounting |
@@ -145,8 +185,18 @@ The harness retains these files under `dist/`:
 The fixed gates are 2 seconds p95 for engine apply and reconciliation,
 3 seconds p95 for activation and informer events, 10 µs for the UDP p99
 increase, 10% for maximum sampled TCP throughput regression, and 0.10 CPU
-cores / 200 MiB for quiet resources. Pod-start, restart, crash, and rollout
-intervals are recorded separately without an availability budget.
+cores / 200 MiB for quiet resources. Pod-start classification latency is recorded
+separately. Version 2 restart/crash evidence requires sustained outages, zero
+observed prohibited packets, growing allowed/reply controls, and identity,
+epoch, and directional kernel counters. Historical gap formats remain readable
+for their original measurements.
+
+The kind bundle includes `rolling-continuity-{ingress,egress}.jsonl`, version 2
+metadata in the retained `rolling-fail-open-evidence.txt` filename, compatible
+image replacement/rollback, per-mode new-workload guard transcripts, and explicit
+uninstall evidence. The verifier rejects missing zero counters, transient early
+connections, mismatched cgroups/epochs, missing outage scenarios, and a missing
+recovered allowed control.
 
 The verifier requires the complete 250-subject/25-policy/2,500-rule fixture,
 the exact artifact set, expected producer scopes, consistent run and

@@ -16,6 +16,8 @@ subset, with explicit rejection of unsupported native features.
   API version and a name on every individual policy.
 - YAML may contain multiple documents separated by `---`. An omitted policy
   namespace defaults to `default` for offline validation.
+- Offline validation accepts at most 16 MiB of input across all documents.
+  Oversized files and stdin streams fail with exit code 2 before YAML decoding.
 - `podSelector` selects subjects in the policy namespace.
 - `namespaceSelector` and `podSelector` select peer Pods.
 - `ipBlock` selects IPv4 addresses; `except` ranges are supported.
@@ -45,7 +47,8 @@ other accepted policies continue to reconcile.
   expressions are accepted.
 - Peers and ports within a rule combine: any listed peer may use any listed
   destination port. Different rules and accepted policies add their allows.
-- Only selected local container cgroups are enforced. Peer selectors resolve
+- Policy isolation applies to selected local container cgroups. All ordinary
+  local containers pass through the classification guard first. Peer selectors resolve
   non-host-networked Pods across the cluster, including remote nodes.
 - `Succeeded` and `Failed` Pods are excluded from peer and subject resolution.
   Their retained addresses cannot grant access to a new Pod reusing the IP.
@@ -170,6 +173,16 @@ Each active snapshot is limited to 16,384 subject cgroups and 16,384 total
 rule entries, including node/self bypass entries. One `ipBlock` may expand to
 at most 1,024 IPv4 prefixes after exclusions. Counts are taken after
 deduplication; a broad selector can expand one YAML rule into many entries.
-A capacity or kernel-apply failure retains the last applied snapshot for
-already classified cgroups. It does not attach policy to an unobserved new
-container. See [deployment limits](deployment.md#measured-fail-open-intervals).
+A capacity or kernel-apply failure retains the last committed snapshot. The
+parent guard blocks unclassified new containers in both directions until their
+verified identity, explicit classification, and any required subject links are
+committed. Classification is also explicit for unisolated local containers;
+those regain default allow after the commit. At most 16,384 local container
+identities may be classified in an active slot.
+
+During controller outages, policy, label, and peer changes not yet observed are
+outside the last-committed-policy contract. Missing or pending identity facts
+for a committed live container defer the complete candidate. Host-network
+exclusions and node/self exceptions retain their documented scope. See
+[deployment boundaries](deployment.md#upgrade), including initial installation
+and reboot limitations.

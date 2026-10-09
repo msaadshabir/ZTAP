@@ -1,0 +1,7 @@
+=== RUN   TestLinuxPinnedEnforcementSurvivesOwnerLoss
+=== RUN   TestLinuxPinnedEnforcementSurvivesOwnerLoss/retired-slot-cleanup-started
+    persistence_linux_integration_test.go:375: restart-proof-v1 mode=retired-slot-cleanup-started outage=2.099224251s cgroup=26270 epoch=2 ingress_allowed=259 egress_allowed=259 established_replies=259 ingress_prohibited=0 egress_prohibited=0
+--- PASS: TestLinuxPinnedEnforcementSurvivesOwnerLoss (2.71s)
+    --- PASS: TestLinuxPinnedEnforcementSurvivesOwnerLoss/retired-slot-cleanup-started (2.71s)
+PASS
+ok  	github.com/saadshabir/ZTAP/internal/enforcer	3.728s

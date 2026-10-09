@@ -106,6 +106,48 @@ func runNativeKubernetesAgent(ctx context.Context, client kubernetes.Interface, 
 		}
 	}()
 
+	// Recover the committed kernel state while API access and identity facts
+	// are still unavailable. Cache sync failure must only release local handles.
+	resolver := newK8sSubjectResolver(options.CgroupRoot)
+	var engine enforcer.Engine
+	if options.DryRun {
+		engine = nativeDryRunEngine{}
+	} else {
+		var guard *enforcer.WorkloadGuardOptions
+		if options.WorkloadGuard {
+			guard, err = loadNodeGuardBootstrap(options.RunDir, options.CgroupRoot, options.NodeName, options.PodUID)
+			if err != nil {
+				return fmt.Errorf("verify workload guard bootstrap: %w", err)
+			}
+		}
+		engine, err = enforcer.NewLinuxEngine(ctx, enforcer.LinuxEngineOptions{
+			CgroupRoot:        options.CgroupRoot,
+			BPFFSRoot:         options.BPFFSRoot,
+			ResolveCgroupPath: resolver.ResolveCgroupPath,
+			ResolveIdentity:   resolver.ResolveWorkloadIdentity,
+			ValidateIdentity:  resolver.ValidateWorkloadIdentity,
+			Guard:             guard,
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("create linux enforcement engine: %w", err)
+		}
+	}
+	defer func() {
+		status.markStopping()
+		if closeErr := engine.Close(); closeErr != nil && returnErr == nil {
+			returnErr = fmt.Errorf("close native enforcement engine: %w", closeErr)
+		}
+	}()
+	if provider, ok := engine.(enforcer.MetricsProvider); ok {
+		status.setEngineMetricsProvider(provider)
+		defer status.setEngineMetricsProvider(nil)
+		stopMetrics := status.startEngineMetricsPolling(ctx)
+		defer stopMetrics()
+	}
+
 	factory := informers.NewSharedInformerFactory(client, 0)
 	// Keep the cluster-wide policy, Pod, and Namespace views, but constrain the
 	// Node informer to the one object this agent can reconcile. This avoids
@@ -152,35 +194,6 @@ func runNativeKubernetesAgent(ctx context.Context, client kubernetes.Interface, 
 			return nil
 		}
 		return err
-	}
-	resolver := newK8sSubjectResolver(options.CgroupRoot)
-	var engine enforcer.Engine
-	if options.DryRun {
-		engine = nativeDryRunEngine{}
-	} else {
-		engine, err = enforcer.NewLinuxEngine(ctx, enforcer.LinuxEngineOptions{
-			CgroupRoot:        options.CgroupRoot,
-			BPFFSRoot:         options.BPFFSRoot,
-			ResolveCgroupPath: resolver.ResolveCgroupPath,
-		})
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return fmt.Errorf("create linux enforcement engine: %w", err)
-		}
-	}
-	defer func() {
-		status.markStopping()
-		if closeErr := engine.Close(); closeErr != nil && returnErr == nil {
-			returnErr = fmt.Errorf("close native enforcement engine: %w", closeErr)
-		}
-	}()
-	if provider, ok := engine.(enforcer.MetricsProvider); ok {
-		status.setEngineMetricsProvider(provider)
-		defer status.setEngineMetricsProvider(nil)
-		stopMetrics := status.startEngineMetricsPolling(ctx)
-		defer stopMetrics()
 	}
 
 	reconcile := func() (policy.CompileResult, int, nativeSnapshotTelemetry, error) {
@@ -305,7 +318,7 @@ func runNativeAgentReconciliation(ctx context.Context, dirty <-chan struct{}, st
 			if ctx.Err() != nil {
 				return nil
 			}
-			if initial {
+			if initial && !errors.Is(err, enforcer.ErrIdentityUncertain) {
 				status.markApplyFailure()
 				logNativeReconcileFailure(options, operationID, observedPolicies, reconcileDuration, result, telemetry.unresolvedRunningContainers, err, true, diagnosticState)
 				return fmt.Errorf("initial native policy reconciliation: %w", err)

@@ -95,10 +95,11 @@ type bpfEventLimiterValue struct {
 }
 
 type encodedPolicySet struct {
-	Subjects []encodedSubjectState
-	Nodes    []nodeBypassKey
-	Self     []selfBypassKey
-	Rules    []policyRuleKey
+	Subjects   []encodedSubjectState
+	Nodes      []nodeBypassKey
+	Self       []selfBypassKey
+	Rules      []policyRuleKey
+	Classified []subjectStateKey
 }
 
 type encodedSubjectState struct {
@@ -138,6 +139,10 @@ func encodePolicySet(slot uint32, set policy.PolicySet) (encodedPolicySet, error
 			seenSelf[key] = struct{}{}
 		}
 	}
+	for _, id := range set.ClassifiedCgroups {
+		encoded.Classified = append(encoded.Classified, subjectStateKey{CgroupID: id, Slot: slot})
+	}
+	sort.Slice(encoded.Classified, func(i, j int) bool { return encoded.Classified[i].CgroupID < encoded.Classified[j].CgroupID })
 	for address := range seenSelf {
 		encoded.Self = append(encoded.Self, address)
 	}

@@ -1,0 +1,6 @@
+{
+  "schema_version": 2,
+  "original_image": "ztap:restart-test-final",
+  "compatible_image": "ztap:restart-test-v3",
+  "rollback_completed": true
+}
