@@ -106,10 +106,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run actionlint
-        uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca  # v1.7.12
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          args: -color
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run actionlint with shellcheck
+        run: |
+          shellcheck --version
+          make actionlint
 
   generated-code:
     name: Generated eBPF Code
@@ -402,6 +408,12 @@ jobs:
           EOF
           kind create cluster --name ztap --image kindest/node:v1.36.4 \
             --config "$RUNNER_TEMP/kind-config.yaml" --wait 180s
+
+      - name: Load smoke-test image from Docker's official ECR mirror
+        run: |
+          docker pull public.ecr.aws/docker/library/busybox:1.36.1
+          docker tag public.ecr.aws/docker/library/busybox:1.36.1 busybox:1.36.1
+          kind load docker-image busybox:1.36.1 --name ztap
 
       - name: Disable kindnet NetworkPolicy enforcement
         run: |
